@@ -21,6 +21,7 @@ def strip_consts(graph_def, max_const_size=32):
                 tensor.tensor_content = "<stripped %d bytes>"%size
     return strip_def
   
+
 def rename_nodes(graph_def, rename_func):
     res_def = tf.GraphDef()
     for n0 in graph_def.node:
@@ -30,6 +31,7 @@ def rename_nodes(graph_def, rename_func):
         for i, s in enumerate(n.input):
             n.input[i] = rename_func(s) if s[0]!='^' else '^'+rename_func(s[1:])
     return res_def
+  
   
 def show_graph(graph_def, max_const_size=32):
     """Visualize TensorFlow graph."""
@@ -52,3 +54,62 @@ def show_graph(graph_def, max_const_size=32):
         <iframe seamless style="width:800px;height:620px;border:0" srcdoc="{}"></iframe>
     """.format(code.replace('"', '&quot;'))
     display(HTML(iframe))
+
+
+def montage_batch(images):
+    """Draws all filters (n_input * n_output filters) as a
+    montage image separated by 1 pixel borders by Parag K. Mital, Jan 2016
+    Parameters
+    ----------
+    batch : Tensor
+        Input tensor to create montage of.
+    Returns
+    -------
+    m : numpy.ndarray
+        Montage image.
+    """
+    img_h = images.shape[1]
+    img_w = images.shape[2]
+    n_plots = int(np.ceil(np.sqrt(images.shape[0])))
+    m = np.ones(
+        (images.shape[1] * n_plots + n_plots + 1,
+         images.shape[2] * n_plots + n_plots + 1, 3)) * 0.5
+
+    for i in range(n_plots):
+        for j in range(n_plots):
+            this_filter = i * n_plots + j
+            if this_filter < images.shape[0]:
+                this_img = images[this_filter, ...]
+                m[1 + i + i * img_h:1 + i + (i + 1) * img_h,
+                  1 + j + j * img_w:1 + j + (j + 1) * img_w, :] = this_img
+    return m
+
+
+# %%
+def montage(W):
+    """Draws all filters (n_input * n_output filters) as a
+    montage image separated by 1 pixel borders by Parag K. Mital, Jan 2016
+    Parameters
+    ----------
+    W : Tensor
+        Input tensor to create montage of.
+    Returns
+    -------
+    m : numpy.ndarray
+        Montage image.
+    """
+    W = np.reshape(W, [W.shape[0], W.shape[1], 1, W.shape[2] * W.shape[3]])
+    n_plots = int(np.ceil(np.sqrt(W.shape[-1])))
+    m = np.ones(
+        (W.shape[0] * n_plots + n_plots + 1,
+         W.shape[1] * n_plots + n_plots + 1)) * 0.5
+    for i in range(n_plots):
+        for j in range(n_plots):
+            this_filter = i * n_plots + j
+            if this_filter < W.shape[-1]:
+                m[1 + i + i * W.shape[0]:1 + i + (i + 1) * W.shape[0],
+                  1 + j + j * W.shape[1]:1 + j + (j + 1) * W.shape[1]] = (
+                    np.squeeze(W[:, :, :, this_filter]))
+    return m
+
+

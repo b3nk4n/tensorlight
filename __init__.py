@@ -1,1 +1,2 @@
-from visualization import show_graph
+import visualization
+import network
