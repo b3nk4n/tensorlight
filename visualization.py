@@ -51,7 +51,7 @@ def show_graph(graph_def, max_const_size=32):
     """.format(data=repr(str(strip_def)), id='graph'+str(np.random.rand()))
   
     iframe = """
-        <iframe seamless style="width:800px;height:620px;border:0" srcdoc="{}"></iframe>
+        <iframe seamless style="width:100%;height:620px;border:0" srcdoc="{}"></iframe>
     """.format(code.replace('"', '&quot;'))
     display(HTML(iframe))
 
