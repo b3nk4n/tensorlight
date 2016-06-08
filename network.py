@@ -1,6 +1,6 @@
 import tensorflow as tf
 
-def lrelu(x, leak=0.2, name="lrelu"):
+def lrelu(x, leak=0.2, name=None):
     """Leaky rectified linear unit.
     Parameters
     ----------
@@ -69,6 +69,43 @@ def conv2d(x, n_filters,
             'b', [n_filters],
             initializer=tf.constant_initializer(bias))
         return activation(conv + b)
+    
+
+def max_pool(x, k_h=5, k_w=5,
+            stride_h=2, stride_w=2,
+            padding='SAME',
+            name=None):
+    """Max-Pooling that combines variable creation, activation
+    and applying bias.
+    Parameters
+    ----------
+    x : Tensor
+        Input tensor to convolve.
+    k_h : int, optional
+        Kernel height.
+    k_w : int, optional
+        Kernel width.
+    stride_h : int, optional
+        Stride in rows.
+    stride_w : int, optional
+        Stride in cols.
+    stddev : float, optional
+        Initialization's standard deviation.
+    padding : str, optional
+        'SAME' or 'VALID'
+    name : str, optional
+        Variable scope to use.
+    Returns
+    -------
+    x : Tensor
+        Max-pooled input.
+    """
+    with tf.variable_scope(name):
+        pooled = tf.nn.max_pool(
+            x, ksize=[1, k_h, k_w, 1],
+            strides=[1, stride_h, stride_w, 1],
+            padding=padding)
+        return pooled
 
 
 def linear(x, n_units, name=None, stddev=0.02, bias=0.1,
@@ -95,7 +132,7 @@ def linear(x, n_units, name=None, stddev=0.02, bias=0.1,
     """
     shape = x.get_shape().as_list()
 
-    with tf.variable_scope(name or "Linear"):
+    with tf.variable_scope(name):
         matrix = tf.get_variable("W", [shape[1], n_units], tf.float32,
                                  tf.random_normal_initializer(stddev=stddev))
         b = tf.get_variable(
@@ -120,6 +157,7 @@ def corrupt(x):
                                                minval=0,
                                                maxval=2,
                                                dtype=tf.int32), tf.float32))
+
 
 # DEPRECATED: Offers low flexibility. Use tf.get_variable() instead.
 def weight_variable(shape):
