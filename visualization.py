@@ -31,8 +31,8 @@ def rename_nodes(graph_def, rename_func):
         for i, s in enumerate(n.input):
             n.input[i] = rename_func(s) if s[0]!='^' else '^'+rename_func(s[1:])
     return res_def
-  
-  
+
+
 def show_graph(graph_def, max_const_size=32):
     """Visualize TensorFlow graph."""
     if hasattr(graph_def, 'as_graph_def'):
@@ -111,5 +111,3 @@ def montage(W):
                   1 + j + j * W.shape[1]:1 + j + (j + 1) * W.shape[1]] = (
                     np.squeeze(W[:, :, :, this_filter]))
     return m
-
-
