@@ -1,7 +1,7 @@
 import tensorflow as tf
 
 def lrelu(x, leak=0.2, name="lrelu"):
-    """Leaky rectifier by Parag K. Mital, Jan 2016
+    """Leaky rectified linear unit.
     Parameters
     ----------
     x : Tensor
@@ -24,12 +24,12 @@ def conv2d(x, n_filters,
            k_h=5, k_w=5,
            stride_h=2, stride_w=2,
            stddev=0.02,
+           bias=0.1,
            activation=lambda x: x,
-           bias=True,
            padding='SAME',
            name=None):
-    """2D Convolution with options for kernel size, stride, and init deviation
-    by Parag K. Mital, Jan 2016
+    """2D Convolution that combines variable creation, activation
+    and applying bias.
     Parameters
     ----------
     x : Tensor
@@ -46,6 +46,8 @@ def conv2d(x, n_filters,
         Stride in cols.
     stddev : float, optional
         Initialization's standard deviation.
+    bias: float, optional
+        Whether to apply a bias or not.
     activation : arguments, optional
         Function which applies a nonlinearity
     padding : str, optional
@@ -59,31 +61,31 @@ def conv2d(x, n_filters,
     """
     with tf.variable_scope(name):
         w = tf.get_variable(
-            'w', [k_h, k_w, x.get_shape()[-1], n_filters],
+            'W', [k_h, k_w, x.get_shape()[-1], n_filters],
             initializer=tf.truncated_normal_initializer(stddev=stddev))
         conv = tf.nn.conv2d(
             x, w, strides=[1, stride_h, stride_w, 1], padding=padding)
-        if bias:
-            b = tf.get_variable(
-                'b', [n_filters],
-                initializer=tf.truncated_normal_initializer(stddev=stddev))
-            conv = conv + b
-        return conv
+        b = tf.get_variable(
+            'b', [n_filters],
+            initializer=tf.constant_initializer(bias))
+        return activation(conv + b)
 
 
-def linear(x, n_units, scope=None, stddev=0.02,
+def linear(x, n_units, name=None, stddev=0.02, bias=0.1,
            activation=lambda x: x):
-    """Fully-connected network by Parag K. Mital, Jan 2016
+    """Fully-connected network .
     Parameters
     ----------
     x : Tensor
         Input tensor to the network.
     n_units : int
         Number of units to connect to.
-    scope : str, optional
+    name : str, optional
         Variable scope to use.
     stddev : float, optional
         Initialization's standard deviation.
+    bias: float, optional
+        Whether to apply a bias or not.
     activation : arguments, optional
         Function which applies a nonlinearity
     Returns
@@ -93,15 +95,18 @@ def linear(x, n_units, scope=None, stddev=0.02,
     """
     shape = x.get_shape().as_list()
 
-    with tf.variable_scope(scope or "Linear"):
-        matrix = tf.get_variable("Matrix", [shape[1], n_units], tf.float32,
+    with tf.variable_scope(name or "Linear"):
+        matrix = tf.get_variable("W", [shape[1], n_units], tf.float32,
                                  tf.random_normal_initializer(stddev=stddev))
+        b = tf.get_variable(
+            'b', [n_units],
+            initializer=tf.constant_initializer(bias))
         return activation(tf.matmul(x, matrix))
 
 
 # %%
 def corrupt(x):
-    """Take an input tensor and add uniform masking by Parag K. Mital, Jan 2016
+    """Take an input tensor and add uniform masking
     Parameters
     ----------
     x : Tensor/Placeholder
@@ -116,11 +121,10 @@ def corrupt(x):
                                                maxval=2,
                                                dtype=tf.int32), tf.float32))
 
-
-# %%
+# DEPRECATED: Offers low flexibility. Use tf.get_variable() instead.
 def weight_variable(shape):
     '''Helper function to create a weight variable initialized with
-    a normal distribution by Parag K. Mital, Jan 2016
+    a normal distribution.
     Parameters
     ----------
     shape : list
@@ -130,15 +134,15 @@ def weight_variable(shape):
     return tf.Variable(initial)
 
 
-# %%
+# DEPRECATED: Offers low flexibility. Use tf.get_variable() instead.
 def bias_variable(shape):
     '''Helper function to create a bias variable initialized with
-    a constant value by Parag K. Mital, Jan 2016
+    a constant value.
     Parameters
     ----------
     shape : list
         Size of weight variable
     '''
-    initial = tf.random_normal(shape, mean=0.0, stddev=0.01)
+    initial = tf.constant(shape, mean=0.0, stddev=0.01)
     return tf.Variable(initial)
 
