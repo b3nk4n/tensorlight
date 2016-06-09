@@ -15,23 +15,23 @@ def lrelu(x, leak=0.2, name=None):
     x : Tensor
         Output of the nonlinearity.
     """
-    with tf.variable_scope(name):
+    with tf.name_scope(name or 'LReLu'):
         f1 = 0.5 * (1 + leak)
         f2 = 0.5 * (1 - leak)
         return f1 * x + f2 * abs(x)
 
-def conv2d(x, n_filters,
+def conv2d(name_or_scope, x, n_filters,
            k_h=5, k_w=5,
            stride_h=2, stride_w=2,
-           stddev=0.02,
-           bias=0.1,
+           stddev=0.02, bias=0.1,
            activation=lambda x: x,
-           padding='SAME',
-           name=None):
+           padding='SAME'):
     """2D convolution that combines variable creation, activation
     and applying bias.
     Parameters
     ----------
+    name_or_scope : str or VariableScope
+        Variable scope to use.
     x : Tensor
         Input tensor to convolve.
     n_filters : int
@@ -52,14 +52,12 @@ def conv2d(x, n_filters,
         Function which applies a nonlinearity
     padding : str, optional
         'SAME' or 'VALID'
-    name : str, optional
-        Variable scope to use.
     Returns
     -------
     x : Tensor
         Convolved input.
     """
-    with tf.variable_scope(name):
+    with tf.variable_scope(name_or_scope):
         w = tf.get_variable(
             'W', [k_h, k_w, x.get_shape()[-1], n_filters],
             initializer=tf.truncated_normal_initializer(stddev=stddev))
@@ -68,21 +66,22 @@ def conv2d(x, n_filters,
         b = tf.get_variable(
             'b', [n_filters],
             initializer=tf.constant_initializer(bias))
-        return activation(conv + b)
+        conv += b
+    return activation(conv)
 
 
-def conv2d_transpose(x, n_filters,
+def conv2d_transpose(name_or_scope, x, n_filters,
            k_h=5, k_w=5,
            stride_h=2, stride_w=2,
-           stddev=0.02,
-           bias=0.1,
+           stddev=0.02, bias=0.1,
            activation=lambda x: x,
-           padding='SAME',
-           name=None):
+           padding='SAME',):
     """2D transposed convolution (often called deconvolution, or upconvolution
     that combines variable creation, activation and applying bias.
     Parameters
     ----------
+    name_or_scope : str or VariableScope
+        Variable scope to use.
     x : Tensor
         Input tensor to convolve.
     n_filters : int
@@ -103,32 +102,31 @@ def conv2d_transpose(x, n_filters,
         Function which applies a nonlinearity
     padding : str, optional
         'SAME' or 'VALID' (currently only SAME is correctly implemented!)
-    name : str, optional
-        Variable scope to use.
     Returns
     -------
     x : Tensor
         Upconvolved input, which typically has a bigger size, but a lower depth.
     """
-    with tf.variable_scope(name):
+    with tf.variable_scope(name_or_scope):
         input_shape = x.get_shape()
         w = tf.get_variable(
             'W', [k_h, k_w, n_filters, input_shape[3]],
             initializer=tf.truncated_normal_initializer(stddev=stddev))
-        conv = tf.nn.conv2d_transpose(
+        convt = tf.nn.conv2d_transpose(
             x, w, output_shape=[input_shape[0], input_shape[1] * stride_h, input_shape[2] * stride_w, n_filters],
             strides=[1, stride_h, stride_w, 1], padding=padding)
         b = tf.get_variable(
             'b', [n_filters],
             initializer=tf.constant_initializer(bias))
-        return activation(conv + b)
+        convt += b
+    return activation(convt)
     
 
-def max_pool(x, k_h=5, k_w=5,
-            stride_h=2, stride_w=2,
-            padding='SAME',
-            name=None):
-    """Max-Pooling that combines variable creation, activation
+def max_pool2d(x, k_h=5, k_w=5,
+               stride_h=2, stride_w=2,
+               padding='SAME',
+               name=None):
+    """2D max-pooling that combines variable creation, activation
     and applying bias.
     Parameters
     ----------
@@ -153,25 +151,25 @@ def max_pool(x, k_h=5, k_w=5,
     x : Tensor
         Max-pooled input.
     """
-    with tf.variable_scope(name):
-        pooled = tf.nn.max_pool(
-            x, ksize=[1, k_h, k_w, 1],
-            strides=[1, stride_h, stride_w, 1],
-            padding=padding)
-        return pooled
+    pooled = tf.nn.max_pool(
+        x, ksize=[1, k_h, k_w, 1],
+        strides=[1, stride_h, stride_w, 1],
+        padding=padding, name=name)
+    return pooled
 
 
-def linear(x, n_units, name=None, stddev=0.02, bias=0.1,
-           activation=lambda x: x):
+def fc(name_or_scope, x, n_units,
+       stddev=0.02, bias=0.1,
+       activation=lambda x: x):
     """Fully-connected network .
     Parameters
     ----------
+    name_or_scope : str or VariableScope
+        Variable scope to use.
     x : Tensor
         Input tensor to the network.
     n_units : int
         Number of units to connect to.
-    name : str, optional
-        Variable scope to use.
     stddev : float, optional
         Initialization's standard deviation.
     bias: float, optional
@@ -185,13 +183,14 @@ def linear(x, n_units, name=None, stddev=0.02, bias=0.1,
     """
     shape = x.get_shape().as_list()
 
-    with tf.variable_scope(name):
-        matrix = tf.get_variable("W", [shape[1], n_units], tf.float32,
+    with tf.variable_scope(name_or_scope):
+        w = tf.get_variable("W", [shape[1], n_units], tf.float32,
                                  tf.random_normal_initializer(stddev=stddev))
         b = tf.get_variable(
             'b', [n_units],
             initializer=tf.constant_initializer(bias))
-        return activation(tf.matmul(x, matrix))
+        linear = tf.matmul(x, w) + b
+    return activation(linear)
 
 
 # %%
