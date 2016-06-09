@@ -28,7 +28,7 @@ def conv2d(x, n_filters,
            activation=lambda x: x,
            padding='SAME',
            name=None):
-    """2D Convolution that combines variable creation, activation
+    """2D convolution that combines variable creation, activation
     and applying bias.
     Parameters
     ----------
@@ -65,6 +65,59 @@ def conv2d(x, n_filters,
             initializer=tf.truncated_normal_initializer(stddev=stddev))
         conv = tf.nn.conv2d(
             x, w, strides=[1, stride_h, stride_w, 1], padding=padding)
+        b = tf.get_variable(
+            'b', [n_filters],
+            initializer=tf.constant_initializer(bias))
+        return activation(conv + b)
+
+
+def conv2d_transpose(x, n_filters,
+           k_h=5, k_w=5,
+           stride_h=2, stride_w=2,
+           stddev=0.02,
+           bias=0.1,
+           activation=lambda x: x,
+           padding='SAME',
+           name=None):
+    """2D transposed convolution (often called deconvolution, or upconvolution
+    that combines variable creation, activation and applying bias.
+    Parameters
+    ----------
+    x : Tensor
+        Input tensor to convolve.
+    n_filters : int
+        Number of filters to apply.
+    k_h : int, optional
+        Kernel height.
+    k_w : int, optional
+        Kernel width.
+    stride_h : int, optional
+        Stride in rows.
+    stride_w : int, optional
+        Stride in cols.
+    stddev : float, optional
+        Initialization's standard deviation.
+    bias: float, optional
+        Whether to apply a bias or not.
+    activation : arguments, optional
+        Function which applies a nonlinearity
+    padding : str, optional
+        'SAME' or 'VALID' (currently only SAME is correctly implemented!)
+    name : str, optional
+        Variable scope to use.
+    Returns
+    -------
+    x : Tensor
+        Upconvolved input, which typically has a bigger size, but a lower depth.
+    """
+    with tf.variable_scope(name):
+        input_shape = x.get_shape()
+        w = tf.get_variable(
+            'W', [k_h, k_w, n_filters, input_shape[3]],
+            initializer=tf.truncated_normal_initializer(stddev=stddev))
+        conv = tf.nn.conv2d_transpose(
+            x, w, output_shape=[input_shape[0], input_shape[1] * stride_h, input_shape[2] * stride_w, n_filters],
+            strides=[1, stride_h, stride_w, 1], padding=padding)
         b = tf.get_variable(
             'b', [n_filters],
             initializer=tf.constant_initializer(bias))
