@@ -70,12 +70,14 @@ def conv2d(name_or_scope, x, n_filters,
     return activation(conv)
 
 
-def conv2d_transpose(name_or_scope, x, n_filters,
-           k_h=5, k_w=5,
-           stride_h=2, stride_w=2,
-           stddev=0.02, bias=0.1,
-           activation=lambda x: x,
-           padding='SAME',):
+def conv2d_transpose(name_or_scope,
+                     x, n_filters,
+                     batch_size,
+                     k_h=5, k_w=5,
+                     stride_h=2, stride_w=2,
+                     stddev=0.02, bias=0.1,
+                     activation=lambda x: x,
+                     padding='SAME',):
     """2D transposed convolution (often called deconvolution, or upconvolution
     that combines variable creation, activation and applying bias.
     Parameters
@@ -86,6 +88,11 @@ def conv2d_transpose(name_or_scope, x, n_filters,
         Input tensor to convolve.
     n_filters : int
         Number of filters to apply.
+    batch_size: int
+        The used batch_size for the output.
+        Accoding to https://www.tensorflow.org/resources/faq.html#how_do_i_build_a_graph_that_works_with_variable_batch_sizes,
+        this parameter is not required and the batch-size could be tetrieved at runtime,
+        even with variable batch size. Unfortunately, this was not working...
     k_h : int, optional
         Kernel height.
     k_w : int, optional
@@ -108,12 +115,26 @@ def conv2d_transpose(name_or_scope, x, n_filters,
         Upconvolved input, which typically has a bigger size, but a lower depth.
     """
     with tf.variable_scope(name_or_scope):
-        input_shape = x.get_shape()
+        input_shape = x.get_shape().as_list()
+        # extract batch-size like as a symbolic tensor to allow variable size
+        # batch_size = tf.shape(x)[0]
         w = tf.get_variable(
             'W', [k_h, k_w, n_filters, input_shape[3]],
             initializer=tf.truncated_normal_initializer(stddev=stddev))
+        
+        assert padding in {'SAME', 'VALID'}
+        if (padding is 'SAME'):
+            out_h = input_shape[1] * stride_h
+            out_w = input_shape[2] * stride_w
+        elif (padding is 'VALID'):
+            out_h = (input_shape[1] - 1) * stride_h + k_h
+            out_w = (input_shape[2] - 1) * stride_w + k_w
+
+        #out_shape = tf.pack([batch_size, out_h, out_w, n_filters])
+        out_shape = [batch_size, out_h, out_w, n_filters]
+        
         convt = tf.nn.conv2d_transpose(
-            x, w, output_shape=[input_shape[0], input_shape[1] * stride_h, input_shape[2] * stride_w, n_filters],
+            x, w, output_shape=out_shape,
             strides=[1, stride_h, stride_w, 1], padding=padding)
         b = tf.get_variable(
             'b', [n_filters],
