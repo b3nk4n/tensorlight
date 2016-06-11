@@ -1,4 +1,13 @@
+# NOTE:
+# To force matplotlib to use inline rendering, insert
+# the following line inside the ipython notebook:
+# %matplotlib inline
+import matplotlib
+import matplotlib.pyplot as plt
+
 import os
+import sys
+import random
 from cStringIO import StringIO
 import numpy as np
 from functools import partial
@@ -111,3 +120,73 @@ def montage(W):
                   1 + j + j * W.shape[1]:1 + j + (j + 1) * W.shape[1]] = (
                     np.squeeze(W[:, :, :, this_filter]))
     return m
+
+
+def convert_to_rgb(img_array):
+    if (np.shape(img_array)[2] == 1):
+        img_array = np.concatenate((img_array, img_array, img_array), axis=2)
+    return img_array
+
+
+def image_from_array(img_array, format='png'):
+    """Creates an image object from a given numpy array.
+    Parameters
+    ----------
+    img_array : numpy.ndarray
+        The image data, which can have 1 or 3 color channels.
+    Returns
+    -------
+    IPython.display.Image
+        An image object for plots.
+    """
+    img_data = np.uint8(img_array)
+    f = StringIO()
+    img_data = convert_to_rgb(img_data)
+    arr = PIL.Image.fromarray(img_data)
+    arr.save(f, format)
+    return Image(data=f.getvalue())
+
+
+def display_image(image):
+    """Display an image object.
+    Parameters
+    ----------
+    image : IPython.display.Image
+        The image to display.
+    """
+    display(image)
+
+
+def display_batch(img_array_batch, nrows=2, ncols=2):
+    """Display a batch of images given as a 4D numpy array.
+    Parameters
+    ----------
+    img_array_batch : numpy.ndarray
+        The image numpy data in format [batch_size, height, width, channels]
+        or a list of numpy arrays in format [height, width, channels],
+        which can have 1 or 3 color channels.
+    nrows : uint, optional
+        The number or rows.
+     ncols : uint, optional
+        The number or colums.
+    """
+    # create figure with random id
+    fig = plt.figure(random.randint(1, sys.maxint))
+    
+    for i in xrange(min(nrows * ncols, len(img_array_batch))):
+        plt.subplot(nrows,ncols,i + 1)
+        rgb_img_array = convert_to_rgb(img_array_batch[i])
+        plt.imshow(rgb_img_array)
+
+
+def display_array(img_array, format='png'):
+    """Display an image object from a given numpy array.
+    Parameters
+    ----------
+    img_array : numpy.ndarray
+        The image data, which can have 1 or 3 color channels.
+    format : str, optional
+        The image format.
+    """
+    image = image_from_array(img_array, format)
+    display(image)
