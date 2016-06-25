@@ -25,6 +25,7 @@ def conv2d(name_or_scope, x, n_filters,
            k_h=5, k_w=5,
            stride_h=2, stride_w=2,
            weight_init=0.01, bias=0.1,
+           regularizer=None,
            activation=lambda x: x,
            padding='SAME'):
     """2D convolution that combines variable creation, activation
@@ -50,6 +51,11 @@ def conv2d(name_or_scope, x, n_filters,
         or a tensorflow initializer-fuction such as xavier init.
     bias: float, optional
         Whether to apply a bias or not.
+    regularizer: (Tensor -> Tensor or None) function
+        Regularizer function for the weight (not used for the bias).
+        The result of applying it on a newly created variable will be added
+        to the collection GraphKeys.REGULARIZATION_LOSSES and can be used
+        for regularization.
     activation : arguments, optional
         Function which applies a nonlinearity
     padding : str, optional
@@ -69,7 +75,8 @@ def conv2d(name_or_scope, x, n_filters,
         
         w = tf.get_variable(
             'W', [k_h, k_w, x.get_shape()[-1], n_filters],
-            initializer=weight_init_func)
+            initializer=weight_init_func,
+            regularizer=regularizer)
         conv = tf.nn.conv2d(
             x, w, strides=[1, stride_h, stride_w, 1], padding=padding)
         b = tf.get_variable(
@@ -85,6 +92,7 @@ def conv2d_transpose(name_or_scope,
                      k_h=5, k_w=5,
                      stride_h=2, stride_w=2,
                      weight_init=0.01, bias=0.1,
+                     regularizer=None,
                      activation=lambda x: x,
                      padding='SAME',):
     """2D transposed convolution (often called deconvolution, or upconvolution
@@ -110,6 +118,11 @@ def conv2d_transpose(name_or_scope,
         or a tensorflow initializer-fuction such as xavier init.
     bias: float, optional
         Whether to apply a bias or not.
+    regularizer: (Tensor -> Tensor or None) function
+        Regularizer function for the weight (not used for the bias).
+        The result of applying it on a newly created variable will be added
+        to the collection GraphKeys.REGULARIZATION_LOSSES and can be used
+        for regularization.
     activation : arguments, optional
         Function which applies a nonlinearity
     padding : str, optional
@@ -135,7 +148,8 @@ def conv2d_transpose(name_or_scope,
         
         w = tf.get_variable(
             'W', [k_h, k_w, n_filters, static_input_shape[3]],
-            initializer=weight_init_func)
+            initializer=weight_init_func,
+            regularizer=regularizer)
         
         assert padding in {'SAME', 'VALID'}
         if (padding is 'SAME'):
@@ -195,6 +209,7 @@ def max_pool2d(x, k_h=5, k_w=5,
 
 def fc(name_or_scope, x, n_units,
        weight_init=0.01, bias=0.1,
+       regularizer=None,
        activation=lambda x: x):
     """Fully-connected network .
     Parameters
@@ -210,6 +225,11 @@ def fc(name_or_scope, x, n_units,
         or a tensorflow initializer-fuction such as xavier init.
     bias: float, optional
         Whether to apply a bias or not.
+    regularizer: (Tensor -> Tensor or None) function
+        Regularizer function for the weight (not used for the bias).
+        The result of applying it on a newly created variable will be added
+        to the collection GraphKeys.REGULARIZATION_LOSSES and can be used
+        for regularization.
     activation : arguments, optional
         Function which applies a nonlinearity
     Returns
@@ -228,7 +248,8 @@ def fc(name_or_scope, x, n_units,
             raise ValueError("Parameter weight_init must be float or function.")
         
         w = tf.get_variable("W", [shape[1], n_units], tf.float32,
-                            initializer=weight_init_func)
+                            initializer=weight_init_func,
+                            regularizer=regularizer)
         b = tf.get_variable(
             'b', [n_units],
             initializer=tf.constant_initializer(bias))
