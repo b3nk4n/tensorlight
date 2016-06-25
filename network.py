@@ -1,3 +1,4 @@
+import types
 import tensorflow as tf
 
 def lrelu(x, leak=0.2, name=None):
@@ -23,7 +24,7 @@ def lrelu(x, leak=0.2, name=None):
 def conv2d(name_or_scope, x, n_filters,
            k_h=5, k_w=5,
            stride_h=2, stride_w=2,
-           stddev=0.02, bias=0.1,
+           weight_init=0.01, bias=0.1,
            activation=lambda x: x,
            padding='SAME'):
     """2D convolution that combines variable creation, activation
@@ -44,8 +45,9 @@ def conv2d(name_or_scope, x, n_filters,
         Stride in rows.
     stride_w : int, optional
         Stride in cols.
-    stddev : float, optional
-        Initialization's standard deviation.
+    weight_init : float or function, optional
+        Initialization's of the weights, either the standard deviation
+        or a tensorflow initializer-fuction such as xavier init.
     bias: float, optional
         Whether to apply a bias or not.
     activation : arguments, optional
@@ -58,9 +60,16 @@ def conv2d(name_or_scope, x, n_filters,
         Convolved input.
     """
     with tf.variable_scope(name_or_scope):
+        if (isinstance(weight_init, types.FunctionType)):
+            weight_init_func = weight_init
+        elif (isinstance(weight_init, float)):
+            weight_init_func = tf.truncated_normal_initializer(stddev=weight_init)
+        else:
+            raise ValueError("Parameter weight_init must be float or function.")
+        
         w = tf.get_variable(
             'W', [k_h, k_w, x.get_shape()[-1], n_filters],
-            initializer=tf.truncated_normal_initializer(stddev=stddev))
+            initializer=weight_init_func)
         conv = tf.nn.conv2d(
             x, w, strides=[1, stride_h, stride_w, 1], padding=padding)
         b = tf.get_variable(
@@ -75,7 +84,7 @@ def conv2d_transpose(name_or_scope,
                      batch_size,
                      k_h=5, k_w=5,
                      stride_h=2, stride_w=2,
-                     stddev=0.02, bias=0.1,
+                     weight_init=0.01, bias=0.1,
                      activation=lambda x: x,
                      padding='SAME',):
     """2D transposed convolution (often called deconvolution, or upconvolution
@@ -96,8 +105,9 @@ def conv2d_transpose(name_or_scope,
         Stride in rows.
     stride_w : int, optional
         Stride in cols.
-    stddev : float, optional
-        Initialization's standard deviation.
+    weight_init : float or function, optional
+        Initialization's of the weights, either the standard deviation
+        or a tensorflow initializer-fuction such as xavier init.
     bias: float, optional
         Whether to apply a bias or not.
     activation : arguments, optional
@@ -116,9 +126,16 @@ def conv2d_transpose(name_or_scope,
         # extract batch-size like as a symbolic tensor to allow variable size
         batch_size = dyn_input_shape[0]
         
+        if (isinstance(weight_init, types.FunctionType)):
+            weight_init_func = weight_init
+        elif (isinstance(weight_init, float)):
+            weight_init_func = tf.truncated_normal_initializer(stddev=weight_init)
+        else:
+            raise ValueError("Parameter weight_init must be float or function.")
+        
         w = tf.get_variable(
             'W', [k_h, k_w, n_filters, static_input_shape[3]],
-            initializer=tf.truncated_normal_initializer(stddev=stddev))
+            initializer=weight_init_func)
         
         assert padding in {'SAME', 'VALID'}
         if (padding is 'SAME'):
@@ -177,7 +194,7 @@ def max_pool2d(x, k_h=5, k_w=5,
 
 
 def fc(name_or_scope, x, n_units,
-       stddev=0.02, bias=0.1,
+       weight_init=0.01, bias=0.1,
        activation=lambda x: x):
     """Fully-connected network .
     Parameters
@@ -188,8 +205,9 @@ def fc(name_or_scope, x, n_units,
         Input tensor to the network.
     n_units : int
         Number of units to connect to.
-    stddev : float, optional
-        Initialization's standard deviation.
+    weight_init : float or function, optional
+        Initialization's of the weights, either the standard deviation
+        or a tensorflow initializer-fuction such as xavier init.
     bias: float, optional
         Whether to apply a bias or not.
     activation : arguments, optional
@@ -202,8 +220,15 @@ def fc(name_or_scope, x, n_units,
     shape = x.get_shape().as_list()
 
     with tf.variable_scope(name_or_scope):
+        if (isinstance(weight_init, types.FunctionType)):
+            weight_init_func = weight_init
+        elif (isinstance(weight_init, float)):
+            weight_init_func = tf.truncated_normal_initializer(stddev=weight_init)
+        else:
+            raise ValueError("Parameter weight_init must be float or function.")
+        
         w = tf.get_variable("W", [shape[1], n_units], tf.float32,
-                                 tf.random_normal_initializer(stddev=stddev))
+                            initializer=weight_init_func)
         b = tf.get_variable(
             'b', [n_units],
             initializer=tf.constant_initializer(bias))
