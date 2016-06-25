@@ -82,8 +82,8 @@ def conv2d(name_or_scope, x, n_filters,
         b = tf.get_variable(
             'b', [n_filters],
             initializer=tf.constant_initializer(bias))
-        conv += b
-    return activation(conv)
+        linearity = tf.nn.bias_add(conv, b)
+    return activation(linearity)
 
 
 def conv2d_transpose(name_or_scope,
@@ -167,8 +167,8 @@ def conv2d_transpose(name_or_scope,
         b = tf.get_variable(
             'b', [n_filters],
             initializer=tf.constant_initializer(bias))
-        convt += b
-    return activation(convt)
+        linearity = tf.nn.bias_add(convt, b)
+    return activation(linearity)
     
 
 def max_pool2d(x, k_h=5, k_w=5,
@@ -253,8 +253,8 @@ def fc(name_or_scope, x, n_units,
         b = tf.get_variable(
             'b', [n_units],
             initializer=tf.constant_initializer(bias))
-        linear = tf.matmul(x, w) + b
-    return activation(linear)
+        linearity = tf.nn.bias_add(tf.matmul(x, w), b)
+    return activation(linearity)
 
 
 # %%
