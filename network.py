@@ -88,7 +88,6 @@ def conv2d(name_or_scope, x, n_filters,
 
 def conv2d_transpose(name_or_scope,
                      x, n_filters,
-                     batch_size,
                      k_h=5, k_w=5,
                      stride_h=2, stride_w=2,
                      weight_init=0.01, bias=0.1,
