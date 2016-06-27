@@ -26,7 +26,7 @@ def loss_summary(losses, decay=0.99):
     visualizing the performance of the network.
     Parameters
     ----------
-    losses: list(Tensor)
+    losses: list[Tensor]
         List of losses (e.g. total_loss, loss_wo_reg, reg_terms).
     decay: float, optional
         The decay to use for the exponential moving average.
@@ -48,3 +48,22 @@ def loss_summary(losses, decay=0.99):
         tf.scalar_summary(l.op.name, loss_averages.average(l))
 
     return loss_averages_op
+
+
+def variables_histogram_summary():
+    """Creates a full histogram summary for every trainable variable.
+    """
+    for var in tf.trainable_variables():
+        tf.histogram_summary(var.op.name, var)
+
+        
+def gradients_histogram_summary(gradients):
+    """Creates a histogramm summary for all given gradients.
+    Parameters
+    ----------
+    gradients: list[(gradient, variable)].
+        A list of (gradient, variable) pairs created by Optimizer.compute_gradients().
+    """
+    for grad, var in gradients:
+        if grad is not None:
+            tf.histogram_summary(var.op.name + '/gradients', grad)
