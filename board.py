@@ -4,7 +4,7 @@ import tensorflow as tf
 TOWER_NAME = 'tower'
 
 
-def activation_summary(x):
+def activation_summary(x, show_sparsity=False, scope=None):
     """Creates a summary for an activations.
     Creates a summary that provides a histogram of activations.
     Creates a summary that measure the sparsity of activations.
@@ -12,12 +12,24 @@ def activation_summary(x):
     ----------
     x: Tensor
         The tensor to write the activation summary for.
+    show_sparsity: Boolean, optional
+        Whether to include sparsity (fraction of zeros) in the summary.
+    scope: str, optional
+        The scope name of the module it belongs to. This has the benefit that
+        TensorBoard diagrams can be grouped together to gain a better overview.
     """
-    # Remove 'tower_[0-9]/' from the name in case this is a multi-GPU training
-    # session. This helps the clarity of presentation on tensorboard.
-    tensor_name = re.sub('%s_[0-9]*/' % TOWER_NAME, '', x.op.name)
-    tf.histogram_summary(tensor_name + '/activations', x)
-    tf.scalar_summary(tensor_name + '/sparsity', tf.nn.zero_fraction(x))
+    with tf.name_scope("activation_summary"):
+        # Remove 'tower_[0-9]/' from the name in case this is a multi-GPU training
+        # session. This helps the clarity of presentation on tensorboard.
+        tensor_name = re.sub('%s_[0-9]*/' % TOWER_NAME, '', x.op.name)
+        
+        summary_name = tensor_name
+        if scope is not None:
+            summary_name = str(scope) + "/" + summary_name
+        
+        tf.histogram_summary(summary_name + '/activations', x)
+        if show_sparsity:
+            tf.scalar_summary(summary_name + '/sparsity', tf.nn.zero_fraction(x, name="sparsity"))
     
 
 def loss_summary(losses, decay=0.99):

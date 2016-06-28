@@ -1,5 +1,6 @@
 import types
 import tensorflow as tf
+from tensorflow.python.framework import ops
 
 def lrelu(x, leak=0.2, name=None):
     """Leaky rectified linear unit.
@@ -19,14 +20,14 @@ def lrelu(x, leak=0.2, name=None):
     with tf.name_scope(name or 'LReLu'):
         f1 = 0.5 * (1 + leak)
         f2 = 0.5 * (1 - leak)
-        return f1 * x + f2 * abs(x)
+        return tf.add(f1 * x, f2 * abs(x), name="op")
 
 def conv2d(name_or_scope, x, n_filters,
            k_h=5, k_w=5,
            stride_h=2, stride_w=2,
            weight_init=0.01, bias=0.1,
            regularizer=None,
-           activation=lambda x: x,
+           activation=lambda x : x,
            padding='SAME'):
     """2D convolution that combines variable creation, activation
     and applying bias.
@@ -82,7 +83,8 @@ def conv2d(name_or_scope, x, n_filters,
         b = tf.get_variable(
             'b', [n_filters],
             initializer=tf.constant_initializer(bias))
-        linearity = tf.nn.bias_add(conv, b)
+        linearity = tf.nn.bias_add(conv, b)    
+           
     return activation(linearity)
 
 
