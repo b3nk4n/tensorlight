@@ -110,10 +110,12 @@ def conv_image_summary(tag, conv_out):
         
         placeholders_to_add = cy * cx - c
         if (placeholders_to_add > 0):
-            co = tf.concat(2, [co] + ([tf.zeros((iy, ix, 1))] * placeholders_to_add))
-        print(co.get_shape())
-        ix += 4
-        iy += 4
+            placeholders = tf.zeros((iy, ix, placeholders_to_add))
+            co = tf.concat(2, [co, placeholders])
+
+        PADDING = 4
+        ix += PADDING
+        iy += PADDING
 
         co = tf.image.resize_image_with_crop_or_pad(co, iy, ix)
 
