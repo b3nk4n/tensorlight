@@ -82,46 +82,119 @@ def gradients_histogram_summary(gradients):
             tf.histogram_summary(var.op.name + '/gradients', grad)
     
             
-def conv_image_summary(tag, conv_out):
+def conv_image_summary(tag, conv_out, padding=2):
     """Creates an image summary of the convolutional outputs
     for the first image in the batch .
     Parameters
     ----------
     tag: str or Tensor of type string
         A scalar Tensor of type string. Used to build the tag of the summary values.
+        A placeholder could be used to feed in the tag name to generate multiple images,
+        because using a fixed string causes to overwrite the previous one.
     conv_out: 4D Tensor of shape [batch_size, h, w, c] or 3D Tensor of shape [h, w, c]
             The convolutional output to write to summary. Note that only the first image
-            of a patch is used.     
+            of a patch is used.
+    padding: int, optional
+        The padding between each patch of the grid.
     """
-    with tf.name_scope("conv_image_summary"):
+    with tf.name_scope("conv_summary"):
         static_shape = conv_out.get_shape().as_list()
-        iy = static_shape[-3]
-        ix = static_shape[-2]
-        c = static_shape[-1]
+        iy = static_shape[-3] + padding * 2
+        ix = static_shape[-2] + padding * 2
+        channels = static_shape[-1]
+        grid_length = int(math.ceil(math.sqrt(channels)))
+        grid_y = grid_x = grid_length
 
         # slice off the first image
         co = tf.slice(conv_out, (0,0,0,0),(1,-1,-1,-1))
+        
+        # add padding to input kernel
+        co = tf.pad(co,
+                    tf.constant([[0,0],[padding,padding],[padding,padding],[0,0]]))
+        
         # remove batch dimension
-        co = tf.reshape(co, (iy, ix, c))
+        co = tf.reshape(co, (iy, ix, channels))
         
-        grid_length = int(math.ceil(math.sqrt(c)))
-
-        cy = cx = grid_length
-        
-        placeholders_to_add = cy * cx - c
+        # add placeholder filters to be able to build a square
+        placeholders_to_add = grid_y * grid_x - channels
         if (placeholders_to_add > 0):
             placeholders = tf.zeros((iy, ix, placeholders_to_add))
             co = tf.concat(2, [co, placeholders])
 
-        PADDING = 4
-        ix += PADDING
-        iy += PADDING
-
-        co = tf.image.resize_image_with_crop_or_pad(co, iy, ix)
-
-        co = tf.reshape(co, (iy, ix, cy, cx))
+        co = tf.reshape(co, (iy, ix, grid_y, grid_x))
         co = tf.transpose(co, (2,0,3,1))
-        co = tf.reshape(co, (1, cy * iy, cx * ix, 1))
+        co = tf.reshape(co, (1, grid_y * iy, grid_x * ix, 1))
+        
+        # scale to [0, 1]
+        x_min = tf.reduce_min(co)
+        x_max = tf.reduce_max(co)
+        grid = (co - x_min) / (x_max - x_min)
 
         # write single image to summary
-        tf.image_summary(tag, co, max_images=1)
+        tf.image_summary(tag, grid, max_images=1)
+
+
+def conv_filter_image_summary(tag, kernel, padding=1):
+    """Creates an image summary of the convolutional filters of the first layer.
+    Parameters
+    ----------
+    tag: str or Tensor of type string
+        A scalar Tensor of type string. Used to build the tag of the summary values.
+        A placeholder could be used to feed in the tag name to generate multiple images,
+        because using a fixed string causes to overwrite the previous one.
+    kernel: 4D Tensor of shape [kh, kw, channels_in, filters_out]
+        The convolutional filters to write to summary. Note that this is only supported
+        for the frst conv-layer, which has to have an 1 or 3 as channels_in.
+    padding: int, optional
+        The padding between each patch of the grid.
+    Example
+    ----------
+        conv = tt.network.conv2d("Conv1", ...)
+        # Get kernel by reusing the same variable-scope
+        with tf.variable_scope("Conv1", reuse=True):
+            kernel = tf.get_variable("W")
+        tt.board.conv_filter_image_summary("conv1_filters", kernel);
+    """
+    with tf.name_scope("filter_summary"):
+        # X and Y dimensions, w.r.t. padding
+        static_shape = kernel.get_shape().as_list()
+        ky = static_shape[0] + padding * 2
+        kx = static_shape[1] + padding * 2
+        channels_in = static_shape[2]
+        filters_out = static_shape[3]
+        grid_length = int(math.ceil(math.sqrt(filters_out)))
+        grid_y = grid_x = grid_length
+        
+        # add padding to input kernel
+        k = tf.pad(kernel,
+                   tf.constant([[padding,padding],[padding,padding],[0,0],[0,0]]))
+          
+        # add placeholder filters to be able to build a square
+        placeholders_to_add = grid_y * grid_x - filters_out
+        if (placeholders_to_add > 0):
+            placeholders = tf.zeros((ky, kx, channels_in, placeholders_to_add))
+            k = tf.concat(3, [k, placeholders])
+            
+        # put filters_out to the 1st dimension
+        k = tf.transpose(k, (3, 0, 1, 2))
+        # organize grid on Y axis
+        k = tf.reshape(k, tf.pack([grid_x, ky * grid_y, kx, channels_in]))
+
+        # switch X and Y axes
+        k = tf.transpose(k, (0, 2, 1, 3))
+        # organize grid on X axis
+        k = tf.reshape(k, tf.pack([1, kx * grid_x, ky * grid_y, channels_in]))
+
+        # back to normal order (not combining with the next step for clarity)
+        k = tf.transpose(k, (2, 1, 3, 0))
+
+        # to tf.image_summary order [batch_size, height, width, channels]
+        k = tf.transpose(k, (3, 0, 1, 2))
+
+        # scale to [0, 1]
+        x_min = tf.reduce_min(k)
+        x_max = tf.reduce_max(k)
+        grid = (k - x_min) / (x_max - x_min)
+        
+        # write filter image to summary
+        tf.image_summary(tag, grid, max_images=1)
