@@ -121,4 +121,5 @@ def conv_image_summary(tag, conv_out):
         co = tf.transpose(co, (2,0,3,1))
         co = tf.reshape(co, (1, cy * iy, cx * ix, 1))
 
-        tf.image_summary(tag, co)
+        # write single image to summary
+        tf.image_summary(tag, co, max_images=1)
