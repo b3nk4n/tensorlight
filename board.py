@@ -1,4 +1,5 @@
 import re
+import math
 import tensorflow as tf
 
 TOWER_NAME = 'tower'
@@ -73,9 +74,51 @@ def gradients_histogram_summary(gradients):
     """Creates a histogramm summary for all given gradients.
     Parameters
     ----------
-    gradients: list[(gradient, variable)].
+    gradients: list[(gradient, variable)]
         A list of (gradient, variable) pairs created by Optimizer.compute_gradients().
     """
     for grad, var in gradients:
         if grad is not None:
             tf.histogram_summary(var.op.name + '/gradients', grad)
+    
+            
+def conv_image_summary(tag, conv_out):
+    """Creates an image summary of the convolutional outputs
+    for the first image in the batch .
+    Parameters
+    ----------
+    tag: str or Tensor of type string
+        A scalar Tensor of type string. Used to build the tag of the summary values.
+    conv_out: 4D Tensor of shape [batch_size, h, w, c] or 3D Tensor of shape [h, w, c]
+            The convolutional output to write to summary. Note that only the first image
+            of a patch is used.     
+    """
+    with tf.name_scope("conv_image_summary"):
+        static_shape = conv_out.get_shape().as_list()
+        iy = static_shape[-3]
+        ix = static_shape[-2]
+        c = static_shape[-1]
+
+        # slice off the first image
+        co = tf.slice(conv_out, (0,0,0,0),(1,-1,-1,-1))
+        # remove batch dimension
+        co = tf.reshape(co, (iy, ix, c))
+        
+        grid_length = int(math.ceil(math.sqrt(c)))
+
+        cy = cx = grid_length
+        
+        placeholders_to_add = cy * cx - c
+        if (placeholders_to_add > 0):
+            co = tf.concat(2, [co] + ([tf.zeros((iy, ix, 1))] * placeholders_to_add))
+        print(co.get_shape())
+        ix += 4
+        iy += 4
+
+        co = tf.image.resize_image_with_crop_or_pad(co, iy, ix)
+
+        co = tf.reshape(co, (iy, ix, cy, cx))
+        co = tf.transpose(co, (2,0,3,1))
+        co = tf.reshape(co, (1, cy * iy, cx * ix, 1))
+
+        tf.image_summary(tag, co)
