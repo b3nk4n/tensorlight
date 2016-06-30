@@ -17,7 +17,7 @@ class VideoReader():
         self.release()
         
     def next_frame(self, scale=1.0):
-        """Reads the next from from the video.
+        """Reads the next frame from the video.
         Parameters
         ----------
         scale: float, optional
@@ -33,6 +33,18 @@ class VideoReader():
             return image
         else:
             return None
+        
+    def skip_frames(self, count=1):
+        """Skips the next frames from the video.
+        Parameters
+        ----------
+        count: int, optional
+            The number of frames to skip.
+        """
+        for i in xrange(count):
+            success, _ = self.vidcap.read()
+            if not success:
+                break
         
     def release(self):
         """Releases the video file resources."""
