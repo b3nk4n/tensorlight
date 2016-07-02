@@ -116,8 +116,6 @@ class VideoWriter():
             pad_bottom = VideoWriter.MIN_HEIGHT - h - pad_top
             pad_left = (VideoWriter.MIN_WIDTH - w) // 2
             pad_right = VideoWriter.MIN_WIDTH - w - pad_left
-            print("pad", pad_left, pad_top, pad_right, pad_bottom)
-            print (np.shape(frame))
             frame = np.pad(frame,
                            ((pad_top, pad_bottom),
                             (pad_left, pad_right),
@@ -126,6 +124,12 @@ class VideoWriter():
         return frame
         
     def write_frame(self, frame):
+        """Writes a video frame to the file.
+        Parameters
+        ----------
+        frame: ndarray(uint8)
+            The video frame to write.
+        """
         padded_frame = self._ensure_min_frame_size(frame)
         self.vidwriter.write(padded_frame)
   
