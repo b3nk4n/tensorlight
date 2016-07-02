@@ -5,6 +5,10 @@ import tarfile
 from six.moves import urllib
 
 
+EXT_RAR = ".rar"
+EXT_TAR_GZ = ".tar.gz"
+
+
 def download(url, target_dir):
     """Downloads a file from a given URL to the specified directory while indicating
     the progress in the command line.
@@ -56,18 +60,23 @@ def extract(filepath, target_dir):
     filepath_no_ext = os.path.splitext(filepath)[0]   
     if not os.path.exists(filepath_no_ext):
         print('Extracting...')
-        if filename.endswith('.rar'):
+        if filename.endswith(EXT_RAR):
             rar = rarfile.RarFile(filepath)
             rar.extractall(target_dir)
-            extracted_name = os.path.splitext(filename)[0]
-        elif filename.endswith('.tar.gz'):
+        elif filename.endswith(EXT_TAR_GZ):
             tar = tarfile.open(filepath, 'r:gz')
             tar.extractall(target_dir)
-            extracted_name = os.path.splitext(os.path.splitext(filename)[0])[0]
         else:
             raise ValueException('File type not supported.')
         print('Successfully extracted file {}.'.format(filename))
     else:
         print('File {} has already been extracted.'.format(filename))
+    
+    if filename.endswith(EXT_RAR):
+        extracted_name = os.path.splitext(filename)[0]
+    elif filename.endswith(EXT_TAR_GZ):
+        extracted_name = os.path.splitext(os.path.splitext(filename)[0])[0]
+    else:
+        raise ValueException('File type not supported.')
     extracted_dir = os.path.join(target_dir, extracted_name)
     return extracted_dir
