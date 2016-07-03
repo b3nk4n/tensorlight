@@ -30,7 +30,7 @@ def read(filepath, color_flags=cv2.IMREAD_COLOR):
     return image
 
 
-def save(filepath, image, value_range=VALUE_RANGE_0_255):
+def write(filepath, image, value_range=VALUE_RANGE_0_255):
     """Saves an image or a frame to the specified path.
     Parameters
     ----------
@@ -53,7 +53,7 @@ def save(filepath, image, value_range=VALUE_RANGE_0_255):
     cv2.imwrite(filepath, image)
 
 
-def save_as_binary(filepath, image):
+def write_as_binary(filepath, image):
     """Saves an image as a binary file to the specified path.
     Parameters
     ----------
