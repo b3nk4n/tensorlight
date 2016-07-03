@@ -14,6 +14,7 @@ from functools import partial
 import PIL.Image
 from IPython.display import clear_output, Image, display, HTML
 import tensorflow as tf
+import utils
 
 # Helper functions for TF Graph visualization
 
@@ -122,12 +123,6 @@ def montage(W):
     return m
 
 
-def convert_to_rgb(img_array):
-    if (np.shape(img_array)[2] == 1):
-        img_array = np.concatenate((img_array, img_array, img_array), axis=2)
-    return img_array
-
-
 def image_from_array(img_array, format='png'):
     """Creates an image object from a given numpy array.
     Parameters
@@ -141,7 +136,7 @@ def image_from_array(img_array, format='png'):
     """
     img_data = np.uint8(img_array)
     f = StringIO()
-    img_data = convert_to_rgb(img_data)
+    img_data = utils.image.to_rgb(img_data)
     arr = PIL.Image.fromarray(img_data)
     arr.save(f, format)
     return Image(data=f.getvalue())
