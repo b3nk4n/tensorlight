@@ -68,13 +68,14 @@ class VideoWriter():
     FF_MIN_BUFFER_SIZE = 16384  # from OpenCV C++ code
     
     """Video writer class using OpenCV."""
-    def __init__(self, filename_no_ext,
+    def __init__(self, filepath,
                  fps=24.0, frame_size=(240, 320), is_color=True):
         """Creates a VideoWriter instance.
         Parameters
         ----------
-        filename_no_ext: str
-            The file path to store the video, without file extension.
+        filepath: str
+            The file path to store the video to write. Currently only
+            the file extension ".avi" is supported.
         fps: float, optional
             The frame rate of the video in frames/seconds.
         frame_size: tuple(height,width), optional
@@ -85,7 +86,7 @@ class VideoWriter():
         # Define the codec
         fourcc = cv2.cv.CV_FOURCC(*'XVID')
         self.vidwriter = cv2.VideoWriter(
-            '{}.avi'.format(filename_no_ext),
+            filepath,
             fourcc, fps, 
             (max(VideoWriter.MIN_WIDTH, frame_size[1]),
              max(VideoWriter.MIN_HEIGHT, frame_size[0])))
