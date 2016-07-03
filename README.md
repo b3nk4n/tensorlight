@@ -2,10 +2,17 @@
 
 TensorTools is a programming library for [TensorFlow](https://www.tensorflow.org/) based projects to reduce poilerplate code.
 
+
 ## Modules
 
 - Network: *Provides convenient functions to simplify existing TensorFlow functions*
 - Visualization: *Enables to include TensorBoard graphics inside an iPython script*
+- Board: *Provides convenient functions for runtime summaries on TensorBoard, such as summaries of convolutional filters, loss summaries, weight histograms, etc.*
+- Utils:
+ - Data: *Helper functions for preparation, such as downloading or extracting files*
+ - Image: *Collection of functions for image data as numpy.ndarray, such as read, write, convert or resize*
+ - Path: *High level functions to simplify path building, file access or file search*
+ - Video: *Provides convenient functions or classes to read or write video frames*
 
 
 ## Convetions
