@@ -1,7 +1,7 @@
 import cv2
 import math
 import numpy as np
-from scipy.misc import imresize
+import tensortools as tt
 
 
 class VideoReader():
@@ -40,7 +40,7 @@ class VideoReader():
         """
         success, image = self.vidcap.read()
         if success:
-            image = imresize(image, scale)
+            image = tt.utils.image.resize(image, scale)
             return image
         else:
             return None

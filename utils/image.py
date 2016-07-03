@@ -47,8 +47,38 @@ def save(filepath, image, value_range=VALUE_RANGE_1):
     elif value_range == VALUE_RANGE_0_255:
         pass  
     cv2.imwrite(filepath, frame)
+
+
+def resize(image, scale=None, size=None):
+    """Resizes the image data by the given scale.
+    Parameters
+    ----------
+    image: ndarray(uint8)
+        The image to rescale
+    scale: float, optional
+        The scale factor, where 1.0 means no change.
+    size: tuple(int), optional
+        The size of the resized image is a tuple of 2 values (height, width).
+    Returns
+    ----------
+    image: ndarray(uint8)
+        Returns the rescaled image.
+    """
+    img_shape = np.shape(image)
     
+    if scale is not None:
+        image = cv2.resize(image, (0, 0), fx=scale, fy=scale)
+    elif size is not None:
+        image = cv2.resize(image, (size[1], size[0]))
+    else:
+        raise ValueError('Either scale or size parameter has to defined.')
     
+    if img_shape[2] == 1:
+        image = np.expand_dims(image, axis=2)
+     
+    return image
+
+
 def to_grayscale(image):
     """Converts a colored image to a grayscaled one.
     Parameters
@@ -57,7 +87,7 @@ def to_grayscale(image):
         An image with the shape of [height, width, 3].
     Returns
     ---------
-    gray_image: ndarray(uint8)
+    image: ndarray(uint8)
         Returns a grayscaled image with shape [height, width, 1].
     """
     img_channels = np.shape(image)[2]
@@ -73,11 +103,11 @@ def to_rgb(image):
     """Converts a grayscaled image to a colored one.
     Parameters
     ----------
-    image: ndarray()
+    image: ndarray(uint8)
         A grayscaled image with the shape of [height, width, 1].
     Returns
     ---------
-    gray_image: ndarray(uint8)
+    image: ndarray(uint8)
         Returns a converted image with shape [height, width, 3].
     """
     img_channels = np.shape(image)[2]
