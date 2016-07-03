@@ -8,7 +8,7 @@ VALUE_RANGE_1 = '-1,1'
 VALUE_RANGE_0_255 = '0,255'
 
 
-def open(filepath, color_flags=cv2.IMREAD_COLOR):
+def read(filepath, color_flags=cv2.IMREAD_COLOR):
     """Opens an image file from disk.
     Parameters
     ----------
@@ -17,16 +17,20 @@ def open(filepath, color_flags=cv2.IMREAD_COLOR):
     color_flags: int, optional
         Flag that indicates the color of the image. Most common
         values are cv2.IMREAD_GRAYSCALE or cv2.IMREAD_COLOR.
+    Returns
+    ----------
+    image: ndarray(uint8)
+        Returns image data as an array of shape [height, width, channels].
     """
-    img = cv2.imread(filepath, flags=color_flags)
+    image = cv2.imread(filepath, flags=color_flags)
     # introduce a 1-channel dimension to handle the indexing
     # of color and gray images the same way
     if color_flags == cv2.IMREAD_GRAYSCALE:
-        img = np.expand_dims(img, axis=2)
-    return img
+        image = np.expand_dims(image, axis=2)
+    return image
 
 
-def save(filepath, image, value_range=VALUE_RANGE_1):
+def save(filepath, image, value_range=VALUE_RANGE_0_255):
     """Saves an image or a frame to the specified path.
     Parameters
     ----------
@@ -41,12 +45,26 @@ def save(filepath, image, value_range=VALUE_RANGE_1):
     if not os.path.exists(dirpath):
         os.makedirs(dirpath)
     if value_range == VALUE_RANGE_0_1:
-        frame = frame * 255.0
+        image = image * 255.0
     elif value_range == VALUE_RANGE_1:
-        frame = frame * 127.5 + 127.5
+        image = image * 127.5 + 127.5
     elif value_range == VALUE_RANGE_0_255:
         pass  
-    cv2.imwrite(filepath, frame)
+    cv2.imwrite(filepath, image)
+
+
+def save_as_binary(filepath, image):
+    """Saves an image as a binary file to the specified path.
+    Parameters
+    ----------
+    filepath: str
+        The path to the file.
+    image: ndarray(float/int)
+        The image data.
+    """
+    with open(filepath, "w") as f:
+        image_bytes = image.tobytes()
+        f.write(image_bytes)
 
 
 def resize(image, scale=None, size=None):

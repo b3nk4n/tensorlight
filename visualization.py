@@ -170,7 +170,7 @@ def display_batch(img_array_batch, nrows=2, ncols=2):
     
     for i in xrange(min(nrows * ncols, len(img_array_batch))):
         plt.subplot(nrows,ncols,i + 1)
-        rgb_img_array = convert_to_rgb(img_array_batch[i])
+        rgb_img_array = utils.image.to_rgb(img_array_batch[i])
         plt.imshow(rgb_img_array)
 
 
