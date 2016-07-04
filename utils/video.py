@@ -89,7 +89,8 @@ class VideoWriter():
             filepath,
             fourcc, fps, 
             (max(VideoWriter.MIN_WIDTH, frame_size[1]),
-             max(VideoWriter.MIN_HEIGHT, frame_size[0])))
+             max(VideoWriter.MIN_HEIGHT, frame_size[0])),
+            is_color)
         
     def __enter__(self):
         """Enters the context manager."""
