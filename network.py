@@ -22,6 +22,23 @@ def lrelu(x, leak=0.2, name=None):
         f2 = 0.5 * (1 - leak)
         return tf.add(f1 * x, f2 * abs(x), name="op")
 
+
+def hard_sigmoid(x):
+    """Hard sigmoid implementation.
+    Parameters
+    ----------
+    x : Tensor
+        The tensor to apply the nonlinearity to.
+    Returns
+    ----------
+    x: Tensor
+        Output of the nonlinearity.
+    """
+    x = (0.2 * x) + 0.5
+    x = tf.clip_by_value(x, tf.cast(0., dtype=tf.float32),
+                         tf.cast(1., dtype=tf.float32))
+    return x
+
 def conv2d(name_or_scope, x, n_filters,
            k_h=5, k_w=5,
            stride_h=2, stride_w=2,
