@@ -13,9 +13,6 @@ from tensorflow.python.ops import init_ops
 from tensorflow.python.ops import math_ops
 from tensorflow.python.ops import variable_scope as vs
 
-from tensorflow.python.ops.math_ops import sigmoid
-from tensorflow.python.ops.math_ops import tanh
-
 
 def rnn_conv2d(cell, inputs, initial_state=None, dtype=None,
         sequence_length=None, scope=None):
@@ -260,7 +257,8 @@ class BasicLSTMConv2DCell(RNNConv2DCell):
     cells output.
     """
 
-    def __init__(self, nb_rows, nb_cols, nb_filters, height, width, forget_bias=1.0, activation=tanh):
+    def __init__(self, nb_rows, nb_cols, nb_filters, height, width,
+                 forget_bias=1.0, activation=tf.nn.tanh, inner_activation=tf.nn.sigmoid):
         """Initialize the basic 2D convolutional LSTM cell.
         Parameters
         ----------
@@ -288,6 +286,7 @@ class BasicLSTMConv2DCell(RNNConv2DCell):
         self._forget_bias = forget_bias
         self._state_is_tuple = True
         self._activation = activation
+        self._inner_activation = inner_activation
 
     @property
     def state_size(self):
@@ -340,9 +339,9 @@ class BasicLSTMConv2DCell(RNNConv2DCell):
             # new_c = f_t * c + i_t * tanh(j)
             # o_t = sig(o)
             # new_h = o_t * tanh(new_c)
-            new_c = (c * sigmoid(f) + sigmoid(i) *
+            new_c = (c * self._inner_activation(f) + self._inner_activation(i) *
                  self._activation(j))
-            new_h = self._activation(new_c) * sigmoid(o)
+            new_h = self._activation(new_c) * self._inner_activation(o)
 
             new_state = tf.nn.rnn_cell.LSTMStateTuple(new_c, new_h)
             return new_h, new_state
