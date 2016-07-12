@@ -49,7 +49,7 @@ def hard_sigmoid(x, name=None):
 def conv2d(name_or_scope, x, n_filters,
            k_h=5, k_w=5,
            stride_h=2, stride_w=2,
-           weight_init=0.01, bias=0.1,
+           weight_init=0.01, bias_init=0.1,
            regularizer=None,
            activation=lambda x : x,
            padding='SAME'):
@@ -74,8 +74,9 @@ def conv2d(name_or_scope, x, n_filters,
     weight_init : float or function, optional
         Initialization's of the weights, either the standard deviation
         or a tensorflow initializer-fuction such as xavier init.
-    bias: float, optional
-        Whether to apply a bias or not.
+    bias_init: float or function or None, optional
+        Whether to apply a constant bias (float) or a specific one (function)
+        or none (None). 
     regularizer: (Tensor -> Tensor or None) function
         Regularizer function for the weight (not used for the bias).
         The result of applying it on a newly created variable will be added
@@ -104,10 +105,20 @@ def conv2d(name_or_scope, x, n_filters,
             regularizer=regularizer)
         conv = tf.nn.conv2d(
             x, w, strides=[1, stride_h, stride_w, 1], padding=padding)
-        b = tf.get_variable(
-            'b', [n_filters],
-            initializer=tf.constant_initializer(bias))
-        linearity = tf.nn.bias_add(conv, b)    
+        
+        if bias_init is not None:
+            if (isinstance(bias_init, types.FunctionType)):
+                bias_init_func = bias_init
+            elif (isinstance(bias_init, float)):
+                bias_init_func = tf.constant_initializer(bias_init)
+            else:
+                raise ValueError("Parameter bias_init must be float or function or None.")
+            b = tf.get_variable(
+                'b', [n_filters],
+                initializer=bias_init_func)
+            linearity = tf.nn.bias_add(conv, b)
+        else:
+            linearity = conv
            
     return activation(linearity)
 
@@ -116,7 +127,7 @@ def conv2d_transpose(name_or_scope,
                      x, n_filters,
                      k_h=5, k_w=5,
                      stride_h=2, stride_w=2,
-                     weight_init=0.01, bias=0.1,
+                     weight_init=0.01, bias_init=0.1,
                      regularizer=None,
                      activation=lambda x: x,
                      padding='SAME',):
@@ -141,8 +152,9 @@ def conv2d_transpose(name_or_scope,
     weight_init : float or function, optional
         Initialization's of the weights, either the standard deviation
         or a tensorflow initializer-fuction such as xavier init.
-    bias: float, optional
-        Whether to apply a bias or not.
+    bias_init: float or function or None, optional
+        Whether to apply a constant bias (float) or a specific one (function)
+        or none (None). 
     regularizer: (Tensor -> Tensor or None) function
         Regularizer function for the weight (not used for the bias).
         The result of applying it on a newly created variable will be added
@@ -189,10 +201,20 @@ def conv2d_transpose(name_or_scope,
         convt = tf.nn.conv2d_transpose(
             x, w, output_shape=out_shape,
             strides=[1, stride_h, stride_w, 1], padding=padding)
-        b = tf.get_variable(
-            'b', [n_filters],
-            initializer=tf.constant_initializer(bias))
-        linearity = tf.nn.bias_add(convt, b)
+        
+        if bias_init is not None:
+            if (isinstance(bias_init, types.FunctionType)):
+                bias_init_func = bias_init
+            elif (isinstance(bias_init, float)):
+                bias_init_func = tf.constant_initializer(bias_init)
+            else:
+                raise ValueError("Parameter bias_init must be float or function or None.")
+            b = tf.get_variable(
+                'b', [n_filters],
+                initializer=bias_init_func)
+            linearity = tf.nn.bias_add(convt, b)
+        else:
+            linearity = convt
     return activation(linearity)
     
 
@@ -233,7 +255,7 @@ def max_pool2d(x, k_h=5, k_w=5,
 
 
 def fc(name_or_scope, x, n_units,
-       weight_init=0.01, bias=0.1,
+       weight_init=0.01, bias_init=0.1,
        regularizer=None,
        activation=lambda x: x):
     """Fully-connected network .
@@ -248,8 +270,9 @@ def fc(name_or_scope, x, n_units,
     weight_init : float or function, optional
         Initialization's of the weights, either the standard deviation
         or a tensorflow initializer-fuction such as xavier init.
-    bias: float, optional
-        Whether to apply a bias or not.
+    bias_init: float or function or None, optional
+        Whether to apply a constant bias (float) or a specific one (function)
+        or none (None). 
     regularizer: (Tensor -> Tensor or None) function
         Regularizer function for the weight (not used for the bias).
         The result of applying it on a newly created variable will be added
@@ -275,10 +298,21 @@ def fc(name_or_scope, x, n_units,
         w = tf.get_variable("W", [shape[1], n_units], tf.float32,
                             initializer=weight_init_func,
                             regularizer=regularizer)
-        b = tf.get_variable(
-            'b', [n_units],
-            initializer=tf.constant_initializer(bias))
-        linearity = tf.nn.bias_add(tf.matmul(x, w), b)
+        mul = tf.matmul(x, w)
+        
+        if bias_init is not None:
+            if (isinstance(bias_init, types.FunctionType)):
+                bias_init_func = bias_init
+            elif (isinstance(bias_init, float)):
+                bias_init_func = tf.constant_initializer(bias_init)
+            else:
+                raise ValueError("Parameter bias_init must be float or function or None.")
+            b = tf.get_variable(
+                'b', [n_units],
+                initializer=bias_init_func)
+            linearity = tf.nn.bias_add(mul, b)
+        else:
+            linearity = mul
     return activation(linearity)
 
 
