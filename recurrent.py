@@ -13,8 +13,6 @@ from tensorflow.python.ops import init_ops
 from tensorflow.python.ops import math_ops
 from tensorflow.python.ops import variable_scope as vs
 
-from tensorflow.python.ops.nn_ops import conv2d
-
 from tensorflow.python.ops.math_ops import sigmoid
 from tensorflow.python.ops.math_ops import tanh
 
@@ -349,92 +347,45 @@ class BasicLSTMConv2DCell(RNNConv2DCell):
         with vs.variable_scope(scope or type(self).__name__):  # "BasicLSTMConv2DCell"
             c, h = state
             
-            print('c', c)
-            print('h', h)
-                
-            concat = _conv2d(inputs, h, self._nb_rows, self._nb_cols, self._nb_filters , True)
+            conv_xi = tt.network.conv2d("Conv_xi", inputs, self._nb_filters,
+                                        self._nb_rows, self._nb_cols, 1, 1,
+                                        bias_init=0.0)
+            conv_xj = tt.network.conv2d("Conv_xj", inputs,self._nb_filters,
+                                        self._nb_rows, self._nb_cols, 1, 1,
+                                        bias_init=0.0)
+            conv_xf = tt.network.conv2d("Conv_xf", inputs, self._nb_filters,
+                                        self._nb_rows, self._nb_cols, 1, 1,
+                                        bias_init=self._forget_bias)
+            conv_xo = tt.network.conv2d("Conv_xo", inputs, self._nb_filters,
+                                        self._nb_rows, self._nb_cols, 1, 1,
+                                        bias_init=0.0)
 
-            # i = input_gate, j = new_input, f = forget_gate, o = output_gate
-            i = concat[0]
-            j = concat[1]
-            f = concat[2]
-            o = concat[3]
-            
-            print('i', i.get_shape())
-            print('j', j.get_shape())
-            print('f', f.get_shape())
-            print('o', o.get_shape())
+            conv_hi = tt.network.conv2d("Conv_hi", h, self._nb_filters, 
+                                        self._nb_rows, self._nb_cols, 1, 1,
+                                        bias_init=None)
+            conv_hj = tt.network.conv2d("Conv_hj", h, self._nb_filters,
+                                        self._nb_rows, self._nb_cols, 1, 1,
+                                        bias_init=None)
+            conv_hf = tt.network.conv2d("Conv_hf", h, self._nb_filters,
+                                        self._nb_rows, self._nb_cols, 1, 1,
+                                        bias_init=None)
+            conv_ho = tt.network.conv2d("Conv_ho", h, self._nb_filters,
+                                        self._nb_rows, self._nb_cols, 1, 1,
+                                        bias_init=None)
 
-            new_c = (c * sigmoid(f + self._forget_bias) + sigmoid(i) *
-                 self._activation(j))
-            new_h = self._activation(new_c) * sigmoid(o)
-            
+            i = conv_xi + conv_hi  # input gate
+            j = conv_xj + conv_hj  # new_input
+            f = conv_xf + conv_hf  # forget_gate
+            o = conv_xo + conv_ho  # output_gate
+
             # i_t = sig(i)
             # f_t = sig(f + b_f)
             # new_c = f_t * c + i_t * tanh(j)
             # o_t = sig(o)
             # new_h = o_t * tanh(new_c)
+            new_c = (c * sigmoid(f) + sigmoid(i) *
+                 self._activation(j))
+            new_h = self._activation(new_c) * sigmoid(o)
 
             new_state = tf.nn.rnn_cell.LSTMStateTuple(new_c, new_h)
             return new_h, new_state
-
-        
-def _conv2d(inputs, hidden, rows, cols, filters, bias, bias_start=0.0, scope=None):
-    """Conv map: sum_i(conv(args[i], W[i])), where W[i] is a variable.
-    Args:
-        args: a 4D Tensor or a list of 4D, batch x height x width x filters, Tensors.
-        output_size: int, second dimension of W[i].
-        bias: boolean, whether to add a bias term or not.
-        bias_start: starting value to initialize the bias; 0 by default.
-        scope: VariableScope for the created subgraph; defaults to "Linear".
-    Returns:
-        A 4D Tensor with shape [batch x height x width x filters] equal to
-        sum_i(args[i] * W[i]), where W[i]s are newly created matrices.
-    Raises:
-        ValueError: if some of the arguments has unspecified or wrong shape.
-    """
-
-    # Now the computation.
-    with vs.variable_scope(scope or "Conv"):
-        input_channels = inputs.get_shape()[-1]
-
-        k_inputs1 = vs.get_variable("Kernel_w1", [rows, cols, input_channels, filters]) # TODO: use channels_in from input
-        k_inputs2 = vs.get_variable("Kernel_w2", [rows, cols, input_channels, filters]) # TODO: use channels_in from input
-        k_inputs3 = vs.get_variable("Kernel_w3", [rows, cols, input_channels, filters]) # TODO: use channels_in from input
-        k_inputs4 = vs.get_variable("Kernel_w4", [rows, cols, input_channels, filters]) # TODO: use channels_in from input
-        
-        k_hidden1 = vs.get_variable("Kernel_u1", [rows, cols, filters, filters]) # TODO: use channels_in from input
-        k_hidden2 = vs.get_variable("Kernel_u2", [rows, cols, filters, filters]) # TODO: use channels_in from input
-        k_hidden3 = vs.get_variable("Kernel_u3", [rows, cols, filters, filters]) # TODO: use channels_in from input
-        k_hidden4 = vs.get_variable("Kernel_u4", [rows, cols, filters, filters]) # TODO: use channels_in from input
-
-        conv_inputs1 = conv2d(inputs, k_inputs1, [1, 1, 1, 1], "SAME")
-        conv_inputs2 = conv2d(inputs, k_inputs2, [1, 1, 1, 1], "SAME")
-        conv_inputs3 = conv2d(inputs, k_inputs3, [1, 1, 1, 1], "SAME")
-        conv_inputs4 = conv2d(inputs, k_inputs4, [1, 1, 1, 1], "SAME")
-        
-        conv_hidden1 = conv2d(hidden, k_hidden1, [1, 1, 1, 1], "SAME")
-        conv_hidden2 = conv2d(hidden, k_hidden2, [1, 1, 1, 1], "SAME")
-        conv_hidden3 = conv2d(hidden, k_hidden3, [1, 1, 1, 1], "SAME")
-        conv_hidden4 = conv2d(hidden, k_hidden4, [1, 1, 1, 1], "SAME")
-        
-        res1 = conv_inputs1 + conv_hidden1
-        res2 = conv_inputs2 + conv_hidden2
-        res3 = conv_inputs3 + conv_hidden3
-        res4 = conv_inputs4 + conv_hidden4
-        
-        if not bias:
-            return [res1, res2, res3, res4]
-        bias_term1 = vs.get_variable(
-            "Bias1", [filters],
-            initializer=init_ops.constant_initializer(bias_start))
-        bias_term2 = vs.get_variable(
-            "Bias2", [filters],
-            initializer=init_ops.constant_initializer(bias_start))
-        bias_term3 = vs.get_variable(
-            "Bias3", [filters],
-            initializer=init_ops.constant_initializer(bias_start))
-        bias_term4 = vs.get_variable(
-            "Bias4", [filters],
-            initializer=init_ops.constant_initializer(bias_start))
-    return [res1 + bias_term1, res2 + bias_term2, res3 + bias_term3, res4 + bias_term4]
