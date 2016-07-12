@@ -1,5 +1,5 @@
 import board
-import initializations
+import init
 import network
 import recurrent
 import visualization
