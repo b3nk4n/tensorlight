@@ -14,7 +14,7 @@ from tensorflow.python.ops import math_ops
 from tensorflow.python.ops import variable_scope as vs
 
 
-def rnn_conv2d(cell, inputs, initial_state=None, dtype=None,
+def rnn_conv2d(cell, inputs, initial_state=None, dtype=tf.float32,
         sequence_length=None, scope=None):
     """Creates a recurrent neural network specified by RNNConv2DCell `cell`.
     The simplest form of RNN network generated is:
@@ -258,7 +258,10 @@ class BasicLSTMConv2DCell(RNNConv2DCell):
     """
 
     def __init__(self, nb_rows, nb_cols, nb_filters, height, width,
-                 forget_bias=1.0, activation=tf.nn.tanh, inner_activation=tf.nn.sigmoid):
+                 weight_init=tf.contrib.layers.xavier_initializer(),
+                 hidden_weight_init=tt.init.orthogonal_initializer(),
+                 forget_bias=1.0,
+                 activation=tf.nn.tanh, hidden_activation=tf.nn.sigmoid):
         """Initialize the basic 2D convolutional LSTM cell.
         Parameters
         ----------
@@ -273,20 +276,30 @@ class BasicLSTMConv2DCell(RNNConv2DCell):
             The height of the input image.
         width: int
             The width of the input image.
+        weight_init : float or function, optional
+            Initialization's of the input weights, either the standard deviation
+            or a initializer-fuction such as xavier init.
+        hidden_weight_init : float or function, optional
+            Initialization's of the hidden weights, either the standard deviation
+            or a initializer-fuction such as xavier or orthogonal init.
         forget_bias: float
             The bias added to forget gates (see above).
         activation: function
-            Activation function of the inner states.
+            Activation function of the output and cell states.
+        hidden_activation: function
+            Activation function of the hidden states.
         """
         self._nb_rows = nb_rows
         self._nb_cols = nb_cols
         self._nb_filters = nb_filters
         self._height = height
         self._width = width
+        self._weight_init = weight_init
+        self._hidden_weight_init = hidden_weight_init
         self._forget_bias = forget_bias
         self._state_is_tuple = True
         self._activation = activation
-        self._inner_activation = inner_activation
+        self._hidden_activation = hidden_activation
 
     @property
     def state_size(self):
@@ -305,28 +318,36 @@ class BasicLSTMConv2DCell(RNNConv2DCell):
             
             conv_xi = tt.network.conv2d("Conv_xi", inputs, self._nb_filters,
                                         self._nb_rows, self._nb_cols, 1, 1,
+                                        weight_init=self._weight_init,
                                         bias_init=0.0)
             conv_xj = tt.network.conv2d("Conv_xj", inputs,self._nb_filters,
                                         self._nb_rows, self._nb_cols, 1, 1,
+                                        weight_init=self._weight_init,
                                         bias_init=0.0)
             conv_xf = tt.network.conv2d("Conv_xf", inputs, self._nb_filters,
                                         self._nb_rows, self._nb_cols, 1, 1,
+                                        weight_init=self._weight_init,
                                         bias_init=self._forget_bias)
             conv_xo = tt.network.conv2d("Conv_xo", inputs, self._nb_filters,
                                         self._nb_rows, self._nb_cols, 1, 1,
+                                        weight_init=self._weight_init,
                                         bias_init=0.0)
 
             conv_hi = tt.network.conv2d("Conv_hi", h, self._nb_filters, 
                                         self._nb_rows, self._nb_cols, 1, 1,
+                                        weight_init=self._hidden_weight_init,
                                         bias_init=None)
             conv_hj = tt.network.conv2d("Conv_hj", h, self._nb_filters,
                                         self._nb_rows, self._nb_cols, 1, 1,
+                                        weight_init=self._hidden_weight_init,
                                         bias_init=None)
             conv_hf = tt.network.conv2d("Conv_hf", h, self._nb_filters,
                                         self._nb_rows, self._nb_cols, 1, 1,
+                                        weight_init=self._hidden_weight_init,
                                         bias_init=None)
             conv_ho = tt.network.conv2d("Conv_ho", h, self._nb_filters,
                                         self._nb_rows, self._nb_cols, 1, 1,
+                                        weight_init=self._hidden_weight_init,
                                         bias_init=None)
 
             i = conv_xi + conv_hi  # input gate
@@ -339,9 +360,9 @@ class BasicLSTMConv2DCell(RNNConv2DCell):
             # new_c = f_t * c + i_t * tanh(j)
             # o_t = sig(o)
             # new_h = o_t * tanh(new_c)
-            new_c = (c * self._inner_activation(f) + self._inner_activation(i) *
+            new_c = (c * self._hidden_activation(f) + self._hidden_activation(i) *
                  self._activation(j))
-            new_h = self._activation(new_c) * self._inner_activation(o)
+            new_h = self._activation(new_c) * self._hidden_activation(o)
 
             new_state = tf.nn.rnn_cell.LSTMStateTuple(new_c, new_h)
             return new_h, new_state
