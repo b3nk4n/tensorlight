@@ -18,7 +18,7 @@ def lrelu(x, leak=0.2, name=None):
     x : Tensor
         Output of the nonlinearity.
     """
-    with tf.op_scope([x], name, 'LReLu'):
+    with tf.op_scope([x], name, 'lrelu'):
         f1 = 0.5 * (1 + leak)
         f2 = 0.5 * (1 - leak)
         x = tf.add(f1 * x, f2 * abs(x))
@@ -39,7 +39,7 @@ def hard_sigmoid(x, name=None):
     x: Tensor
         Output of the nonlinearity.
     """
-    with tf.op_scope([x], name, 'Hard sigmoid'):
+    with tf.op_scope([x], name, 'hard_sigmoid'):
         x = (0.2 * x) + 0.5
         x = tf.clip_by_value(x, tf.cast(0., dtype=tf.float32),
                             tf.cast(1., dtype=tf.float32))
