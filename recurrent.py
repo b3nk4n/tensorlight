@@ -95,15 +95,11 @@ def rnn_conv2d(cell, inputs, initial_state=None, dtype=None,
             batch_size = array_ops.shape(inputs[0])[0]
         if initial_state is not None:
             state = initial_state
-            print("state not None c: ", state[0])
-            print("state not None h: ", state[1])
         else:
             if not dtype:
                 raise ValueError("If no initial_state is provided, "
                                  "dtype must be specified")
             state = cell.zero_state(batch_size, dtype)
-            print("state None c: ", state[0])
-            print("state None h: ", state[1])
 
         if sequence_length is not None:
             # Prepare variables
@@ -143,43 +139,6 @@ def rnn_conv2d(cell, inputs, initial_state=None, dtype=None,
             outputs.append(output)
 
         return (outputs, state)
-    
-    
-def _packed_state_with_indices(structure, flat, index):
-    """Helper function for _packed_state.
-    Args:
-        structure: Substructure (tuple of elements and/or tuples) to mimic
-        flat: Flattened values to output substructure for.
-        index: Index at which to start reading from flat.
-    Returns:
-        The tuple (new_index, child), where:
-        * new_index - the updated index into `flat` having processed `structure`.
-        * packed - the subset of `flat` corresponding to `structure`,
-                   having started at `index`, and packed into the same nested
-                   format.
-    Raises:
-        ValueError: if `structure` contains more elements than `flat`
-        (assuming indexing starts from `index`).
-    """
-    packed = []
-    print('structure', structure)
-    print('flat', flat)
-    for s in structure:
-        print('s', s)
-        print('index', index)
-        if tf.nn.rnn_cell._is_sequence(s):
-            print('pswi: is sequence')
-            new_index, child = _packed_state_with_indices(s, flat, index)
-            print('new_index', new_index)
-            print('child', child)
-            packed.append(tf.nn.rnn_cell._sequence_like(s, child))
-            index = new_index
-        else:
-            print('pswi: is no sequence')
-            
-            packed.append(flat[index])
-            index += 1
-    return (index, packed)
 
 
 def _packed_state(structure, state):
@@ -199,11 +158,8 @@ def _packed_state(structure, state):
     if not tf.nn.rnn_cell._is_sequence(state):
         raise TypeError("state must be a sequence")
     
-    print('structure: ', structure)
     # flat_structure = tf.nn.rnn_cell._unpacked_state(structure)
     flat_structure = (structure[0], structure[1])
-    print('flat structure: ', flat_structure)
-    print('size: flat: {}, state: {}'.format(len(flat_structure), len(state)))
     if len(flat_structure) != len(state):
         raise ValueError(
             "Internal error: Could not pack state.  Structure had %d elements, but "
@@ -275,32 +231,33 @@ class RNNConv2DCell(object):
             the shapes `[batch_size x s]` for each s in `state_size`.
         """
         state_size = self.state_size
-        print('state-size: ', state_size)
         if tf.nn.rnn_cell._is_sequence(state_size):
-            #state_size_flat = tf.nn.rnn_cell._unpacked_state(state_size)
             state_size_flat = (state_size.c, state_size.h)
-            print('state_size_flat', state_size_flat)
             zeros_flat = [
                 array_ops.zeros(array_ops.pack([batch_size, s[0], s[1], s[2]]), dtype=dtype)
                 for s in state_size_flat]
             for s, z in zip(state_size_flat, zeros_flat):
                 z.set_shape([None, s[0], s[1], s[2]])
-            zeros = _packed_state(structure=state_size, state=zeros_flat)
+            zeros = tf.nn.rnn_cell._sequence_like(state_size, [zeros_flat[0], zeros_flat[1]])
         else:
             raise ValueError('Internal state is not a sequence.')
-        print('zeros', zeros)
         return zeros
 
 
 
 class BasicLSTMConv2DCell(RNNConv2DCell):
     """Basic 2D convolutional LSTM recurrent network cell.
-    The implementation is based on: https://arxiv.org/abs/1506.04214.
     We add forget_bias (default: 1) to the biases of the forget gate in order to
     reduce the scale of forgetting in the beginning of the training.
     It does not allow cell clipping, a projection layer, and does not
     use peep-hole connections: it is the basic baseline.
     For advanced models, please use the full LSTMConv2DCell that follows.
+    
+    References:
+    [Convolutional LSTM Network: A Machine Learning Approach for
+    Precipitation Nowcasting](http://arxiv.org/pdf/1506.04214v1.pdf)
+    The current implementation does not include the feedback loop on the
+    cells output.
     """
 
     def __init__(self, nb_rows, nb_cols, nb_filters, height, width, forget_bias=1.0, activation=tanh):
@@ -374,9 +331,9 @@ class BasicLSTMConv2DCell(RNNConv2DCell):
                                         bias_init=None)
 
             i = conv_xi + conv_hi  # input gate
-            j = conv_xj + conv_hj  # new_input
-            f = conv_xf + conv_hf  # forget_gate
-            o = conv_xo + conv_ho  # output_gate
+            j = conv_xj + conv_hj  # new input
+            f = conv_xf + conv_hf  # forget gate
+            o = conv_xo + conv_ho  # output gate
 
             # i_t = sig(i)
             # f_t = sig(f + b_f)
