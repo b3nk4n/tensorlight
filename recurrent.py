@@ -50,7 +50,7 @@ def rnn_conv2d(cell, inputs, initial_state=None, dtype=tf.float32,
             initial_state is not provided.
         sequence_length: Specifies the length of each sequence in inputs.
                          An int32 or int64 vector (tensor) size `[batch_size]`, values in `[0, T)`.
-        scope: VariableScope for the created subgraph; defaults to "RNN".
+        scope: VariableScope for the created subgraph; defaults to "RNNConv2D".
     Returns:
         A pair (outputs, state) where:
         - outputs is a length T list of outputs (one for each input)
@@ -137,36 +137,6 @@ def rnn_conv2d(cell, inputs, initial_state=None, dtype=tf.float32,
 
         return (outputs, state)
 
-
-def _packed_state(structure, state):
-    """Returns the flat state packed into a recursive tuple like structure.
-    Args:
-        structure: tuple or list constructed of scalars and/or other tuples/lists.
-        state: flattened state.
-    Returns:
-        packed: `state` converted to have the same recursive structure as
-                `structure`.
-    Raises:
-        TypeError: If structure or state is not a tuple or list.
-        ValueError: If state and structure have different element counts.
-    """
-    if not tf.nn.rnn_cell._is_sequence(structure):
-        raise TypeError("structure must be a sequence")
-    if not tf.nn.rnn_cell._is_sequence(state):
-        raise TypeError("state must be a sequence")
-    
-    # flat_structure = tf.nn.rnn_cell._unpacked_state(structure)
-    flat_structure = (structure[0], structure[1])
-    if len(flat_structure) != len(state):
-        raise ValueError(
-            "Internal error: Could not pack state.  Structure had %d elements, but "
-            "state had %d elements.  Structure: %s, state: %s."
-            % (len(flat_structure), len(state), structure, state))
-
-    #(_, packed) = _packed_state_with_indices(structure, state, 0)
-    packed = [state[0], state[1]]
-    return tf.nn.rnn_cell._sequence_like(structure, packed)
-    
     
 class RNNConv2DCell(object):
     """Abstract object representing an 2D convolutional RNN cell.
@@ -229,17 +199,31 @@ class RNNConv2DCell(object):
         """
         state_size = self.state_size
         if tf.nn.rnn_cell._is_sequence(state_size):
-            state_size_flat = (state_size.c, state_size.h)
-            zeros_flat = [
-                array_ops.zeros(array_ops.pack([batch_size, s[0], s[1], s[2]]), dtype=dtype)
-                for s in state_size_flat]
-            for s, z in zip(state_size_flat, zeros_flat):
-                z.set_shape([None, s[0], s[1], s[2]])
-            zeros = tf.nn.rnn_cell._sequence_like(state_size, [zeros_flat[0], zeros_flat[1]])
+            if isinstance(state_size, tf.nn.rnn_cell.LSTMStateTuple):
+                # normal usage
+                state_size_flat = (state_size.c, state_size.h)
+                zeros_flat = [
+                    array_ops.zeros(array_ops.pack([batch_size, s[0], s[1], s[2]]), dtype=dtype)
+                    for s in state_size_flat]
+                for s, z in zip(state_size_flat, zeros_flat):
+                    z.set_shape([None, s[0], s[1], s[2]])
+                zeros = tf.nn.rnn_cell._sequence_like(state_size, [zeros_flat[0], zeros_flat[1]])
+            else:
+                # when used with MultiRNNConv2DCell, it gets a tuple of state sizes
+                layers = len(state_size)
+                zeros_list = []
+                for i in xrange(layers):
+                    state_size_flat = (state_size[i].c, state_size[i].h)
+                    zeros_flat = [
+                        array_ops.zeros(array_ops.pack([batch_size, s[0], s[1], s[2]]), dtype=dtype)
+                        for s in state_size_flat]
+                    for s, z in zip(state_size_flat, zeros_flat):
+                        z.set_shape([None, s[0], s[1], s[2]])
+                    zeros_list.append(tf.nn.rnn_cell._sequence_like(state_size[0], [zeros_flat[0], zeros_flat[1]]))
+                zeros = tuple(zeros_list)
         else:
             raise ValueError('Internal state is not a sequence.')
         return zeros
-
 
 
 class BasicLSTMConv2DCell(RNNConv2DCell):
@@ -366,3 +350,48 @@ class BasicLSTMConv2DCell(RNNConv2DCell):
 
             new_state = tf.nn.rnn_cell.LSTMStateTuple(new_c, new_h)
             return new_h, new_state
+
+        
+class MultiRNNConv2DCell(RNNConv2DCell):
+    """2D convolutional RNN cell composed sequentially of multiple simple cells."""
+
+    def __init__(self, cells, state_is_tuple=True):
+        """Create a RNN cell composed sequentially of a number of RNNConv2DCells.
+        Args:
+            cells: list of RNNConv2DCells that will be composed in this order.
+            state_is_tuple: Just kept for compatibility, not used internally.
+        Raises:
+            ValueError: if cells is empty (not allowed), or at least one of the cells
+                        returns a state tuple but the flag `state_is_tuple` is `False`.
+        """
+        if not cells:
+            raise ValueError("Must specify at least one cell for MultiRNNConv2DCell.")
+        self._cells = cells
+        self._state_is_tuple = state_is_tuple
+
+    @property
+    def state_size(self):
+        return tuple(cell.state_size for cell in self._cells)
+
+    @property
+    def output_size(self):
+        return self._cells[-1].output_size
+
+    def __call__(self, inputs, state, scope=None):
+        """Run this multi-layer cell on inputs, starting from state."""
+        with vs.variable_scope(scope or type(self).__name__):  # "MultiRNNConv2DCell"
+            cur_state_pos = 0
+            cur_inp = inputs
+            new_states = []
+            for i, cell in enumerate(self._cells):
+                with vs.variable_scope("Cell%d" % i):
+                    if not tf.nn.rnn_cell._is_sequence(state):
+                        raise ValueError(
+                            "Expected state to be a tuple of length %d, but received: %s"
+                            % (len(self.state_size), state))
+                    cur_state = state[i]
+                    cur_inp, new_state = cell(cur_inp, cur_state)
+                    new_states.append(new_state)
+        new_states = (tuple(new_states) if self._state_is_tuple
+                      else array_ops.concat(1, new_states))
+        return cur_inp, new_states
