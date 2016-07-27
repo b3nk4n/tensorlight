@@ -160,6 +160,7 @@ def display_batch(img_array_batch, nrows=2, ncols=2):
         The image numpy data in format [batch_size, height, width, channels]
         or a list of numpy arrays in format [height, width, channels],
         which can have 1 or 3 color channels.
+        The data values have to be in range [0,1].
     nrows : uint, optional
         The number or rows.
      ncols : uint, optional
@@ -180,6 +181,7 @@ def display_array(img_array, format='png'):
     ----------
     img_array : numpy.ndarray
         The image data, which can have 1 or 3 color channels.
+        The data values have to be in range [0,255].
     format : str, optional
         The image format.
     """

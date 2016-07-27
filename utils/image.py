@@ -118,7 +118,7 @@ def to_grayscale(image):
 
 
 def to_rgb(image):
-    """Converts a grayscaled image to a colored one.
+    """Converts a grayscaled image with scale [0,1] to a colored one.
     Parameters
     ----------
     image: ndarray(uint8)
