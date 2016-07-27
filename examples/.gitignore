@@ -1,4 +1,6 @@
 MNIST_data/
+MovingMNIST_data/
+tmp/
 train/
 out/
 .ipynb_checkpoints/

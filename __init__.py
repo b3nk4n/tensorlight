@@ -1,4 +1,5 @@
 import board
+import datasets
 import image
 import init
 import inputs
