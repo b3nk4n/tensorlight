@@ -44,7 +44,7 @@ def get_variable(name, shape=None, dtype=tf.float32, initializer=None, regulariz
                 or when violating reuse during variable creation.
                 Reuse is set inside variable_scope.
     """
-    if device not None:
+    if device is not None:
         # specific device
         with tf.device(device):
             var = tf.get_variable(name, shape, dtype, initializer, regularizer,
@@ -246,7 +246,7 @@ def conv2d_transpose(name_or_scope,
         else:
             raise ValueError("Parameter weight_init must be float or function.")
         
-        w = tf.get_variable(
+        w = get_variable(
             'W', [k_h, k_w, n_filters, static_input_shape[3]],
             initializer=weight_init_func,
             regularizer=regularizer,
@@ -273,7 +273,7 @@ def conv2d_transpose(name_or_scope,
                 bias_init_func = tf.constant_initializer(bias_init)
             else:
                 raise ValueError("Parameter bias_init must be float or function or None.")
-            b = tf.get_variable(
+            b = get_variable(
                 'b', [n_filters],
                 initializer=bias_init_func,
                 device=device)
@@ -323,7 +323,7 @@ def fc(name_or_scope, x, n_units,
        weight_init=0.01, bias_init=0.1,
        regularizer=None,
        activation=lambda x: x,
-       device=device):
+       device=None):
     """Fully-connected network .
     Parameters
     ----------
@@ -363,7 +363,7 @@ def fc(name_or_scope, x, n_units,
         else:
             raise ValueError("Parameter weight_init must be float or function.")
         
-        w = tf.get_variable("W", [shape[1], n_units], tf.float32,
+        w = get_variable("W", [shape[1], n_units], tf.float32,
                             initializer=weight_init_func,
                             regularizer=regularizer,
                             device=device)
@@ -376,7 +376,7 @@ def fc(name_or_scope, x, n_units,
                 bias_init_func = tf.constant_initializer(bias_init)
             else:
                 raise ValueError("Parameter bias_init must be float or function or None.")
-            b = tf.get_variable(
+            b = get_variable(
                 'b', [n_units],
                 initializer=bias_init_func,
                 device=device)
