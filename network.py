@@ -3,6 +3,61 @@ import tensorflow as tf
 from tensorflow.python.framework import ops
 
 
+def get_variable(name, shape=None, dtype=tf.float32, initializer=None, regularizer=None,
+                 trainable=True, collections=None, caching_device=None, partitioner=None, 
+                 validate_shape=True, device=None):
+    """Gets an existing variable with these parameters or create a new one.
+       Extends TensorFlow's default function with the ability
+       to assign it on a specific device
+    Parameters
+    ----------
+    name: The name of the new or existing variable.
+    shape: Shape of the new or existing variable.
+    dtype: Type of the new or existing variable (defaults to DT_FLOAT).
+    initializer: Initializer for the variable if one is created.
+    regularizer: A (Tensor -> Tensor or None) function
+        The result of applying it on a newly created variable will be added to
+        the collection GraphKeys.REGULARIZATION_LOSSES and can be used for regularization.
+    trainable: If True also add the variable to the graph collection
+               GraphKeys.TRAINABLE_VARIABLES (see tf.Variable).
+    collections: List of graph collections keys to add the Variable to.
+                 Defaults to [GraphKeys.VARIABLES] (see tf.Variable).
+    caching_device: Optional device string or function describing where the Variable
+                    should be cached for reading. Defaults to the Variable's device.
+                    If not None, caches on another device. Typical use is to cache on
+                    the device where the Ops using the Variable reside, to deduplicate
+                    copying through Switch and other conditional statements.
+    partitioner: Optional callable that accepts a fully defined TensorShape and
+                 dtype of the Variable to be created, and returns a list of partitions
+                 for each axis (currently only one axis can be partitioned).
+    validate_shape: If False, allows the variable to be initialized with a value of unknown shape.
+                    If True, the default, the shape of initial_value must be known.
+    device: str or None, optional
+        The device to which memory the variables will get stored on. (e.g. '/cpu:0')
+    Returns
+    ----------
+    The created or existing variable.
+
+    Raises
+    ----------
+    ValueError: When creating a new variable and shape is not declared, 
+                or when violating reuse during variable creation.
+                Reuse is set inside variable_scope.
+    """
+    if device not None:
+        # specific device
+        with tf.device(device):
+            var = tf.get_variable(name, shape, dtype, initializer, regularizer,
+                                  trainable, collections, caching_device, partitioner, 
+                                  validate_shape)
+    else:
+        # default device
+        var = tf.get_variable(name, shape, dtype, initializer, regularizer,
+                              trainable, collections, caching_device, partitioner, 
+                              validate_shape)
+    return var
+
+
 def lrelu(x, leak=0.2, name=None):
     """Leaky rectified linear unit.
     Parameters
@@ -27,7 +82,7 @@ def lrelu(x, leak=0.2, name=None):
 
 def hard_sigmoid(x, name=None):
     """Hard sigmoid implementation. This is a very rough approximation
-    of a real sigmoid function, but is much faster to calculate.
+       of a real sigmoid function, but is much faster to calculate.
     Parameters
     ----------
     x : Tensor
@@ -52,9 +107,10 @@ def conv2d(name_or_scope, x, n_filters,
            weight_init=0.01, bias_init=0.1,
            regularizer=None,
            activation=lambda x : x,
-           padding='SAME'):
+           padding='SAME',
+           device=None):
     """2D convolution that combines variable creation, activation
-    and applying bias.
+       and applying bias.
     Parameters
     ----------
     name_or_scope : str or VariableScope
@@ -86,6 +142,8 @@ def conv2d(name_or_scope, x, n_filters,
         Function which applies a nonlinearity
     padding : str, optional
         'SAME' or 'VALID'
+    device: str or None, optional
+        The device to which memory the variables will get stored on. (e.g. '/cpu:0')
     Returns
     -------
     x : Tensor
@@ -99,10 +157,11 @@ def conv2d(name_or_scope, x, n_filters,
         else:
             raise ValueError("Parameter weight_init must be float or function.")
         
-        w = tf.get_variable(
+        w = get_variable(
             'W', [k_h, k_w, x.get_shape()[-1], n_filters],
             initializer=weight_init_func,
-            regularizer=regularizer)
+            regularizer=regularizer,
+            device=device)
         conv = tf.nn.conv2d(
             x, w, strides=[1, stride_h, stride_w, 1], padding=padding)
         
@@ -113,9 +172,10 @@ def conv2d(name_or_scope, x, n_filters,
                 bias_init_func = tf.constant_initializer(bias_init)
             else:
                 raise ValueError("Parameter bias_init must be float or function or None.")
-            b = tf.get_variable(
+            b = get_variable(
                 'b', [n_filters],
-                initializer=bias_init_func)
+                initializer=bias_init_func,
+                device=device)
             linearity = tf.nn.bias_add(conv, b)
         else:
             linearity = conv
@@ -130,9 +190,10 @@ def conv2d_transpose(name_or_scope,
                      weight_init=0.01, bias_init=0.1,
                      regularizer=None,
                      activation=lambda x: x,
-                     padding='SAME',):
+                     padding='SAME',
+                     device=None):
     """2D transposed convolution (often called deconvolution, or upconvolution
-    that combines variable creation, activation and applying bias.
+       that combines variable creation, activation and applying bias.
     Parameters
     ----------
     name_or_scope : str or VariableScope
@@ -164,6 +225,8 @@ def conv2d_transpose(name_or_scope,
         Function which applies a nonlinearity
     padding : str, optional
         'SAME' or 'VALID' (currently only SAME is correctly implemented!)
+    device: str or None, optional
+        The device to which memory the variables will get stored on. (e.g. '/cpu:0')
     Returns
     -------
     x : Tensor
@@ -186,7 +249,8 @@ def conv2d_transpose(name_or_scope,
         w = tf.get_variable(
             'W', [k_h, k_w, n_filters, static_input_shape[3]],
             initializer=weight_init_func,
-            regularizer=regularizer)
+            regularizer=regularizer,
+            device=device)
         
         assert padding in {'SAME', 'VALID'}
         if (padding is 'SAME'):
@@ -211,7 +275,8 @@ def conv2d_transpose(name_or_scope,
                 raise ValueError("Parameter bias_init must be float or function or None.")
             b = tf.get_variable(
                 'b', [n_filters],
-                initializer=bias_init_func)
+                initializer=bias_init_func,
+                device=device)
             linearity = tf.nn.bias_add(convt, b)
         else:
             linearity = convt
@@ -223,7 +288,7 @@ def max_pool2d(x, k_h=5, k_w=5,
                padding='SAME',
                name=None):
     """2D max-pooling that combines variable creation, activation
-    and applying bias.
+       and applying bias.
     Parameters
     ----------
     x : Tensor
@@ -257,7 +322,8 @@ def max_pool2d(x, k_h=5, k_w=5,
 def fc(name_or_scope, x, n_units,
        weight_init=0.01, bias_init=0.1,
        regularizer=None,
-       activation=lambda x: x):
+       activation=lambda x: x,
+       device=device):
     """Fully-connected network .
     Parameters
     ----------
@@ -280,6 +346,8 @@ def fc(name_or_scope, x, n_units,
         for regularization.
     activation : arguments, optional
         Function which applies a nonlinearity
+    device: str or None, optional
+        The device to which memory the variables will get stored on. (e.g. '/cpu:0')
     Returns
     -------
     x : Tensor
@@ -297,7 +365,8 @@ def fc(name_or_scope, x, n_units,
         
         w = tf.get_variable("W", [shape[1], n_units], tf.float32,
                             initializer=weight_init_func,
-                            regularizer=regularizer)
+                            regularizer=regularizer,
+                            device=device)
         mul = tf.matmul(x, w)
         
         if bias_init is not None:
@@ -309,7 +378,8 @@ def fc(name_or_scope, x, n_units,
                 raise ValueError("Parameter bias_init must be float or function or None.")
             b = tf.get_variable(
                 'b', [n_units],
-                initializer=bias_init_func)
+                initializer=bias_init_func,
+                device=device)
             linearity = tf.nn.bias_add(mul, b)
         else:
             linearity = mul
