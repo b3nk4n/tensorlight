@@ -49,7 +49,7 @@ def loss_summary(losses, decay=0.99):
         Op for generating moving averages of losses.
     """
     # Compute the moving average of all individual losses and the total loss.
-    loss_averages = tf.train.ExponentialMovingAverage(0.9, name="avg")
+    loss_averages = tf.train.ExponentialMovingAverage(decay, name="avg")
     loss_averages_op = loss_averages.apply(losses)
 
     # Attach a scalar summary to all individual losses and the total loss; do the
