@@ -5,5 +5,6 @@ import init
 import inputs
 import network
 import recurrent
+import training
 import visualization
 import utils
