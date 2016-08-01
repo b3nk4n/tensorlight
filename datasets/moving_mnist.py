@@ -12,52 +12,53 @@ MNIST_TEST_URL = 'http://www.cs.toronto.edu/~emansim/datasets/bouncing_mnist_tes
 
 
 def _get_random_trajectory(batch_size, seq_length, image_size, digit_size, step_length):
-        length = seq_length
-        canvas_size = image_size - digit_size
+    length = seq_length
+    canvas_size_h = image_size[0] - digit_size
+    canvas_size_w = image_size[1] - digit_size
 
-        # Initial position uniform random inside the box.
-        y = np.random.rand(batch_size)
-        x = np.random.rand(batch_size)
+    # Initial position uniform random inside the box.
+    y = np.random.rand(batch_size)
+    x = np.random.rand(batch_size)
 
-        # Choose a random velocity.
-        theta = np.random.rand(batch_size) * 2 * np.pi
-        v_y = np.sin(theta)
-        v_x = np.cos(theta)
+    # Choose a random velocity.
+    theta = np.random.rand(batch_size) * 2 * np.pi
+    v_y = np.sin(theta)
+    v_x = np.cos(theta)
 
-        start_y = np.zeros((length, batch_size))
-        start_x = np.zeros((length, batch_size))
-        for i in xrange(length):
-            # Take a step along velocity.
-            y += v_y * step_length
-            x += v_x * step_length
+    start_y = np.zeros((length, batch_size))
+    start_x = np.zeros((length, batch_size))
+    for i in xrange(length):
+        # Take a step along velocity.
+        y += v_y * step_length
+        x += v_x * step_length
 
-            # Bounce off edges.
-            for j in xrange(batch_size):
-                if x[j] <= 0:
-                    x[j] = 0
-                    v_x[j] = -v_x[j]
-                if x[j] >= 1.0:
-                    x[j] = 1.0
-                    v_x[j] = -v_x[j]
-                if y[j] <= 0:
-                    y[j] = 0
-                    v_y[j] = -v_y[j]
-                if y[j] >= 1.0:
-                    y[j] = 1.0
-                    v_y[j] = -v_y[j]
-            start_y[i, :] = y
-            start_x[i, :] = x
+        # Bounce off edges.
+        for j in xrange(batch_size):
+            if x[j] <= 0:
+                x[j] = 0
+                v_x[j] = -v_x[j]
+            if x[j] >= 1.0:
+                x[j] = 1.0
+                v_x[j] = -v_x[j]
+            if y[j] <= 0:
+                y[j] = 0
+                v_y[j] = -v_y[j]
+            if y[j] >= 1.0:
+                y[j] = 1.0
+                v_y[j] = -v_y[j]
+        start_y[i, :] = y
+        start_x[i, :] = x
 
-        # Scale to the size of the canvas.
-        start_y = (canvas_size * start_y).astype(np.int32)
-        start_x = (canvas_size * start_x).astype(np.int32)
-        return start_y, start_x
+    # Scale to the size of the canvas.
+    start_y = (canvas_size_h * start_y).astype(np.int32)
+    start_x = (canvas_size_w * start_x).astype(np.int32)
+    return start_y, start_x
 
 
 
 class MovingMNISTTrainDataset(object):
     """Moving MNIST dataset that creates data on the fly."""
-    def __init__(self, batch_size, num_frames, image_size=64, num_digits=2, step_length=0.1):
+    def __init__(self, batch_size, num_frames, image_size=(64, 64), num_digits=2, step_length=0.1):
         """Creates a dataset instance.
         Reference: Based on Srivastava et al.
                    http://www.cs.toronto.edu/~nitish/unsupervised_video/
@@ -72,13 +73,13 @@ class MovingMNISTTrainDataset(object):
         self._step_length = step_length
         self._dataset_size = sys.maxint
         self._digit_size = 28
-        self._frame_size = self._image_size ** 2
+        self._frame_size = image_size[0] * image_size[1]
 
         try:
             filepath = tt.utils.data.download(MNIST_URL, 'tmp')
             f = h5py.File(filepath)
         except:
-            print 'Please set the correct path to MNIST dataset'
+            print 'Please set the correct path to MNIST dataset. Might be caused by a download error.'
             sys.exit()
 
         self._data = f['train'].value.reshape(-1, 28, 28)
@@ -116,7 +117,7 @@ class MovingMNISTTrainDataset(object):
                                                   self._step_length)
     
         # minibatch data
-        data = np.zeros((self._batch_size, self._seq_length, self._image_size, self._image_size, 1),
+        data = np.zeros((self._batch_size, self._seq_length, self._image_size[0], self._image_size[1], 1),
                         dtype=np.float32)
     
         for j in xrange(self._batch_size):
@@ -145,7 +146,7 @@ class MovingMNISTTrainDataset(object):
     
 class MovingMNISTValidDataset(object):
     """Moving MNIST dataset for validation."""
-    def __init__(self, batch_size, num_frames, image_size=64, num_digits=2, step_length=0.1):
+    def __init__(self, batch_size, num_frames, image_size=(64, 64), num_digits=2, step_length=0.1):
         """Creates a dataset instance.
         Reference: Based on Srivastava et al.
                    http://www.cs.toronto.edu/~nitish/unsupervised_video/
@@ -160,13 +161,13 @@ class MovingMNISTValidDataset(object):
         self._step_length = step_length
         self._dataset_size = 10000
         self._digit_size = 28
-        self._frame_size = self._image_size ** 2
+        self._frame_size = image_size[0] * image_size[1]
 
         try:
             filepath = tt.utils.data.download(MNIST_URL, 'tmp')
             f = h5py.File(filepath)
         except:
-            print 'Please set the correct path to MNIST dataset'
+            print 'Please set the correct path to MNIST dataset. Might be caused by a download error.'
             sys.exit()
 
         self._data = f['validation'].value.reshape(-1, 28, 28)
@@ -204,7 +205,7 @@ class MovingMNISTValidDataset(object):
                                                   self._step_length)
     
         # minibatch data
-        data = np.zeros((self._batch_size, self._seq_length, self._image_size, self._image_size, 1), 
+        data = np.zeros((self._batch_size, self._seq_length, self._image_size[0], self._image_size[1], 1), 
                         dtype=np.float32)
     
         for j in xrange(self._batch_size):
@@ -236,8 +237,8 @@ class MovingMNISTTestDataset(object):
     def __init__(self, batch_size, num_frames):
         self._seq_length = num_frames
         self._batch_size = batch_size
-        self._image_size = 64
-        self._frame_size = self._image_size ** 2
+        self._image_size = (64, 64)
+        self._frame_size = self._image_size[0] * self._image_size[1]
 
         try:
             filepath = tt.utils.data.download(MNIST_TEST_URL, 'tmp')
@@ -247,7 +248,7 @@ class MovingMNISTTestDataset(object):
             # use value scale [0,1]
             self._data = self._data / 255.0  
         except:
-            print 'Please set the correct path to the dataset'
+            print 'Please set the correct path to the dataset. Might be caused by a download error.'
             sys.exit()
 
         self._dataset_size = self._data.shape[0]
