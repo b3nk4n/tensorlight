@@ -5,18 +5,18 @@ import tensorflow as tf
 TOWER_NAME = 'tower'
 
 
-def _remove_tower_name(x):
+def _remove_tower_name(name):
     """Remove 'tower_[0-9]/' from the name in case this is a multi-GPU training
        session. This helps the clarity of presentation on tensorboard.
     Parameters
     ----------
-    x: Tensor
-        The tensor from which the op name is read and shortened.
+    x: str
+        The tensor name from which the op name is read and shortened.
     Returns
     ----------
     The op/variable name without a tower prefix
     """
-    return re.sub('%s_[0-9]*/' % TOWER_NAME, '', x.op.name)
+    return re.sub('%s_[0-9]*/' % TOWER_NAME, '', name)
     
 
 def activation_summary(x, show_sparsity=False, scope=None):
