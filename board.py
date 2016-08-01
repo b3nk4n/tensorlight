@@ -5,10 +5,24 @@ import tensorflow as tf
 TOWER_NAME = 'tower'
 
 
+def _remove_tower_name(x):
+    """Remove 'tower_[0-9]/' from the name in case this is a multi-GPU training
+       session. This helps the clarity of presentation on tensorboard.
+    Parameters
+    ----------
+    x: Tensor
+        The tensor from which the op name is read and shortened.
+    Returns
+    ----------
+    The op/variable name without a tower prefix
+    """
+    return re.sub('%s_[0-9]*/' % TOWER_NAME, '', x.op.name)
+    
+
 def activation_summary(x, show_sparsity=False, scope=None):
     """Creates a summary for an activations.
-    Creates a summary that provides a histogram of activations.
-    Creates a summary that measure the sparsity of activations.
+       Creates a summary that provides a histogram of activations.
+       Creates a summary that measure the sparsity of activations.
     Parameters
     ----------
     x: Tensor
@@ -20,9 +34,7 @@ def activation_summary(x, show_sparsity=False, scope=None):
         TensorBoard diagrams can be grouped together to gain a better overview.
     """
     with tf.name_scope("activation_summary"):
-        # Remove 'tower_[0-9]/' from the name in case this is a multi-GPU training
-        # session. This helps the clarity of presentation on tensorboard.
-        tensor_name = re.sub('%s_[0-9]*/' % TOWER_NAME, '', x.op.name)
+        tensor_name = _remove_tower_name(x.op.name)
         
         summary_name = tensor_name
         if scope is not None:
@@ -35,8 +47,8 @@ def activation_summary(x, show_sparsity=False, scope=None):
 
 def loss_summary(losses, decay=0.99):
     """Add summaries for losses in the used model.
-    Generates moving average for all losses and associated summaries for
-    visualizing the performance of the network.
+       Generates moving average for all losses and associated summaries for
+       visualizing the performance of the network.
     Parameters
     ----------
     losses: list[Tensor]
@@ -46,7 +58,8 @@ def loss_summary(losses, decay=0.99):
     Returns
     ---------
     loss_averages_op: Tensor
-        Op for generating moving averages of losses.
+        Op for generating moving averages of losses. This could be used for
+        managing the control dependencies in TensorFlow.
     """
     # Compute the moving average of all individual losses and the total loss.
     loss_averages = tf.train.ExponentialMovingAverage(decay, name="avg")
@@ -55,6 +68,8 @@ def loss_summary(losses, decay=0.99):
     # Attach a scalar summary to all individual losses and the total loss; do the
     # same for the averaged version of the losses.
     for l in losses:
+        loss_name = _remove_tower_name(l.op.name)
+        
         # Name each loss as '(raw)' and name the moving average version of the loss
         # as the original loss name.
         tf.scalar_summary(l.op.name +' (raw)', l)
@@ -84,7 +99,7 @@ def gradients_histogram_summary(gradients):
             
 def conv_image_summary(tag, conv_out, padding=2):
     """Creates an image summary of the convolutional outputs
-    for the first image in the batch .
+       for the first image in the batch .
     Parameters
     ----------
     tag: str or Tensor of type string
