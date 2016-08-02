@@ -72,8 +72,8 @@ def loss_summary(losses, decay=0.99):
         
         # Name each loss as '(raw)' and name the moving average version of the loss
         # as the original loss name.
-        tf.scalar_summary(l.op.name +' (raw)', l)
-        tf.scalar_summary(l.op.name, loss_averages.average(l))
+        tf.scalar_summary(loss_name +' (raw)', l)
+        tf.scalar_summary(loss_name, loss_averages.average(l))
 
     return loss_averages_op
 
