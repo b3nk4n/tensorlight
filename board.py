@@ -45,7 +45,7 @@ def activation_summary(x, show_sparsity=False, scope=None):
             tf.scalar_summary(summary_name + '/sparsity', tf.nn.zero_fraction(x, name="sparsity"))
     
 
-def loss_summary(losses, decay=0.99):
+def loss_summary(losses, decay=0.9):
     """Add summaries for losses in the used model.
        Generates moving average for all losses and associated summaries for
        visualizing the performance of the network.
@@ -80,9 +80,12 @@ def loss_summary(losses, decay=0.99):
 
 def variables_histogram_summary():
     """Creates a full histogram summary for every trainable variable.
+    Returns
+    ----------
+    A list of string tensors that can ba added to a summary.
     """
     for var in tf.trainable_variables():
-        tf.histogram_summary(var.op.name, var)
+        yield tf.histogram_summary(var.op.name, var)
 
         
 def gradients_histogram_summary(gradients):
@@ -91,10 +94,13 @@ def gradients_histogram_summary(gradients):
     ----------
     gradients: list[(gradient, variable)]
         A list of (gradient, variable) pairs created by Optimizer.compute_gradients().
+    Returns
+    ----------
+    A list of string tensors that can ba added to a summary.
     """
     for grad, var in gradients:
         if grad is not None:
-            tf.histogram_summary(var.op.name + '/gradients', grad)
+            yield tf.histogram_summary(var.op.name + '/gradients', grad)
     
             
 def conv_image_summary(tag, conv_out, padding=2):
