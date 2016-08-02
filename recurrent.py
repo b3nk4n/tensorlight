@@ -13,6 +13,8 @@ from tensorflow.python.ops import init_ops
 from tensorflow.python.ops import math_ops
 from tensorflow.python.ops import variable_scope as vs
 
+from tensorflow.python.util import nest
+
 
 def rnn_conv2d(cell, inputs, initial_state=None, dtype=tf.float32,
         sequence_length=None, scope=None):
@@ -138,6 +140,22 @@ def rnn_conv2d(cell, inputs, initial_state=None, dtype=tf.float32,
         return (outputs, state)
 
     
+def _sequence_like(instance, args):
+    """Checks and returns sequence like structure.
+    Taken from TensorFlow v0.9.
+    """
+    try:
+        assert isinstance(instance, tuple)
+        assert isinstance(instance._fields, collections.Sequence)
+        assert all(isinstance(f, six.string_types) for f in instance._fields)
+        # This is a namedtuple
+        return type(instance)(*args)
+    except (AssertionError, AttributeError):
+        # Not a namedtuple
+        return type(instance)(args)
+
+
+    
 class RNNConv2DCell(object):
     """Abstract object representing an 2D convolutional RNN cell.
     An Conv2D-RNN cell, in the most abstract setting, is anything that has
@@ -198,7 +216,7 @@ class RNNConv2DCell(object):
             the shapes `[batch_size x s]` for each s in `state_size`.
         """
         state_size = self.state_size
-        if tf.nn.rnn_cell._is_sequence(state_size):
+        if nest.is_sequence(state_size):
             if isinstance(state_size, tf.nn.rnn_cell.LSTMStateTuple):
                 # normal usage
                 state_size_flat = (state_size.c, state_size.h)
@@ -207,7 +225,7 @@ class RNNConv2DCell(object):
                     for s in state_size_flat]
                 for s, z in zip(state_size_flat, zeros_flat):
                     z.set_shape([None, s[0], s[1], s[2]])
-                zeros = tf.nn.rnn_cell._sequence_like(state_size, [zeros_flat[0], zeros_flat[1]])
+                zeros = _sequence_like(state_size, [zeros_flat[0], zeros_flat[1]])
             else:
                 # when used with MultiRNNConv2DCell, it gets a tuple of state sizes
                 layers = len(state_size)
@@ -219,7 +237,7 @@ class RNNConv2DCell(object):
                         for s in state_size_flat]
                     for s, z in zip(state_size_flat, zeros_flat):
                         z.set_shape([None, s[0], s[1], s[2]])
-                    zeros_list.append(tf.nn.rnn_cell._sequence_like(state_size[0], [zeros_flat[0], zeros_flat[1]]))
+                    zeros_list.append(_sequence_like(state_size[0], [zeros_flat[0], zeros_flat[1]]))
                 zeros = tuple(zeros_list)
         else:
             raise ValueError('Internal state is not a sequence.')
@@ -397,7 +415,7 @@ class MultiRNNConv2DCell(RNNConv2DCell):
             new_states = []
             for i, cell in enumerate(self._cells):
                 with vs.variable_scope("Cell%d" % i):
-                    if not tf.nn.rnn_cell._is_sequence(state):
+                    if not nest.is_sequence(state):
                         raise ValueError(
                             "Expected state to be a tuple of length %d, but received: %s"
                             % (len(self.state_size), state))
