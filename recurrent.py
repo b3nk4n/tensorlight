@@ -425,3 +425,65 @@ class MultiRNNConv2DCell(RNNConv2DCell):
         new_states = (tuple(new_states) if self._state_is_tuple
                       else array_ops.concat(1, new_states))
         return cur_inp, new_states
+    
+
+    
+class BatchNormalizedLSTMCell(tf.nn.rnn_cell.RNNCell):
+    """Batch normalized LSTM cell.
+    References:
+        Code:  http://olavnymoen.com/2016/07/07/rnn-batch-normalization
+        Paper: arxiv.org/abs/1603.09025"""
+    def __init__(self, num_units, state_is_tuple=True):
+        self.num_units = num_units
+
+    @property
+    def state_size(self):
+        return (self.num_units, self.num_units)
+
+    @property
+    def output_size(self):
+        return self.num_units
+
+    def __call__(self, x, state, scope=None):
+        with tf.variable_scope(scope or type(self).__name__):
+            c, h = state
+
+            x_size = x.get_shape().as_list()[1]
+            W_xh = tf.get_variable('W_xh',
+                [x_size, 4 * self.num_units],
+                initializer=tt.init.orthogonal_initializer())
+            W_hh = tf.get_variable('W_hh',
+                [self.num_units, 4 * self.num_units],
+                initializer=tt.init.bn_lstm_identity_initializer(0.95))
+            bias = tf.get_variable('bias', [4 * self.num_units])
+
+            xh = tf.matmul(x, W_xh)
+            hh = tf.matmul(h, W_hh)
+
+            mean_xh, var_xh = tf.nn.moments(xh, [0])
+            xh_scale = tf.get_variable('xh_scale', [4 * self.num_units], initializer=tf.constant_initializer(0.1))
+
+            mean_hh, var_hh = tf.nn.moments(hh, [0])
+            hh_scale = tf.get_variable('hh_scale', [4 * self.num_units], initializer=tf.constant_initializer(0.1))
+
+            static_offset = tf.constant(0, dtype=tf.float32, shape=[4 * self.num_units])
+            epsilon = 1e-3
+
+            bn_xh = tf.nn.batch_normalization(xh, mean_xh, var_xh, static_offset, xh_scale, epsilon)
+            bn_hh = tf.nn.batch_normalization(hh, mean_hh, var_hh, static_offset, hh_scale, epsilon)
+
+            hidden = bn_xh + bn_hh + bias
+
+            i, j, f, o = tf.split(1, 4, hidden)
+
+            new_c = c * tf.sigmoid(f) + tf.sigmoid(i) * tf.tanh(j)
+
+            mean_c, var_c = tf.nn.moments(new_c, [0])
+            c_scale = tf.get_variable('c_scale', [self.num_units], initializer=tf.constant_initializer(0.1))
+            c_offset = tf.get_variable('c_offset', [self.num_units])
+
+            bn_new_c = tf.nn.batch_normalization(new_c, mean_c, var_c, c_offset, c_scale, epsilon)
+
+            new_h = tf.tanh(bn_new_c) * tf.sigmoid(o)
+
+            return new_h, (new_c, new_h)

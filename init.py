@@ -35,7 +35,7 @@ def identity_initializer(scale=1.0):
     return _initializer
 
 
-def _orthonogal(shape):
+def _orthogonal(shape):
     flat_shape = (shape[0], np.prod(shape[1:]))
     a = np.random.normal(0.0, 1.0, flat_shape)
     u, _, v = np.linalg.svd(a, full_matrices=False)
@@ -85,9 +85,9 @@ def bn_lstm_identity_initializer(scale=1.0):
         # gate (j) is identity
         t = np.zeros(shape)
         t[:, size:size * 2] = np.identity(size) * scale  # j
-        t[:, :size] = _orthonogal([size, size])  # i
-        t[:, size * 2:size * 3] = _orthonogal([size, size])  # f
-        t[:, size * 3:] = _orthonogal([size, size])  # o
+        t[:, :size] = _orthogonal([size, size])  # i
+        t[:, size * 2:size * 3] = _orthogonal([size, size])  # f
+        t[:, size * 3:] = _orthogonal([size, size])  # o
         return tf.constant(t, dtype)
 
     return _initializer
