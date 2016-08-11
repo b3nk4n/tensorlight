@@ -259,7 +259,7 @@ class BasicLSTMConv2DCell(RNNConv2DCell):
     cells output.
     """
 
-    def __init__(self, height, width, n_filters, input_ksize, hidden_ksize,
+    def __init__(self, height, width, n_filters, ksize_input, ksize_hidden,
                  weight_init=tf.contrib.layers.xavier_initializer(),
                  hidden_weight_init=tt.init.orthogonal_initializer(),
                  forget_bias=1.0,
@@ -275,10 +275,10 @@ class BasicLSTMConv2DCell(RNNConv2DCell):
         n_filters: int
             The number of filters of the convolutional kernel. This also specifies
             the depth/channels of the output.
-        input_ksize: tuple or list of (int, int) 
+        ksize_hidden: tuple or list of (int, int) 
             The number of (rows, columns) of the convolutioanl kernel
             for input to state transition.
-        hidden_ksize: tuple or list of (int, int) 
+        ksize_hidden: tuple or list of (int, int) 
             The number of (rows, columns) of the convolutioanl kernel
             for state to state transition.
         weight_init : float or function, optional
@@ -299,8 +299,8 @@ class BasicLSTMConv2DCell(RNNConv2DCell):
         self._height = height
         self._width = width
         self._n_filters = n_filters
-        self._input_ksize = input_ksize
-        self._hidden_ksize = hidden_ksize
+        self._ksize_input = ksize_input
+        self._ksize_hidden = ksize_hidden
         self._weight_init = weight_init
         self._hidden_weight_init = hidden_weight_init
         self._forget_bias = forget_bias
@@ -325,43 +325,43 @@ class BasicLSTMConv2DCell(RNNConv2DCell):
             c, h = state
             
             conv_xi = tt.network.conv2d("Conv_xi", inputs, self._n_filters,
-                                        self._input_ksize, (1, 1),
+                                        self._ksize_input, (1, 1),
                                         weight_init=self._weight_init,
                                         bias_init=0.0,
                                         device=self._device)
             conv_xj = tt.network.conv2d("Conv_xj", inputs,self._n_filters,
-                                        self._input_ksize, (1, 1),
+                                        self._ksize_input, (1, 1),
                                         weight_init=self._weight_init,
                                         bias_init=0.0,
                                         device=self._device)
             conv_xf = tt.network.conv2d("Conv_xf", inputs, self._n_filters,
-                                        self._input_ksize, (1, 1),
+                                        self._ksize_input, (1, 1),
                                         weight_init=self._weight_init,
                                         bias_init=self._forget_bias,
                                         device=self._device)
             conv_xo = tt.network.conv2d("Conv_xo", inputs, self._n_filters,
-                                        self._input_ksize, (1, 1),
+                                        self._ksize_input, (1, 1),
                                         weight_init=self._weight_init,
                                         bias_init=0.0,
                                         device=self._device)
 
             conv_hi = tt.network.conv2d("Conv_hi", h, self._n_filters, 
-                                        self._hidden_ksize, (1, 1),
+                                        self._ksize_hidden, (1, 1),
                                         weight_init=self._hidden_weight_init,
                                         bias_init=None,
                                         device=self._device)
             conv_hj = tt.network.conv2d("Conv_hj", h, self._n_filters,
-                                        self._hidden_ksize, (1, 1),
+                                        self._ksize_hidden, (1, 1),
                                         weight_init=self._hidden_weight_init,
                                         bias_init=None,
                                         device=self._device)
             conv_hf = tt.network.conv2d("Conv_hf", h, self._n_filters,
-                                        self._hidden_ksize, (1, 1),
+                                        self._ksize_hidden, (1, 1),
                                         weight_init=self._hidden_weight_init,
                                         bias_init=None,
                                         device=self._device)
             conv_ho = tt.network.conv2d("Conv_ho", h, self._n_filters,
-                                        self._hidden_ksize, (1, 1),
+                                        self._ksize_hidden, (1, 1),
                                         weight_init=self._hidden_weight_init,
                                         bias_init=None,
                                         device=self._device)
