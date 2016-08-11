@@ -259,7 +259,7 @@ class BasicLSTMConv2DCell(RNNConv2DCell):
     cells output.
     """
 
-    def __init__(self, input_ksize, hidden_ksize, n_filters, height, width,
+    def __init__(self, height, width, n_filters, input_ksize, hidden_ksize,
                  weight_init=tf.contrib.layers.xavier_initializer(),
                  hidden_weight_init=tt.init.orthogonal_initializer(),
                  forget_bias=1.0,
@@ -268,19 +268,19 @@ class BasicLSTMConv2DCell(RNNConv2DCell):
         """Initialize the basic 2D convolutional LSTM cell.
         Parameters
         ----------
+        height: int
+            The height of the input image.
+        width: int
+            The width of the input image.
+        n_filters: int
+            The number of filters of the convolutional kernel. This also specifies
+            the depth/channels of the output.
         input_ksize: tuple or list of (int, int) 
             The number of (rows, columns) of the convolutioanl kernel
             for input to state transition.
         hidden_ksize: tuple or list of (int, int) 
             The number of (rows, columns) of the convolutioanl kernel
             for state to state transition.
-        n_filters: int
-            The number of filters of the convolutional kernel. This also specifies
-            the depth/channels of the output.
-        height: int
-            The height of the input image.
-        width: int
-            The width of the input image.
         weight_init : float or function, optional
             Initialization's of the input weights, either the standard deviation
             or a initializer-fuction such as xavier init.
@@ -296,11 +296,11 @@ class BasicLSTMConv2DCell(RNNConv2DCell):
         device: str or None, optional
             The device to which memory the variables will get stored on. (e.g. '/cpu:0')
         """
-        self._input_ksize = input_ksize
-        self._hidden_ksize = hidden_ksize
-        self._n_filters = n_filters
         self._height = height
         self._width = width
+        self._n_filters = n_filters
+        self._input_ksize = input_ksize
+        self._hidden_ksize = hidden_ksize
         self._weight_init = weight_init
         self._hidden_weight_init = hidden_weight_init
         self._forget_bias = forget_bias
