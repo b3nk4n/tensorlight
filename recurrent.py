@@ -259,7 +259,7 @@ class BasicLSTMConv2DCell(RNNConv2DCell):
     cells output.
     """
 
-    def __init__(self, nb_rows, nb_cols, nb_filters, height, width,
+    def __init__(self, ksize, n_filters, height, width,
                  weight_init=tf.contrib.layers.xavier_initializer(),
                  hidden_weight_init=tt.init.orthogonal_initializer(),
                  forget_bias=1.0,
@@ -268,11 +268,9 @@ class BasicLSTMConv2DCell(RNNConv2DCell):
         """Initialize the basic 2D convolutional LSTM cell.
         Parameters
         ----------
-        nb_rows: int 
-            The number of rows of the convolutioanl kernel.
-        nb_cols: int 
-            The number of columns of the convolutioanl kernel.
-        nb_filters: int
+        ksize: tuple or list of (int, int) 
+            The number of (rows, columns) of the convolutioanl kernel.
+        n_filters: int
             The number of filters of the convolutional kernel. This also specifies
             the depth/channels of the output.
         height: int
@@ -294,9 +292,8 @@ class BasicLSTMConv2DCell(RNNConv2DCell):
         device: str or None, optional
             The device to which memory the variables will get stored on. (e.g. '/cpu:0')
         """
-        self._nb_rows = nb_rows
-        self._nb_cols = nb_cols
-        self._nb_filters = nb_filters
+        self._ksize = ksize
+        self._n_filters = n_filters
         self._height = height
         self._width = width
         self._weight_init = weight_init
@@ -310,56 +307,56 @@ class BasicLSTMConv2DCell(RNNConv2DCell):
     @property
     def state_size(self):
         return tf.nn.rnn_cell.LSTMStateTuple(
-            (self._height, self._width, self._nb_filters), 
-            (self._height, self._width, self._nb_filters))
+            (self._height, self._width, self._n_filters), 
+            (self._height, self._width, self._n_filters))
 
     @property
     def output_size(self):
-        return (self._height, self._width, self._nb_filters)
+        return (self._height, self._width, self._n_filters)
 
     def __call__(self, inputs, state, scope=None):
         """2D convolutional Long short-term memory cell (LSTMConv2D)."""
         with vs.variable_scope(scope or type(self).__name__):  # "BasicLSTMConv2DCell"
             c, h = state
             
-            conv_xi = tt.network.conv2d("Conv_xi", inputs, self._nb_filters,
-                                        self._nb_rows, self._nb_cols, 1, 1,
+            conv_xi = tt.network.conv2d("Conv_xi", inputs, self._n_filters,
+                                        self._ksize, (1, 1),
                                         weight_init=self._weight_init,
                                         bias_init=0.0,
                                         device=self._device)
-            conv_xj = tt.network.conv2d("Conv_xj", inputs,self._nb_filters,
-                                        self._nb_rows, self._nb_cols, 1, 1,
+            conv_xj = tt.network.conv2d("Conv_xj", inputs,self._n_filters,
+                                        self._ksize, (1, 1),
                                         weight_init=self._weight_init,
                                         bias_init=0.0,
                                         device=self._device)
-            conv_xf = tt.network.conv2d("Conv_xf", inputs, self._nb_filters,
-                                        self._nb_rows, self._nb_cols, 1, 1,
+            conv_xf = tt.network.conv2d("Conv_xf", inputs, self._n_filters,
+                                        self._ksize, (1, 1),
                                         weight_init=self._weight_init,
                                         bias_init=self._forget_bias,
                                         device=self._device)
-            conv_xo = tt.network.conv2d("Conv_xo", inputs, self._nb_filters,
-                                        self._nb_rows, self._nb_cols, 1, 1,
+            conv_xo = tt.network.conv2d("Conv_xo", inputs, self._n_filters,
+                                        self._ksize, (1, 1),
                                         weight_init=self._weight_init,
                                         bias_init=0.0,
                                         device=self._device)
 
-            conv_hi = tt.network.conv2d("Conv_hi", h, self._nb_filters, 
-                                        self._nb_rows, self._nb_cols, 1, 1,
+            conv_hi = tt.network.conv2d("Conv_hi", h, self._n_filters, 
+                                        self._ksize, (1, 1),
                                         weight_init=self._hidden_weight_init,
                                         bias_init=None,
                                         device=self._device)
-            conv_hj = tt.network.conv2d("Conv_hj", h, self._nb_filters,
-                                        self._nb_rows, self._nb_cols, 1, 1,
+            conv_hj = tt.network.conv2d("Conv_hj", h, self._n_filters,
+                                        self._ksize, (1, 1),
                                         weight_init=self._hidden_weight_init,
                                         bias_init=None,
                                         device=self._device)
-            conv_hf = tt.network.conv2d("Conv_hf", h, self._nb_filters,
-                                        self._nb_rows, self._nb_cols, 1, 1,
+            conv_hf = tt.network.conv2d("Conv_hf", h, self._n_filters,
+                                        self._ksize, (1, 1),
                                         weight_init=self._hidden_weight_init,
                                         bias_init=None,
                                         device=self._device)
-            conv_ho = tt.network.conv2d("Conv_ho", h, self._nb_filters,
-                                        self._nb_rows, self._nb_cols, 1, 1,
+            conv_ho = tt.network.conv2d("Conv_ho", h, self._n_filters,
+                                        self._ksize, (1, 1),
                                         weight_init=self._hidden_weight_init,
                                         bias_init=None,
                                         device=self._device)

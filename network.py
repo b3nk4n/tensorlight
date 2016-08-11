@@ -102,8 +102,7 @@ def hard_sigmoid(x, name=None):
 
 
 def conv2d(name_or_scope, x, n_filters,
-           k_h=5, k_w=5,
-           stride_h=2, stride_w=2,
+           ksize=(5,5), stride=(2,2),
            weight_init=0.01, bias_init=0.1,
            regularizer=None,
            activation=lambda x : x,
@@ -119,14 +118,10 @@ def conv2d(name_or_scope, x, n_filters,
         Input tensor to convolve.
     n_filters : int
         Number of filters to apply.
-    k_h : int, optional
-        Kernel height.
-    k_w : int, optional
-        Kernel width.
-    stride_h : int, optional
-        Stride in rows.
-    stride_w : int, optional
-        Stride in cols.
+    ksize : list or tuple of (int, int), optional
+        Kernel height and width.
+    stride : list or tuple of (int, int), optional
+        Stride in rows and cols.
     weight_init : float or function, optional
         Initialization's of the weights, either the standard deviation
         or a tensorflow initializer-fuction such as xavier init.
@@ -158,12 +153,12 @@ def conv2d(name_or_scope, x, n_filters,
             raise ValueError("Parameter weight_init must be float or function.")
         
         w = get_variable(
-            'W', [k_h, k_w, x.get_shape()[-1], n_filters],
+            'W', [ksize[0], ksize[1], x.get_shape()[-1], n_filters],
             initializer=weight_init_func,
             regularizer=regularizer,
             device=device)
         conv = tf.nn.conv2d(
-            x, w, strides=[1, stride_h, stride_w, 1], padding=padding)
+            x, w, strides=[1, stride[0], stride[1], 1], padding=padding)
         
         if bias_init is not None:
             if (isinstance(bias_init, types.FunctionType)):
@@ -185,8 +180,7 @@ def conv2d(name_or_scope, x, n_filters,
 
 def conv2d_transpose(name_or_scope,
                      x, n_filters,
-                     k_h=5, k_w=5,
-                     stride_h=2, stride_w=2,
+                     ksize=(5,5), stride=(2,2),
                      weight_init=0.01, bias_init=0.1,
                      regularizer=None,
                      activation=lambda x: x,
@@ -202,14 +196,10 @@ def conv2d_transpose(name_or_scope,
         Input tensor to convolve.
     n_filters : int
         Number of filters to apply.
-    k_h : int, optional
-        Kernel height.
-    k_w : int, optional
-        Kernel width.
-    stride_h : int, optional
-        Stride in rows.
-    stride_w : int, optional
-        Stride in cols.
+    ksize : list or tuple of (int, int), optional
+        Kernel height and width.
+    stride : list or tuple of (int, int), optional
+        Stride in rows and cols.
     weight_init : float or function, optional
         Initialization's of the weights, either the standard deviation
         or a tensorflow initializer-fuction such as xavier init.
@@ -247,24 +237,24 @@ def conv2d_transpose(name_or_scope,
             raise ValueError("Parameter weight_init must be float or function.")
         
         w = get_variable(
-            'W', [k_h, k_w, n_filters, static_input_shape[3]],
+            'W', [ksize[0], ksize[1], n_filters, static_input_shape[3]],
             initializer=weight_init_func,
             regularizer=regularizer,
             device=device)
         
         assert padding in {'SAME', 'VALID'}
         if (padding is 'SAME'):
-            out_h = dyn_input_shape[1] * stride_h
-            out_w = dyn_input_shape[2] * stride_w
+            out_h = dyn_input_shape[1] * stride[0]
+            out_w = dyn_input_shape[2] * stride[1]
         elif (padding is 'VALID'):
-            out_h = (dyn_input_shape[1] - 1) * stride_h + k_h
-            out_w = (dyn_input_shape[2] - 1) * stride_w + k_w
+            out_h = (dyn_input_shape[1] - 1) * stride[0] + ksize[0]
+            out_w = (dyn_input_shape[2] - 1) * stride[1] + ksize[1]
 
         out_shape = tf.pack([batch_size, out_h, out_w, n_filters])
         
         convt = tf.nn.conv2d_transpose(
             x, w, output_shape=out_shape,
-            strides=[1, stride_h, stride_w, 1], padding=padding)
+            strides=[1, stride[0], stride[1], 1], padding=padding)
         
         if bias_init is not None:
             if (isinstance(bias_init, types.FunctionType)):
@@ -283,8 +273,7 @@ def conv2d_transpose(name_or_scope,
     return activation(linearity)
     
 
-def max_pool2d(x, k_h=5, k_w=5,
-               stride_h=2, stride_w=2,
+def max_pool2d(x, ksize=(2,2), stride=(2,2),
                padding='SAME',
                name=None):
     """2D max-pooling that combines variable creation, activation
@@ -293,14 +282,10 @@ def max_pool2d(x, k_h=5, k_w=5,
     ----------
     x : Tensor
         Input tensor to convolve.
-    k_h : int, optional
-        Kernel height.
-    k_w : int, optional
-        Kernel width.
-    stride_h : int, optional
-        Stride in rows.
-    stride_w : int, optional
-        Stride in cols.
+    ksize : list or tuple of (int, int), optional
+        Kernel height and width.
+    stride : list or tuple of (int, int), optional
+        Stride in rows and cols.
     stddev : float, optional
         Initialization's standard deviation.
     padding : str, optional
@@ -313,8 +298,8 @@ def max_pool2d(x, k_h=5, k_w=5,
         Max-pooled input.
     """
     pooled = tf.nn.max_pool(
-        x, ksize=[1, k_h, k_w, 1],
-        strides=[1, stride_h, stride_w, 1],
+        x, ksize=[1, ksize[0], ksize[1], 1],
+        strides=[1, stride[0], stride[1], 1],
         padding=padding, name=name)
     return pooled
 
