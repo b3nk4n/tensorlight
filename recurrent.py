@@ -435,40 +435,47 @@ class BatchNormalizedLSTMCell(tf.nn.rnn_cell.RNNCell):
     References:
         Code:  http://olavnymoen.com/2016/07/07/rnn-batch-normalization
         Paper: arxiv.org/abs/1603.09025"""
-    def __init__(self, num_units, state_is_tuple=True):
-        self.num_units = num_units
+    def __init__(self, num_units, state_is_tuple=True,
+                 device=None):
+        self._num_units = num_units
+        self._device = device
 
     @property
     def state_size(self):
-        return (self.num_units, self.num_units)
+        return (self._num_units, self._num_units)
 
     @property
     def output_size(self):
-        return self.num_units
+        return self._num_units
 
     def __call__(self, x, state, scope=None):
         with tf.variable_scope(scope or type(self).__name__):
             c, h = state
 
             x_size = x.get_shape().as_list()[1]
-            W_xh = tf.get_variable('W_xh',
-                [x_size, 4 * self.num_units],
-                initializer=tt.init.orthogonal_initializer())
-            W_hh = tf.get_variable('W_hh',
-                [self.num_units, 4 * self.num_units],
-                initializer=tt.init.bn_lstm_identity_initializer(0.95))
-            bias = tf.get_variable('bias', [4 * self.num_units])
+            W_xh = tt.network.get_variable('W_xh',
+                [x_size, 4 * self._num_units],
+                initializer=tt.init.orthogonal_initializer(),
+                device=self._device)
+            W_hh = tt.network.get_variable('W_hh',
+                [self._num_units, 4 * self._num_units],
+                initializer=tt.init.bn_lstm_identity_initializer(0.95),
+                device=self._device)
+            bias = tt.network.get_variable('bias', [4 * self._num_units],
+                                           device=self._device)
 
             xh = tf.matmul(x, W_xh)
             hh = tf.matmul(h, W_hh)
 
             mean_xh, var_xh = tf.nn.moments(xh, [0])
-            xh_scale = tf.get_variable('xh_scale', [4 * self.num_units], initializer=tf.constant_initializer(0.1))
+            xh_scale = tt.network.get_variable('xh_scale', [4 * self._num_units], initializer=tf.constant_initializer(0.1),
+                                               device=self._device)
 
             mean_hh, var_hh = tf.nn.moments(hh, [0])
-            hh_scale = tf.get_variable('hh_scale', [4 * self.num_units], initializer=tf.constant_initializer(0.1))
+            hh_scale = tt.network.get_variable('hh_scale', [4 * self._num_units], initializer=tf.constant_initializer(0.1),
+                                               device=self._device)
 
-            static_offset = tf.constant(0, dtype=tf.float32, shape=[4 * self.num_units])
+            static_offset = tf.constant(0, dtype=tf.float32, shape=[4 * self._num_units])
             epsilon = 1e-3
 
             bn_xh = tf.nn.batch_normalization(xh, mean_xh, var_xh, static_offset, xh_scale, epsilon)
@@ -481,11 +488,131 @@ class BatchNormalizedLSTMCell(tf.nn.rnn_cell.RNNCell):
             new_c = c * tf.sigmoid(f) + tf.sigmoid(i) * tf.tanh(j)
 
             mean_c, var_c = tf.nn.moments(new_c, [0])
-            c_scale = tf.get_variable('c_scale', [self.num_units], initializer=tf.constant_initializer(0.1))
-            c_offset = tf.get_variable('c_offset', [self.num_units])
+            c_scale = tt.network.get_variable('c_scale', [self._num_units], initializer=tf.constant_initializer(0.1),
+                                              device=self._device)
+            c_offset = tt.network.get_variable('c_offset', [self._num_units],
+                                               device=self._device)
 
             bn_new_c = tf.nn.batch_normalization(new_c, mean_c, var_c, c_offset, c_scale, epsilon)
 
             new_h = tf.tanh(bn_new_c) * tf.sigmoid(o)
 
             return new_h, (new_c, new_h)
+
+        
+class BasicLSTMCell(tf.nn.rnn_cell.RNNCell):
+    """Basic LSTM recurrent network cell.
+    The implementation is based on: http://arxiv.org/abs/1409.2329.
+    We add forget_bias (default: 1) to the biases of the forget gate in order to
+    reduce the scale of forgetting in the beginning of the training.
+    It does not allow cell clipping, a projection layer, and does not
+    use peep-hole connections: it is the basic baseline.
+    For advanced models, please use the full LSTMCell that follows.
+    """
+
+    def __init__(self, num_units, forget_bias=1.0, input_size=None,
+                 state_is_tuple=True, activation=tf.tanh, device=None):
+        """Initialize the basic LSTM cell.
+        Args:
+            num_units: int, The number of units in the LSTM cell.
+            forget_bias: float, The bias added to forget gates (see above).
+            input_size: Deprecated and unused.
+            state_is_tuple: If True, accepted and returned states are 2-tuples of
+                            the `c_state` and `m_state`.  If False, they are concatenated
+                            along the column axis.  The latter behavior will soon be deprecated.
+            activation: Activation function of the inner states.
+        """
+        if not state_is_tuple:
+            print("%s: Using a concatenated state is slower and will soon be "
+                  "deprecated.  Use state_is_tuple=True.", self)
+        if input_size is not None:
+            print("%s: The input_size parameter is deprecated.", self)
+        self._num_units = num_units
+        self._forget_bias = forget_bias
+        self._state_is_tuple = state_is_tuple
+        self._activation = activation
+        self._device = device
+
+    @property
+    def state_size(self):
+        return (tf.nn.rnn_cell.LSTMStateTuple(self._num_units, self._num_units)
+                if self._state_is_tuple else 2 * self._num_units)
+
+    @property
+    def output_size(self):
+        return self._num_units
+
+    def __call__(self, inputs, state, scope=None):
+        """Long short-term memory cell (LSTM)."""
+        with vs.variable_scope(scope or type(self).__name__):  # "BasicLSTMCell"
+            # Parameters of gates are concatenated into one multiply for efficiency.
+            if self._state_is_tuple:
+                c, h = state
+            else:
+                c, h = tf.split(1, 2, state)
+            concat = _linear([inputs, h], 4 * self._num_units, True, device=self._device)
+
+            # i = input_gate, j = new_input, f = forget_gate, o = output_gate
+            i, j, f, o = tf.split(1, 4, concat)
+
+            new_c = (c * tf.sigmoid(f + self._forget_bias) + tf.sigmoid(i) *
+                     self._activation(j))
+            new_h = self._activation(new_c) * tf.sigmoid(o)
+
+            if self._state_is_tuple:
+                new_state = tf.nn.rnn_cell.LSTMStateTuple(new_c, new_h)
+            else:
+                new_state = tf.concat(1, [new_c, new_h])
+            return new_h, new_state
+            
+
+def _linear(args, output_size, bias, bias_start=0.0, scope=None, device=None):
+    """Linear map: sum_i(args[i] * W[i]), where W[i] is a variable.
+    Args:
+        args: a 2D Tensor or a list of 2D, batch x n, Tensors.
+        output_size: int, second dimension of W[i].
+        bias: boolean, whether to add a bias term or not.
+        bias_start: starting value to initialize the bias; 0 by default.
+        scope: VariableScope for the created subgraph; defaults to "Linear".
+    Returns:
+        A 2D Tensor with shape [batch x output_size] equal to
+        sum_i(args[i] * W[i]), where W[i]s are newly created matrices.
+    Raises:
+        ValueError: if some of the arguments has unspecified or wrong shape.
+    """
+    if args is None or (nest.is_sequence(args) and not args):
+        raise ValueError("`args` must be specified")
+    if not nest.is_sequence(args):
+        args = [args]
+
+    # Calculate the total size of arguments on dimension 1.
+    total_arg_size = 0
+    shapes = [a.get_shape().as_list() for a in args]
+    for shape in shapes:
+        if len(shape) != 2:
+            raise ValueError("Linear is expecting 2D arguments: %s" % str(shapes))
+        if not shape[1]:
+            raise ValueError("Linear expects shape[1] of arguments: %s" % str(shapes))
+        else:
+            total_arg_size += shape[1]
+
+    dtype = [a.dtype for a in args][0]
+
+    # Now the computation.
+    with vs.variable_scope(scope or "Linear"):
+        matrix = tt.network.get_variable(
+            "Matrix", [total_arg_size, output_size], dtype=dtype,
+            device=device)
+        if len(args) == 1:
+            res = tf.matmul(args[0], matrix)
+        else:
+            res = tf.matmul(array_ops.concat(1, args), matrix)
+        if not bias:
+            return res
+        bias_term = tt.network.get_variable(
+            "Bias", [output_size],
+            dtype=dtype,
+            initializer=init_ops.constant_initializer(
+                bias_start, dtype=dtype),
+            device=device)
+    return res + bias_term
