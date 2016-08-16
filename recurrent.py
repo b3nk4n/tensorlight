@@ -8,9 +8,6 @@ import numpy as np
 import tensorflow as tf
 import tensortools as tt
 
-from tensorflow.python.ops import array_ops
-from tensorflow.python.ops import init_ops
-from tensorflow.python.ops import math_ops
 from tensorflow.python.ops import variable_scope as vs
 
 from tensorflow.python.util import nest
@@ -91,7 +88,7 @@ def rnn_conv2d(cell, inputs, initial_state=None, dtype=tf.float32,
         if fixed_batch_size.value:
             batch_size = fixed_batch_size.value
         else:
-            batch_size = array_ops.shape(inputs[0])[0]
+            batch_size = tf.shape(inputs[0])[0]
         if initial_state is not None:
             state = initial_state
         else:
@@ -102,20 +99,20 @@ def rnn_conv2d(cell, inputs, initial_state=None, dtype=tf.float32,
 
         if sequence_length is not None:
             # Prepare variables
-            sequence_length = math_ops.to_int32(sequence_length)
-            zero_output = array_ops.zeros(
-                array_ops.pack([batch_size,
-                                cell.output_size[0],
-                                cell.output_size[1],
-                                cell.output_size[2]]),
-                               inputs[0].dtype)
+            sequence_length = tf.to_int32(sequence_length)
+            zero_output = tf.zeros(
+                tf.pack([batch_size,
+                         cell.output_size[0],
+                         cell.output_size[1],
+                         cell.output_size[2]]),
+                inputs[0].dtype)
             zero_output.set_shape(
                 tensor_shape.TensorShape([fixed_batch_size.value,
                                           cell.output_size[0],
                                           cell.output_size[1],
                                           cell.output_size[2]]))
-            min_sequence_length = math_ops.reduce_min(sequence_length)
-            max_sequence_length = math_ops.reduce_max(sequence_length)
+            min_sequence_length = tf.reduce_min(sequence_length)
+            max_sequence_length = tf.reduce_max(sequence_length)
 
         for time, input_ in enumerate(inputs):
             if time > 0: varscope.reuse_variables()
@@ -136,6 +133,90 @@ def rnn_conv2d(cell, inputs, initial_state=None, dtype=tf.float32,
                 (output, state) = call_cell()
 
             outputs.append(output)
+
+        return (outputs, state)
+    
+    
+def rnn_conv2d_roundabout(cell, single_input, sequence_length, initial_state=None,
+                          output_postprocessor=lambda x: x, dtype=tf.float32, scope=None):
+    """Creates a recurrent neural network specified by RNNConv2DCell `cell`, that has only
+       a single input, and reuses the last output as its new input.
+    Args:
+        cell: An instance of RNNCell.
+        single_input: A singe input tensor of shape [batch_size, input_size].
+        sequence_length: Specifies the length of the RNN.
+                         This parameter is NOT the same as in the rnn_conv2d() or rnn() function!!!
+        initial_state: (optional) An initial state for the RNN.
+            If `cell.state_size` is an integer, this must be
+            a tensor of appropriate type and shape `[batch_size x cell.state_size]`.
+            If `cell.state_size` is a tuple, this should be a tuple of
+            tensors having shapes `[batch_size, s] for s in cell.state_size`.
+        output_postprocessor: function, optional
+            A postprecessor function for the generated output each step.
+        dtype: (optional) The data type for the initial state.  Required if
+            initial_state is not provided.
+        scope: VariableScope for the created subgraph; defaults to "RNNConv2D".
+    Returns:
+        A pair (outputs, state) where:
+        - outputs is a length T list of outputs (one for each input)
+        - state is the final state
+    Raises:
+        TypeError: If `cell` is not an instance of RNNConv2DCell.
+        ValueError: If `single_input` is `None` or a list.
+    """
+
+    if not isinstance(cell, RNNConv2DCell):
+        raise TypeError("cell must be an instance of RNNConv2DCell")
+    if isinstance(single_input, list):
+        raise TypeError("single_input must be no list")
+    if single_input is None:
+        raise ValueError("single_input must not be empty")
+
+    outputs = []
+    # Create a new scope in which the caching device is either
+    # determined by the parent scope, or is set to place the cached
+    # Variable using the same placement as for the rest of the RNN.
+    with vs.variable_scope(scope or "RNNConv2D") as varscope:
+        if varscope.caching_device is None:
+            varscope.set_caching_device(lambda op: op.device)
+
+        # Temporarily avoid EmbeddingWrapper and seq2seq badness
+        if single_input.get_shape().ndims != 1:
+            (fixed_batch_size, input_height, input_width, input_channels) = single_input.get_shape().with_rank(4)
+            if input_height.value is None or input_width.value is None or input_channels.value is None:
+                raise ValueError(
+                    "Input size (2nd, 3rd or 4th dimension of single_input) must be accessible via "
+                    "shape inference, but saw value None.")
+        else:
+            fixed_batch_size = single_input.get_shape().with_rank_at_least(1)[0]
+
+        if fixed_batch_size.value:
+            batch_size = fixed_batch_size.value
+        else:
+            batch_size = tf.shape(single_input)[0]
+        if initial_state is not None:
+            state = initial_state
+        else:
+            if not dtype:
+                raise ValueError("If no initial_state is provided, "
+                                 "dtype must be specified")
+            state = cell.zero_state(batch_size, dtype)
+
+        input_ = single_input
+        for time in xrange(sequence_length):
+            if time > 0:
+                varscope.reuse_variables()
+            
+            # pylint: disable=cell-var-from-loop
+            call_cell = lambda: cell(input_, state)
+            # pylint: enable=cell-var-from-loop
+            (output, state) = call_cell()
+
+            # use optional postprocessor
+            output = output_postprocessor(output)
+            
+            outputs.append(output)
+            input_ = output
 
         return (outputs, state)
 
@@ -221,7 +302,7 @@ class RNNConv2DCell(object):
                 # normal usage
                 state_size_flat = (state_size.c, state_size.h)
                 zeros_flat = [
-                    array_ops.zeros(array_ops.pack([batch_size, s[0], s[1], s[2]]), dtype=dtype)
+                    tf.zeros(tf.pack([batch_size, s[0], s[1], s[2]]), dtype=dtype)
                     for s in state_size_flat]
                 for s, z in zip(state_size_flat, zeros_flat):
                     z.set_shape([None, s[0], s[1], s[2]])
@@ -233,7 +314,7 @@ class RNNConv2DCell(object):
                 for i in xrange(layers):
                     state_size_flat = (state_size[i].c, state_size[i].h)
                     zeros_flat = [
-                        array_ops.zeros(array_ops.pack([batch_size, s[0], s[1], s[2]]), dtype=dtype)
+                        tf.zeros(tf.pack([batch_size, s[0], s[1], s[2]]), dtype=dtype)
                         for s in state_size_flat]
                     for s, z in zip(state_size_flat, zeros_flat):
                         z.set_shape([None, s[0], s[1], s[2]])
@@ -425,7 +506,7 @@ class MultiRNNConv2DCell(RNNConv2DCell):
                     cur_inp, new_state = cell(cur_inp, cur_state)
                     new_states.append(new_state)
         new_states = (tuple(new_states) if self._state_is_tuple
-                      else array_ops.concat(1, new_states))
+                      else tf.concat(1, new_states))
         return cur_inp, new_states
     
 
@@ -606,13 +687,13 @@ def _linear(args, output_size, bias, bias_start=0.0, scope=None, device=None):
         if len(args) == 1:
             res = tf.matmul(args[0], matrix)
         else:
-            res = tf.matmul(array_ops.concat(1, args), matrix)
+            res = tf.matmul(tf.concat(1, args), matrix)
         if not bias:
             return res
         bias_term = tt.network.get_variable(
             "Bias", [output_size],
             dtype=dtype,
-            initializer=init_ops.constant_initializer(
+            initializer=tf.constant_initializer(
                 bias_start, dtype=dtype),
             device=device)
     return res + bias_term
