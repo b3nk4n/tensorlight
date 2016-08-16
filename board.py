@@ -33,7 +33,7 @@ def activation_summary(x, show_sparsity=False, scope=None):
         The scope name of the module it belongs to. This has the benefit that
         TensorBoard diagrams can be grouped together to gain a better overview.
     """
-    with tf.name_scope("activation_summary"):
+    with tf.name_scope("activation_summary"), tf.device('/cpu:0'):
         tensor_name = _remove_tower_name(x.op.name)
         
         summary_name = tensor_name
@@ -65,15 +65,16 @@ def loss_summary(losses, decay=0.9):
     loss_averages = tf.train.ExponentialMovingAverage(decay, name="avg")
     loss_averages_op = loss_averages.apply(losses)
 
-    # Attach a scalar summary to all individual losses and the total loss; do the
-    # same for the averaged version of the losses.
-    for l in losses:
-        loss_name = _remove_tower_name(l.op.name)
-        
-        # Name each loss as '(raw)' and name the moving average version of the loss
-        # as the original loss name.
-        tf.scalar_summary(loss_name +' (raw)', l)
-        tf.scalar_summary(loss_name, loss_averages.average(l))
+    with tf.device('/cpu:0'):
+        # Attach a scalar summary to all individual losses and the total loss; do the
+        # same for the averaged version of the losses.
+        for l in losses:
+            loss_name = _remove_tower_name(l.op.name)
+
+            # Name each loss as '(raw)' and name the moving average version of the loss
+            # as the original loss name.
+            tf.scalar_summary(loss_name +' (raw)', l)
+            tf.scalar_summary(loss_name, loss_averages.average(l))
 
     return loss_averages_op
 
@@ -84,8 +85,9 @@ def variables_histogram_summary():
     ----------
     A list of string tensors that can ba added to a summary.
     """
-    for var in tf.trainable_variables():
-        yield tf.histogram_summary(var.op.name, var)
+    with tf.device('/cpu:0'):
+        for var in tf.trainable_variables():
+            yield tf.histogram_summary(var.op.name, var)
 
         
 def gradients_histogram_summary(gradients):
@@ -98,9 +100,10 @@ def gradients_histogram_summary(gradients):
     ----------
     A list of string tensors that can ba added to a summary.
     """
-    for grad, var in gradients:
-        if grad is not None:
-            yield tf.histogram_summary(var.op.name + '/gradients', grad)
+    with tf.device('/cpu:0'):
+        for grad, var in gradients:
+            if grad is not None:
+                yield tf.histogram_summary(var.op.name + '/gradients', grad)
     
             
 def conv_image_summary(tag, conv_out, padding=2):
@@ -152,7 +155,8 @@ def conv_image_summary(tag, conv_out, padding=2):
         grid = (co - x_min) / (x_max - x_min)
 
         # write single image to summary
-        tf.image_summary(tag, grid, max_images=1)
+        with tf.device('/cpu:0'):
+            tf.image_summary(tag, grid, max_images=1)
 
 
 def conv_filter_image_summary(tag, kernel, padding=1):
@@ -218,4 +222,5 @@ def conv_filter_image_summary(tag, kernel, padding=1):
         grid = (k - x_min) / (x_max - x_min)
         
         # write filter image to summary
-        tf.image_summary(tag, grid, max_images=1)
+        with tf.device('/cpu:0'):
+            tf.image_summary(tag, grid, max_images=1)
