@@ -172,9 +172,11 @@ def display_batch(img_array_batch, nrows=2, ncols=2):
     for i in xrange(min(nrows * ncols, len(img_array_batch))):
         current_img = img_array_batch[i]
         
-        if len(current_img.shape) > 2 and current_image.shape[2] == 3:
+        if len(current_img.shape) > 2 and current_img.shape[2] == 3:
             cmap = plt.cm.rgb
         else:
+            if len(current_img.shape) > 2:
+                current_img=np.squeeze(current_img)
             cmap = plt.cm.gray
         
         plt.subplot(nrows,ncols,i + 1)
