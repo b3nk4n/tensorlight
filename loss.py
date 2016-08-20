@@ -19,7 +19,7 @@ def image_mse(img1, img2):
 
 
 def image_rmse(img1, img2):
-    """Rooted mean squared error (MSE) between images.
+    """Rooted mean squared error (RMSE) between images.
     Parameters
     ----------
     img1: Tensor [batch_size, h, w, c] of type float32
@@ -33,6 +33,39 @@ def image_rmse(img1, img2):
     return tf.reduce_mean(
         tf.sqrt(
             tf.reduce_sum(tf.square(img1 - img2), (-1, -2, -3))))
+
+
+def image_mae(img1, img2):
+    """Mean aboslute error (MAE) between images.
+    Parameters
+    ----------
+    img1: Tensor [batch_size, h, w, c] of type float32
+        The first image.
+    img2: Tensor [batch_size, h, w, c] of type float32
+        The second image.
+    Returns
+    ----------
+    Returns the calculated error.
+    """
+    return tf.reduce_mean(
+        tf.reduce_sum(tf.abs(img1 - img2), (-1, -2, -3)))
+
+
+def image_rmae(img1, img2):
+    """Rooted mean absolute error (RMAE) between images.
+    Parameters
+    ----------
+    img1: Tensor [batch_size, h, w, c] of type float32
+        The first image.
+    img2: Tensor [batch_size, h, w, c] of type float32
+        The second image.
+    Returns
+    ----------
+    Returns the calculated error.
+    """
+    return tf.reduce_mean(
+        tf.sqrt(
+            tf.reduce_sum(tf.abs(img1 - img2), (-1, -2, -3))))
 
 
 def _fspecial_gauss(size, sigma):
