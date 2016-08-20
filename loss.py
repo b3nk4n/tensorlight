@@ -15,8 +15,9 @@ def image_mse(img1, img2):
     ----------
     Returns the calculated error.
     """
-    return tf.reduce_mean(
-        tf.reduce_sum(tf.square(img1 - img2), (-1, -2, -3)))
+    with tf.name_scope('MSE_loss'):
+        return tf.reduce_mean(
+            tf.reduce_sum(tf.square(img1 - img2), (-1, -2, -3)))
 
 
 def image_rmse(img1, img2):
@@ -31,9 +32,10 @@ def image_rmse(img1, img2):
     ----------
     Returns the calculated error.
     """
-    return tf.reduce_mean(
-        tf.sqrt(
-            tf.reduce_sum(tf.square(img1 - img2), (-1, -2, -3))))
+    with tf.name_scope('RMSE_loss'):
+        return tf.reduce_mean(
+            tf.sqrt(
+                tf.reduce_sum(tf.square(img1 - img2), (-1, -2, -3))))
 
 
 def image_mae(img1, img2):
@@ -48,8 +50,9 @@ def image_mae(img1, img2):
     ----------
     Returns the calculated error.
     """
-    return tf.reduce_mean(
-        tf.reduce_sum(tf.abs(img1 - img2), (-1, -2, -3)))
+    with tf.name_scope('MAE_loss'):
+        return tf.reduce_mean(
+            tf.reduce_sum(tf.abs(img1 - img2), (-1, -2, -3)))
 
 
 def image_rmae(img1, img2):
@@ -64,9 +67,10 @@ def image_rmae(img1, img2):
     ----------
     Returns the calculated error.
     """
-    return tf.reduce_mean(
-        tf.sqrt(
-            tf.reduce_sum(tf.abs(img1 - img2), (-1, -2, -3))))
+    with tf.name_scope('RMAE_loss'):
+        return tf.reduce_mean(
+            tf.sqrt(
+                tf.reduce_sum(tf.abs(img1 - img2), (-1, -2, -3))))
 
 
 def ssim(img1, img2, patch_size=11, sigma=1.5, L=255, K1=0.01, K2=0.03):
