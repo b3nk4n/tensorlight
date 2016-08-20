@@ -122,16 +122,20 @@ def to_rgb(image):
     Parameters
     ----------
     image: ndarray(uint8)
-        A grayscaled image with the shape of [height, width, 1].
+        A grayscaled image with the shape of [height, width, 1]
+        or of shape [height, widht].
     Returns
     ---------
     image: ndarray(uint8)
         Returns a converted image with shape [height, width, 3].
     """
-    img_channels = np.shape(image)[2]
-    if img_channels == 1:
-        image = np.squeeze(image, axis=2)
+    image_shape = image.shape
+    
+    if len(image_shape) > 2:
+        img_channels = image_shape[2]
+        if img_channels == 1:
+            image = np.squeeze(image, axis=2)
    
-    if img_channels != 3:
-        image = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
+        if img_channels != 3:
+            image = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
     return image
