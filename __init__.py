@@ -6,6 +6,7 @@ import datasets
 import image
 import init
 import inputs
+import loss
 import model
 import network
 import recurrent
