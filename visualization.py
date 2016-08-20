@@ -170,9 +170,15 @@ def display_batch(img_array_batch, nrows=2, ncols=2):
     fig = plt.figure(random.randint(1, sys.maxint))
     
     for i in xrange(min(nrows * ncols, len(img_array_batch))):
+        current_img = img_array_batch[i]
+        
+        if len(current_img.shape) > 2 and current_image.shape[2] == 3:
+            cmap = plt.cm.rgb
+        else:
+            cmap = plt.cm.gray
+        
         plt.subplot(nrows,ncols,i + 1)
-        rgb_img_array = utils.image.to_rgb(img_array_batch[i])
-        plt.imshow(rgb_img_array)
+        plt.imshow(current_img, cmap=cmap)
 
 
 def display_array(img_array, format='png'):
