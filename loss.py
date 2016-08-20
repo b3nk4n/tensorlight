@@ -153,7 +153,8 @@ def ssim(img1, img2, patch_size=11, sigma=1.5, L=255, K1=0.01, K2=0.03, cs_map=F
     return ssim_value
 
 
-def ms_ssim(img1, img2, patch_size=11, sigma=1.5, L=255, K1=0.01, K2=0.03, levels=5):
+def ms_ssim(img1, img2, patch_size=11, sigma=1.5, L=255, K1=0.01, K2=0.03,
+            level_weights=[0.0448, 0.2856, 0.3001, 0.2363, 0.1333]):
     """Calculates the Multi-Scale Structural Similarity (MS-SSIM) Image
        Quality Assessment according to Z. Wang.
        References:
@@ -181,19 +182,24 @@ def ms_ssim(img1, img2, patch_size=11, sigma=1.5, L=255, K1=0.01, K2=0.03, level
         The K1 value.
     K2: float, optional
         The K2 value.
-    levels: int, optional
-        The number of scale levels. Must be in range [2, 5].
+    level_weights: list(float), optional
+        The weights for each scale level M. Must be in range [2, 5].
         We do not allow level=1, because then ssid() should be used for efficiency.
         We do not allow level>5, because empirical weights higher levels are missing.
+        If a different value is selected, other weights should be used, because the
+        default values have been obtained from an empirical analysis. A level of 5 is only
+        suitable for huge images. E.g an image of 64x64 pixels with level M=3 can result
+        in NaN values.
     Returns
     ----------
     value: float32
         The multi-scale structural similarity metric value between both images,
         where '1' means they are identical and '0' means they are completely different.
     """
+    levels = len(level_weights)
     assert levels >= 2 and levels <= 5, "Levels must be in range [2, 5]."
     
-    weight = tf.constant([0.0448, 0.2856, 0.3001, 0.2363, 0.1333], dtype=tf.float32)
+    weight = tf.constant(level_weights, dtype=tf.float32)
     mssim = None
     mcs = []
     for l in xrange(levels):
