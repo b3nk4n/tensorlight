@@ -89,5 +89,32 @@ def bn_lstm_identity_initializer(scale=1.0):
         t[:, size * 2:size * 3] = _orthogonal([size, size])  # f
         t[:, size * 3:] = _orthogonal([size, size])  # o
         return tf.constant(t, dtype)
+    return _initializer
 
+
+def bilinear_initializer():
+    """Bilinear initializer, which is recommended for deconvolution when
+       used for upscaling. This op is called conv2d_transposed() in TensorFlow.
+    References:
+        J. Long et al.
+        From: http://arxiv.org/abs/1411.4038
+    Returns
+    ----------
+    _initializer: function
+        Returns the init function.
+    """
+    def _initializer(shape, dtype=tf.float32):
+        width = shape[0]
+        heigh = shape[0]
+        f = math.ceil(width/2.0)
+        c = (2 * f - 1 - f % 2) / (2.0 * f)
+        bilinear = np.zeros([shape[0], shape[1]])
+        for x in range(width):
+            for y in range(heigh):
+                value = (1 - abs(x / f - c)) * (1 - abs(y / f - c))
+                bilinear[x, y] = value
+        weights = np.zeros(shape)
+        for i in range(shape[2]):
+            weights[:, :, i, i] = bilinear
+        return tf.constant(weights, dtype)
     return _initializer
