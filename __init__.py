@@ -3,6 +3,7 @@ import utils
 
 import board
 import datasets
+import hardware
 import image
 import init
 import inputs
