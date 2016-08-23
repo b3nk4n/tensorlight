@@ -71,6 +71,36 @@ def image_rmae(img1, img2):
         return tf.reduce_mean(
             tf.sqrt(
                 tf.reduce_sum(tf.abs(img1 - img2), (-1, -2, -3))))
+    
+    
+def bce(output_probs, targets, from_logits=False):
+    """Binary cross-entropy (BCE) between an output and a target tensor.
+       References:
+           Taken from Keras implementation (TensorFlow backend).
+    Parameters
+    ----------
+    output_probs: Tensor [batch_size, ...] of type float32
+        The probabilities of the output. It should be the output of tf.sigmoid(output).
+    img2: Tensor [batch_size, ...] of type float32
+        The probabilities of the output in scale [0, 1].
+    from_logits: Boolean, optional
+        Whether the given values are probabilites (default) or logits.
+    Returns
+    ----------
+    Returns the caluclated error.
+    """
+    with tf.name_scope('BCE_loss'):
+        # flatten
+        output_probs_flat = tf.contrib.layers.flatten(output_probs)
+        targets_flat = tf.contrib.layers.flatten(targets)
+
+        if not from_logits:
+            # transform back to logits
+            EPSILON = 10e-8
+            output_probs_flat = tf.clip_by_value(output_probs_flat, EPSILON, 1 - EPSILON)
+            output_probs_flat = tf.log(output_probs_flat / (1 - output_probs_flat))
+        bce_values = tf.nn.sigmoid_cross_entropy_with_logits(output_probs_flat, targets_flat)
+        return tf.reduce_mean(bce_values)
 
 
 def ssim(img1, img2, patch_size=11, sigma=1.5, L=255, K1=0.01, K2=0.03):
