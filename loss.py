@@ -3,74 +3,82 @@ import tensorflow as tf
 import tensortools as tt
 
 
-def image_mse(img1, img2):
+def mse(outputs, targets):
     """Mean squared error (MSE) between images.
     Parameters
     ----------
-    img1: Tensor [batch_size, h, w, c] of type float32
-        The first image.
-    img2: Tensor [batch_size, h, w, c] of type float32
-        The second image.
+    outputs: Tensor [batch_size, ...] of type float32
+        The first tensor.
+    targets: Tensor [batch_size, ...] of type float32
+        The second tensor.
     Returns
     ----------
     Returns the calculated error.
     """
     with tf.name_scope('MSE_loss'):
+        inputs_rank = outputs.get_shape().ndims
+        sum_indices = tuple(range(1, inputs_rank))
         return tf.reduce_mean(
-            tf.reduce_sum(tf.square(img1 - img2), (-1, -2, -3)))
+            tf.reduce_sum(tf.square(outputs - targets), sum_indices))
 
 
-def image_rmse(img1, img2):
+def rmse(outputs, targets):
     """Rooted mean squared error (RMSE) between images.
     Parameters
     ----------
-    img1: Tensor [batch_size, h, w, c] of type float32
-        The first image.
-    img2: Tensor [batch_size, h, w, c] of type float32
-        The second image.
+    outputs: Tensor [batch_size, ...] of type float32
+        The first tensor.
+    targets: Tensor [batch_size, ...] of type float32
+        The second tensor.
     Returns
     ----------
     Returns the calculated error.
     """
     with tf.name_scope('RMSE_loss'):
+        inputs_rank = outputs.get_shape().ndims
+        sum_indices = tuple(range(1, inputs_rank))
         return tf.reduce_mean(
             tf.sqrt(
-                tf.reduce_sum(tf.square(img1 - img2), (-1, -2, -3))))
+                tf.reduce_sum(tf.square(outputs - targets), sum_indices)))
 
 
-def image_mae(img1, img2):
+def mae(outputs, targets):
     """Mean aboslute error (MAE) between images.
     Parameters
     ----------
-    img1: Tensor [batch_size, h, w, c] of type float32
-        The first image.
-    img2: Tensor [batch_size, h, w, c] of type float32
-        The second image.
+    outputs: Tensor [batch_size, ...] of type float32
+        The first tensor.
+    targets: Tensor [batch_size, ...] of type float32
+        The second tensor.
     Returns
     ----------
     Returns the calculated error.
     """
     with tf.name_scope('MAE_loss'):
+        inputs_rank = outputs.get_shape().ndims
+        sum_indices = tuple(range(1, inputs_rank))
         return tf.reduce_mean(
-            tf.reduce_sum(tf.abs(img1 - img2), (-1, -2, -3)))
+            tf.reduce_sum(tf.abs(outputs - targets), sum_indices))
 
 
-def image_rmae(img1, img2):
+def rmae(outputs, targets):
     """Rooted mean absolute error (RMAE) between images.
     Parameters
     ----------
-    img1: Tensor [batch_size, h, w, c] of type float32
-        The first image.
-    img2: Tensor [batch_size, h, w, c] of type float32
-        The second image.
+    outputs: Tensor [batch_size, ...] of type float32
+        The first tensor.
+    targets: Tensor [batch_size, ...] of type float32
+        The second tensor.
     Returns
     ----------
     Returns the calculated error.
     """
     with tf.name_scope('RMAE_loss'):
+        inputs_rank = outputs.get_shape().ndims
+        sum_indices = tuple(range(1, inputs_rank))
         return tf.reduce_mean(
             tf.sqrt(
-                tf.reduce_sum(tf.abs(img1 - img2), (-1, -2, -3))))
+                tf.reduce_sum(tf.abs(outputs - targets), sum_indices)))
     
     
 def bce(output_probs, targets, from_logits=False):
