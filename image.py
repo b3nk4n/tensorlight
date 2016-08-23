@@ -180,6 +180,9 @@ def ms_ssim(img1, img2, patch_size=11, sigma=1.5, L=255, K1=0.01, K2=0.03,
             level_weights=[0.0448, 0.2856, 0.3001, 0.2363, 0.1333]):
     """Calculates the Multi-Scale Structural Similarity (MS-SSIM) Image
        Quality Assessment according to Z. Wang.
+       Warning:
+           In TensorFlow 0.10: reduce_prod() causes Error while back-prop.
+           Wrap the Optimizer with tf.device('/cpu:0')!
        References:
             Z. Wang's "Multi-scale structural similarity
             for image quality assessment" Invited Paper, IEEE Asilomar Conference on
@@ -221,9 +224,9 @@ def ms_ssim(img1, img2, patch_size=11, sigma=1.5, L=255, K1=0.01, K2=0.03,
     """
     levels = len(level_weights)
     assert levels >= 2 and levels <= 5, "Levels must be in range [2, 5]."
-    
+
     with tf.name_scope('MSSSIM'):
-        weight = tf.constant(level_weights, dtype=tf.float32)
+        weights = tf.constant(level_weights, dtype=tf.float32, name="level_weights")
         mssim = None
         mcs = []
         for l in xrange(levels):
@@ -240,11 +243,14 @@ def ms_ssim(img1, img2, patch_size=11, sigma=1.5, L=255, K1=0.01, K2=0.03,
         # list to tensor of dim D+1
         mcs = tf.pack(mcs, axis=0)
 
-        msssim_value = (tf.reduce_prod(mcs**weight[0:levels-1]) * (mssim**weight[levels-1]))
+        # Note: In TensorFlow 0.10: reduce_prod() causes Error while back-prop.
+        #       Wrap the Optimizer with tf.device('/cpu:0')!
+        msssim_val = tf.reduce_prod((mcs**weights[0:levels-1]) * (mssim**weights[levels-1]), name='prod')
         # enuse scale [0, 1] even with numerical instabilities
-        msssim_value = tf.maximum(0.0, msssim_value)
-        msssim_value = tf.minimum(1.0, msssim_value)
-    return msssim_value
+        msssim_val = tf.maximum(0.0, msssim_val)
+        msssim_val = tf.minimum(1.0, msssim_val)
+        msssim_value = msssim_val
+        return msssim_value
 
 
 def ss_ssim(img1, img2, patch_size=11, sigma=1.5, L=255, K1=0.01, K2=0.03, level=2):
