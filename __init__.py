@@ -2,6 +2,7 @@
 import utils
 
 import board
+import core
 import datasets
 import hardware
 import image
