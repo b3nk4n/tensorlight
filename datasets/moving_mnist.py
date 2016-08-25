@@ -73,7 +73,7 @@ class MovingMNISTTrainDataset(object):
         self._step_length = step_length
         self._dataset_size = sys.maxint
         self._digit_size = 28
-        self._frame_size = image_size[0] * image_size[1]
+        self._frame_size = image_size[0] * image_size[1] # is this really needed?
 
         try:
             filepath = tt.utils.data.download(MNIST_URL, 'tmp')
@@ -93,8 +93,16 @@ class MovingMNISTTrainDataset(object):
         return self._batch_size
 
     @property
-    def dims(self):
+    def dims(self): # TODO: is this used somewhere? If not, delete!
         return self._frame_size
+    
+    @property
+    def inputs_shape(self): # TODO: self._seq_length // 2: split into input_seq_length and targets_seq_length
+        return [self._seq_length + 1 // 2, self._image_size[0], self._image_size[1], 1]
+    
+    @property
+    def targets_shape(self): # TODO: self._seq_length // 2: split into input_seq_length and targets_seq_length
+        return [self._seq_length - 1 // 2, self._image_size[0], self._image_size[1], 1]
 
     @property
     def dataset_size(self):

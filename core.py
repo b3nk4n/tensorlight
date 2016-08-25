@@ -11,14 +11,13 @@ import tensortools as tt
 TRAIN_DIR = 'train'
 GPU_ALLOW_GROWTH = True
 GPU_MEMORY_FRACTION = 1.0
-MAX_STEPS = 2000
 
 # retrieve this from input-data, or model?
 FRAME_HEIGHT = 64
 FRAME_WIDTH = 64
 FRAME_CHANNELS = 1
-OUTPUT_SEQ_LENGTH = 10
-INPUT_SEQ_LENGTH = 10
+OUTPUT_SEQ_LENGTH = 0
+INPUT_SEQ_LENGTH = 1
 
 EPOCHS = 3 # ?
 
@@ -29,120 +28,149 @@ NUM_EPOCHS_PER_DECAY = 75.0 # used if FIXED_NUM_STEPS_PER_DECAY is None
 INITIAL_LEARNING_RATE = 0.001
 LEARNING_RATE_DECAY_FACTOR = 0.5
 
+FEEDING_DEFAULT = lambda x_ph, y_ph, inputs, targets : {x_ph: inputs, y_ph: targets}
+FEEDING_AUTOENCODER = lambda x_ph, y_ph, inputs, targets : {x_ph: inputs, y_ph: inputs}
 
 class AbstractRuntime(object):
     __metaclass__ = ABCMeta
     
     def __init__(self):
+        self._graph = tf.Graph() # graph really needed?
         self._session = None
         self._datasets = collections.namedtuple("datasets", ("train", "valid", "test"))
         self._model_init_func = None
         
+        self._feed_func = None
+        self.setup_feeding(FEEDING_DEFAULT)
         
+        self._x = None
+        self._y_ = None
+        
+        self._is_training = tf.placeholder(tf.bool, name='is_training')
+        self._global_step = tf.Variable(0, trainable=False)
+        
+        self._summary_writer = None
+        
+        self._train_op = None
+        self._total_loss = None
+        self._loss = None
+        self._summary_op = None
+           
     def register_datasets(self, train_ds, valid_ds=None, test_ds=None):
         self._datasets.train = train_ds
         self._datasets.valid = valid_ds
         self._datasets.test = test_ds
         
+        # FIXME: placeholders not required, when datasets uses input_queue (change after DS refactoring)
+        self._x = tf.placeholder(tf.float32, [None] + self._datasets.train.inputs_shape, "X")
+        self._y_ = tf.placeholder(tf.float32, [None] + self._datasets.train.inputs_shape, "Y_")
         
     def register_model(self, model_init_func):
         self._model_init_func = model_init_func
+             
+    def setup_feeding(self, feed_func):
+        self._feed_func = feed_func
         
+    def build(self):
+        train_op, total_loss, loss, summaries = self._build_internal(self._x, self._y_)
+
+        self._train_op = train_op
+        self._total_loss = total_loss
+        self._loss = loss
+        if summaries is None:
+            self._summary_op = tf.merge_all_summaries()
+        else:
+            self._summary_op = tf.merge_summary(summaries)
+ 
+        # start session and init all variables
+        self.session.run(tf.initialize_all_variables())
         
-    def start_training(self):
-        global_step = tf.Variable(0, trainable=False)
-        is_training = tf.placeholder(tf.bool, name='is_training')
+    def train(self, max_steps=0, epochs=0):
+        assert not(max_steps == 0 and epochs == 0), "Either set 'max_steps' or 'epochs' parameter"
+        assert not(max_steps > 0 and epochs > 0), "Not allowed to set both, 'max_steps' and 'epochs' parameter"
         
-        # FIXME: placeholders not required, when datasets uses input_queue
-        x = tf.placeholder(tf.float32, [None, INPUT_SEQ_LENGTH, FRAME_HEIGHT, FRAME_WIDTH, FRAME_CHANNELS], "X")
-        y_ = tf.placeholder(tf.float32, [None, OUTPUT_SEQ_LENGTH, FRAME_HEIGHT, FRAME_WIDTH, FRAME_CHANNELS], "Y_")
-        
-        train_op, total_loss, loss, summaries = self._train(x, y_, global_step, is_training)
-        
-        # Create a saver and merge all summaries
+        # Create a saver to store checkpoints of the model
         saver = tf.train.Saver(tf.all_variables())
         
-        #summary_op = tf.merge_all_summaries()
-        summary_op = tf.merge_summary(summaries)
-        
-        with self.session as sess:
-            
-            # Initialize all variables
-            sess.run(tf.initialize_all_variables())
-            
-            # Start input enqueue threads
-            coord = tf.train.Coordinator()
-            threads = tf.train.start_queue_runners(sess=sess, coord=coord)
+        # Start input enqueue threads
+        coord = tf.train.Coordinator()
+        threads = tf.train.start_queue_runners(sess=self.session, coord=coord)
 
-            summary_writer = tf.train.SummaryWriter(TRAIN_DIR, sess.graph)
+        self.datasets.train.reset()
 
-            self.datasets.train.reset()
-
-            try:
-                step = 0
-                while not coord.should_stop():
-                    step += 1
-
-                    if (step > MAX_STEPS):
-                        break
-
-                    start_time = time.time()
-
-                    #batch_x, batch_y = self.datasets.train.get_batch() # TODO: MovingMNIST has to return tuple!
-                    batch = self.datasets.train.get_batch()
-                    batch_x = batch[:,0:INPUT_SEQ_LENGTH,:,:,:]
-                    batch_y = batch[:,INPUT_SEQ_LENGTH:INPUT_SEQ_LENGTH+OUTPUT_SEQ_LENGTH,:,:,:]
-
-                    _, total_loss_value, loss_value = sess.run([train_op, total_loss, loss],
-                                             feed_dict={x: batch_x, y_: batch_y, is_training: True})
-                    duration = time.time() - start_time
-
-                    assert not np.isnan(total_loss_value), 'Model diverged with cost = NaN'
-
-                    if step % 10 == 0:
-                        # info
-                        num_examples_per_step = self.datasets.train.batch_size * NUM_GPUS
-                        examples_per_sec = num_examples_per_step / duration
-                        sec_per_batch = float(duration)
-
-                        format_str = ('%s: step %d, total-loss = %.2f, loss = %.2f (%.1f examples/sec; %.3f '
-                                      'sec/batch)')
-                        print(format_str % (datetime.now().time(), step,
-                                            total_loss_value, loss_value,
-                                            examples_per_sec, sec_per_batch))
-
-                    if step % 100:
-                        # summary
-                        summary_str = sess.run(summary_op, feed_dict={x: batch_x, y_: batch_y, is_training:True})
-                        summary_writer.add_summary(summary_str, step)
-                        summary_writer.flush() 
-
-                    if step % 1000 == 0 or step == 100:
-                        # validate
-                        self.validate()
-
-                    if step % 1000 == 0:
-                        # save checkpoint
-                        checkpoint_path = os.path.join(TRAIN_DIR, 'model.ckpt')
-                        saver.save(sess, checkpoint_path, global_step=step)
-                    
-            except tf.errors.OutOfRangeError:
-                print('Done training -- epoch limit reached')
-            finally:
-                # When done, ask the threads to stop
-                coord.request_stop()
-
-            # Wait for threads to finish
-            coord.join(threads)
+        try:
+            this_step = 0
+            while not coord.should_stop():
+                this_step += 1
+                if (this_step > max_steps):
+                    break
                 
+                start_time = time.time()
+
+                #batch_x, batch_y = self.datasets.train.get_batch() # TODO: MovingMNIST has to return tuple!
+                batch = self.datasets.train.get_batch()
+                batch_x = batch[:,0:INPUT_SEQ_LENGTH,:,:,:]
+                batch_y = batch[:,INPUT_SEQ_LENGTH:INPUT_SEQ_LENGTH+OUTPUT_SEQ_LENGTH,:,:,:]
                 
+                feed = self._feed_func(self._x, self._y_, batch_x, batch_y)
+                feed.update({self._is_training: True})
+
+                # step counter is increment when train_op is executed
+                _, gstep, total_loss, loss = self.session.run([self._train_op,
+                                                              self._global_step,
+                                                              self._total_loss,
+                                                              self._loss],
+                                                             feed_dict=feed)
+                duration = time.time() - start_time
+
+                assert not np.isnan(total_loss), 'Model diverged with cost = NaN'
+
+                if gstep % 10 == 0:
+                    # info
+                    num_examples_per_step = self.datasets.train.batch_size * NUM_GPUS
+                    examples_per_sec = num_examples_per_step / duration
+                    sec_per_batch = float(duration)
+
+                    format_str = ('%s: step %d, total-loss = %.2f, loss = %.2f (%.1f examples/sec; %.3f '
+                                  'sec/batch)')
+                    print(format_str % (datetime.now().time(), gstep,
+                                        total_loss, loss,
+                                        examples_per_sec, sec_per_batch))
+
+                if gstep % 100:
+                    # summary
+                    summary_str = self.session.run(self._summary_op, feed_dict=feed)
+                    self.summary_writer.add_summary(summary_str, gstep)
+                    self.summary_writer.flush() 
+
+                if gstep % 1000 == 0 or gstep == 100:
+                    # validate
+                    self._validate_internal()
+
+                if gstep % 1000 == 0:
+                    # save checkpoint
+                    checkpoint_path = os.path.join(TRAIN_DIR, 'model.ckpt')
+                    saver.save(self.session, checkpoint_path, global_step=self._global_step)
+               
+        except tf.errors.OutOfRangeError:
+            print('Done training -- epoch limit reached')
+        finally:
+            # When done, ask the threads to stop
+            coord.request_stop()
+
+        # Wait for threads to finish
+        coord.join(threads)
+
     @abstractmethod
-    def _train(self, x, y_, global_step, is_training):
+    def _build_internal(self, x, y_):
         pass
     
     
     def validate(self):
-        # TODO: session, when executed alone?
+        self._validate_internal(loss)
+        
+        
+    def _validate_internal(self):
         self.datasets.valid.reset()
         num_batches = self.datasets.valid.dataset_size // self.datasets.valid.batch_size
 
@@ -152,38 +180,55 @@ class AbstractRuntime(object):
             batch = self.datasets.valid.get_batch()      
             batch_x = batch[:,0:INPUT_SEQ_LENGTH,:,:,:]
             batch_y = batch[:,INPUT_SEQ_LENGTH:INPUT_SEQ_LENGTH+OUTPUT_SEQ_LENGTH,:,:,:]
+            
+            feed = self._feed_func(self._x, self._y_, batch_x, batch_y)
+            feed.update({self._is_training: False})
 
-            valid_loss = sess.run(loss, feed_dict={x: batch_x, y_: batch_y, is_training: False})
+            valid_loss = self.session.run(self._loss, feed_dict=feed)
             print("{}/{} Valid Loss= {:.6f}".format(b, num_batches, valid_loss))
             valid_loss_sum += valid_loss
             
         avg_valid_loss = valid_loss_sum / num_batches
-        print("@{}: Minibatch Avg. Valid Loss= {:.6f}".format(step, avg_valid_loss))
         valid_loss_summary = tf.scalar_summary('avg_valid_loss', avg_valid_loss)
-        summary_str = sess.run(valid_loss_summary)
-        summary_writer.add_summary(summary_str, step)
-        summary_writer.flush() 
+        summary_str, gstep = self.session.run([valid_loss_summary, self._global_step])
+        self.summary_writer.add_summary(summary_str, gstep)
+        self.summary_writer.flush()
+        
+        print("@{}: Minibatch Avg. Valid Loss= {:.6f}".format(gstep, avg_valid_loss))
         
         
     def test(self):
         pass
+    
+    
+    def _create_session(self):
+        gpu_options = tf.GPUOptions(
+            per_process_gpu_memory_fraction=GPU_MEMORY_FRACTION,
+            allow_growth=GPU_ALLOW_GROWTH)
+        return tf.Session(config=tf.ConfigProto(gpu_options=gpu_options))
         
+    def close(self):
+        self.session.close()
         
+    @property
+    def graph(self):
+        return self._graph
 
     @property
     def session(self):
         if self._session is None:
-            gpu_options = tf.GPUOptions(
-            per_process_gpu_memory_fraction=GPU_MEMORY_FRACTION,
-            allow_growth=GPU_ALLOW_GROWTH)
-            self._session = tf.Session(config=tf.ConfigProto(gpu_options=gpu_options))
+            self._session = self._create_session()
         return self._session
     
     @property
     def datasets(self):
         return self._datasets
 
-    
+    @property
+    def summary_writer(self):
+        if self._summary_writer is None:
+            self._summary_writer = tf.train.SummaryWriter(TRAIN_DIR, self.session.graph)
+        return self._summary_writer
     
     
     
@@ -228,7 +273,7 @@ class MultiGpuRuntime(AbstractRuntime):
         return total_loss, loss
         
     #@override
-    def _train(self, x, y_, global_step, is_training):
+    def _build_internal(self, x, y_):
         """Train sequence model.
         predictions_for_input:
             Either the same as predictions or None
@@ -243,7 +288,7 @@ class MultiGpuRuntime(AbstractRuntime):
 
         # Decay the learning rate exponentially based on the number of steps
         lr = tf.train.exponential_decay(INITIAL_LEARNING_RATE,
-                                        global_step,
+                                        self._global_step,
                                         decay_steps,
                                         LEARNING_RATE_DECAY_FACTOR,
                                         staircase=True)
@@ -265,7 +310,7 @@ class MultiGpuRuntime(AbstractRuntime):
                     # Build inference Graph.This function constructs 
                     # the entire model but shares the variables across all towers.
                     model = self._model_init_func(this_inputs, this_targets,
-                                                  scope=scope, is_training=is_training)
+                                                  scope=scope, is_training=self._is_training)
 
                     # Calculate the loss for one tower of the model.
                     this_total_loss, this_loss = self._tower_loss(model, scope)
@@ -300,13 +345,13 @@ class MultiGpuRuntime(AbstractRuntime):
         # Add histograms for gradients
         summaries.extend(tt.board.gradients_histogram_summary(grads))
 
-        # Apply the gradients to adjust the shared variables.
-        apply_gradient_op = opt.apply_gradients(grads, global_step=global_step)
+        # Apply the gradients to adjust the shared variables and increment the step counter
+        apply_gradient_op = opt.apply_gradients(grads, global_step=self._global_step)
 
         summaries.extend(tt.board.variables_histogram_summary())
 
         # Track the moving averages of all trainable variables
-        variable_averages = tf.train.ExponentialMovingAverage(0.9999, global_step)
+        variable_averages = tf.train.ExponentialMovingAverage(0.9999, self._global_step)
         variables_averages_op = variable_averages.apply(tf.trainable_variables())
 
         # Group all updates to into a single train op.
@@ -316,6 +361,7 @@ class MultiGpuRuntime(AbstractRuntime):
         
         
     def start_training(self):
-        with tf.Graph().as_default(), tf.device('/cpu:0'):
+        #with self.graph.as_default(), tf.device('/cpu:0'):
+        with tf.device('/cpu:0'):
             return super(MultiGpuRuntime, self).start_training()
             
