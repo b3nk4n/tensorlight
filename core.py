@@ -92,6 +92,7 @@ class AbstractRuntime(object):
         # Create a saver to store checkpoints of the model
         saver = tf.train.Saver(tf.all_variables())
         
+        # TODO: this is only required for inpute Queue!!!
         # Start input enqueue threads
         coord = tf.train.Coordinator()
         threads = tf.train.start_queue_runners(sess=self.session, coord=coord)
@@ -123,7 +124,7 @@ class AbstractRuntime(object):
                                                              feed_dict=feed)
                 duration = time.time() - start_time
 
-                assert not np.isnan(total_loss), 'Model diverged with cost = NaN'
+                assert not np.isnan(loss), 'Warning: Model diverged with loss = NaN'
 
                 if gstep % 10 == 0:
                     # info
@@ -131,11 +132,8 @@ class AbstractRuntime(object):
                     examples_per_sec = num_examples_per_step / duration
                     sec_per_batch = float(duration)
 
-                    format_str = ('%s: step %d, total-loss = %.2f, loss = %.2f (%.1f examples/sec; %.3f '
-                                  'sec/batch)')
-                    print(format_str % (datetime.now().time(), gstep,
-                                        total_loss, loss,
-                                        examples_per_sec, sec_per_batch))
+                    print("@{:6d}: loss: {:9.3f}, total-loss: {:9.3f} ({:7.1f} examples/sec, {:5.2f} sec/batch)" \
+                          .format(gstep, loss, total_loss, examples_per_sec, sec_per_batch))
 
                 if gstep % 100:
                     # summary
@@ -143,11 +141,13 @@ class AbstractRuntime(object):
                     self.summary_writer.add_summary(summary_str, gstep)
                     self.summary_writer.flush() 
 
-                if gstep % 1000 == 0 or gstep == 100:
+                if gstep % 1000 == 0 or gstep == 100  or this_step == max_steps:
                     # validate
+                    print
                     self._validate_internal()
+                    print
 
-                if gstep % 1000 == 0:
+                if gstep % 1000 == 0 or this_step == max_steps:
                     # save checkpoint
                     checkpoint_path = os.path.join(TRAIN_DIR, 'model.ckpt')
                     saver.save(self.session, checkpoint_path, global_step=self._global_step)
@@ -167,15 +167,25 @@ class AbstractRuntime(object):
     
     
     def validate(self):
-        self._validate_internal(loss)
+        self._validate_internal()
         
         
     def _validate_internal(self):
+        if self.datasets.valid is None:
+            print("No validation set registered. Skipping.")
+            return
+        
         self.datasets.valid.reset()
-        num_batches = self.datasets.valid.dataset_size // self.datasets.valid.batch_size
+        dataset_size = self.datasets.valid.dataset_size
+        batch_size = self.datasets.valid.batch_size
+        num_batches = dataset_size // batch_size
 
+        gstep = self.session.run(self._global_step)
+        print("@{:6d}: Starting validation (batch-size: {}, dataset-size: {}):" \
+              .format(gstep, batch_size, dataset_size))
+        
         valid_loss_sum = 0
-        print("Validation...")
+        progress = tt.utils.ui.ProgressBar(num_batches * batch_size)
         for b in xrange(num_batches):
             batch = self.datasets.valid.get_batch()      
             batch_x = batch[:,0:INPUT_SEQ_LENGTH,:,:,:]
@@ -185,16 +195,14 @@ class AbstractRuntime(object):
             feed.update({self._is_training: False})
 
             valid_loss = self.session.run(self._loss, feed_dict=feed)
-            print("{}/{} Valid Loss= {:.6f}".format(b, num_batches, valid_loss))
             valid_loss_sum += valid_loss
+            progress.update((b+1) * batch_size, [('loss', valid_loss)])
             
         avg_valid_loss = valid_loss_sum / num_batches
         valid_loss_summary = tf.scalar_summary('avg_valid_loss', avg_valid_loss)
-        summary_str, gstep = self.session.run([valid_loss_summary, self._global_step])
+        summary_str = self.session.run(valid_loss_summary)
         self.summary_writer.add_summary(summary_str, gstep)
         self.summary_writer.flush()
-        
-        print("@{}: Minibatch Avg. Valid Loss= {:.6f}".format(gstep, avg_valid_loss))
         
         
     def test(self):
@@ -272,7 +280,7 @@ class MultiGpuRuntime(AbstractRuntime):
 
         return total_loss, loss
         
-    #@override
+    @tt.utils.attr.override
     def _build_internal(self, x, y_):
         """Train sequence model.
         predictions_for_input:

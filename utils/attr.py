@@ -1,6 +1,13 @@
 import functools
 from abc import abstractproperty
 
+
+def override(function):
+    """Marker attribute to tell we are overriding a method
+    """
+    return function
+
+
 def lazy_property(function):
     """A lazy property that is only evaluated once.
        Reduces clutter code and is similar to a singleton implementation for a property.
