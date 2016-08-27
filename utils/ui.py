@@ -10,7 +10,7 @@ class ProgressBar(object):
     References:
         Taken from: Keras
     """
-    def __init__(self, max_value, width=32, interval=0.01):
+    def __init__(self, max_value, width=32):
         """Creates a progress indicator instance.
         Parameters
         ----------
@@ -18,20 +18,16 @@ class ProgressBar(object):
             The maximum progress value.
         width: int, optional
             The width of the progress bar.
-        interval: float, optional
-            The minimum visual progress update interval (in seconds)
         """
         self.width = width
         self.max_value = max_value
         self.sum_params = {}
         self.unique_params = []
         self.start = time.time()
-        self.last_update = 0
-        self.interval = interval
         self.total_width = 0
         self.seen_so_far = 0
 
-    def update(self, value, params=[], force=False):
+    def update(self, value, params=[]):
         """Updates the progress bar.
         Parameters
         ----------
@@ -40,8 +36,6 @@ class ProgressBar(object):
         params: list(tuple(str, float)), optional
             List of parameters to show as a tuple of (name, value).
             The progress bar will display averages for these values.
-        force: Boolean, optional
-            Force visual progress update.
         """
         for k, v in params:
             if k not in self.sum_params:
@@ -53,9 +47,6 @@ class ProgressBar(object):
         self.seen_so_far = value
 
         now = time.time()
-
-        if not force and (now - self.last_update) < self.interval:
-            return
 
         prev_total_width = self.total_width
         sys.stdout.write("\b" * prev_total_width)
@@ -107,5 +98,3 @@ class ProgressBar(object):
 
         if value >= self.max_value:
             sys.stdout.write("\n")
-
-        self.last_update = now
