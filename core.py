@@ -12,15 +12,6 @@ TRAIN_DIR = 'train' # (automatially train_<ModelClassName> ?)
 GPU_ALLOW_GROWTH = True
 GPU_MEMORY_FRACTION = 1.0
 
-# retrieve this from input-data, or model?
-FRAME_HEIGHT = 64
-FRAME_WIDTH = 64
-FRAME_CHANNELS = 1
-OUTPUT_SEQ_LENGTH = 0
-INPUT_SEQ_LENGTH = 1
-
-EPOCHS = 3 # ?
-
 NUM_GPUS = 2
 FIXED_NUM_STEPS_PER_DECAY = 10000
 NUM_EPOCHS_PER_DECAY = 75.0 # used if FIXED_NUM_STEPS_PER_DECAY is None
@@ -28,8 +19,6 @@ NUM_EPOCHS_PER_DECAY = 75.0 # used if FIXED_NUM_STEPS_PER_DECAY is None
 INITIAL_LEARNING_RATE = 0.0001
 LEARNING_RATE_DECAY_FACTOR = 0.5
 
-FEEDING_DEFAULT = lambda x_ph, y_ph, inputs, targets : {x_ph: inputs, y_ph: targets}
-FEEDING_AUTOENCODER = lambda x_ph, y_ph, inputs, targets : {x_ph: inputs, y_ph: inputs}
 
 class AbstractRuntime(object):
     __metaclass__ = ABCMeta
@@ -42,7 +31,6 @@ class AbstractRuntime(object):
         self._models = []
         
         self._feed_func = None
-        self.setup_feeding(FEEDING_DEFAULT)
         
         self._x = None
         self._y_ = None
@@ -62,17 +50,20 @@ class AbstractRuntime(object):
         self._datasets.valid = valid_ds
         self._datasets.test = test_ds
         
-        # FIXME: placeholders not required, when datasets uses input_queue (change after DS refactoring)
-        self._x = tf.placeholder(tf.float32, [None] + self._datasets.train.inputs_shape, "X")
-        self._y_ = tf.placeholder(tf.float32, [None] + self._datasets.train.inputs_shape, "Y_")
-        
     def register_model(self, model_init_func):
         self._model_init_func = model_init_func
-             
-    def setup_feeding(self, feed_func):
-        self._feed_func = feed_func
         
-    def build(self):
+    def build(self, is_autoencoder=False):
+        # FIXME: placeholders not required, when datasets uses input_queue (change after DS refactoring)
+        self._x = tf.placeholder(tf.float32, [None] + self._datasets.train.input_shape, "X")
+        if is_autoencoder:
+            self._y_ = tf.placeholder(tf.float32, [None] + self._datasets.train.input_shape, "Y_")
+            self._feed_func = lambda x_ph, y_ph, inputs, targets : {x_ph: inputs, y_ph: inputs}
+        else:
+            self._y_ = tf.placeholder(tf.float32, [None] + self._datasets.train.target_shape, "Y_")
+            self._feed_func = lambda x_ph, y_ph, inputs, targets : {x_ph: inputs, y_ph: targets}
+            
+        
         train_op, total_loss, loss, summaries = self._build_internal(self._x, self._y_)
 
         self._train_op = train_op
@@ -118,11 +109,7 @@ class AbstractRuntime(object):
                 
                 start_time = time.time()
 
-                #batch_x, batch_y = self.datasets.train.get_batch() # TODO: MovingMNIST has to return tuple!
-                batch = self.datasets.train.get_batch()
-                batch_x = batch[:,0:INPUT_SEQ_LENGTH,:,:,:]
-                batch_y = batch[:,INPUT_SEQ_LENGTH:INPUT_SEQ_LENGTH+OUTPUT_SEQ_LENGTH,:,:,:]
-                
+                batch_x, batch_y = self.datasets.train.get_batch()
                 feed = self._feed_func(self._x, self._y_, batch_x, batch_y)
                 feed.update({self._is_training: True})
 
@@ -210,16 +197,13 @@ class AbstractRuntime(object):
         num_batches = dataset.batches_per_epoch
         gstep = self.session.run(self._global_step)
         print("@{:6d}: Starting {} (batch-size: {}, dataset-size: {}):" \
-              .format(gstep, title, dataset.batch_size, dataset.dataset_size))
+              .format(gstep, title, dataset.batch_size, dataset.size))
         
         dataset.reset()
         loss_sum = 0
         progress = tt.utils.ui.ProgressBar(num_batches * dataset.batch_size)
         for b in xrange(num_batches):
-            batch = dataset.get_batch()
-            batch_x = batch[:,0:INPUT_SEQ_LENGTH,:,:,:]
-            batch_y = batch[:,INPUT_SEQ_LENGTH:INPUT_SEQ_LENGTH+OUTPUT_SEQ_LENGTH,:,:,:]
-            
+            batch_x, batch_y = self.datasets.train.get_batch()
             feed = self._feed_func(self._x, self._y_, batch_x, batch_y)
             feed.update({self._is_training: False})
 
@@ -314,7 +298,7 @@ class MultiGpuRuntime(AbstractRuntime):
         """
         # Variables that affect learning rate
         batch_size = self.datasets.train.batch_size
-        num_batches_per_epoch = self.datasets.train.dataset_size / batch_size
+        num_batches_per_epoch = self.datasets.train.size / batch_size
         decay_steps = num_batches_per_epoch * NUM_EPOCHS_PER_DECAY
 
         if FIXED_NUM_STEPS_PER_DECAY is not None:
