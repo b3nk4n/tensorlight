@@ -91,6 +91,10 @@ class MovingMNISTTrainDataset(object):
     @property
     def batch_size(self):
         return self._batch_size
+    
+    @property
+    def batches_per_epoch(self):
+        return self._dataset_size // self._batch_size
 
     @property
     def dims(self): # TODO: is this used somewhere? If not, delete!
@@ -187,6 +191,10 @@ class MovingMNISTValidDataset(object):
     @property
     def batch_size(self):
         return self._batch_size
+    
+    @property
+    def batches_per_epoch(self):
+        return self._dataset_size // self._batch_size
 
     @property
     def dims(self):
@@ -266,6 +274,10 @@ class MovingMNISTTestDataset(object):
     @property
     def batch_size(self):
         return self._batch_size
+    
+    @property
+    def batches_per_epoch(self):
+        return self._dataset_size // self._batch_size
 
     @property
     def dims(self):
@@ -284,10 +296,9 @@ class MovingMNISTTestDataset(object):
         pass
 
     def get_batch(self):
+        if self._row >= self._data.shape[0]:
+            self.reset()
+        
         minibatch = self._data[self._row:self._row+self._batch_size]    
         self._row = self._row + self._batch_size
-    
-        if self._row == self._data.shape[0]:
-            self.reset()
-    
         return minibatch

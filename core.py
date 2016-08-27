@@ -85,9 +85,12 @@ class AbstractRuntime(object):
         # start session and init all variables
         self.session.run(tf.initialize_all_variables())
         
-    def train(self, max_steps=0, epochs=0):
-        assert not(max_steps == 0 and epochs == 0), "Either set 'max_steps' or 'epochs' parameter"
-        assert not(max_steps > 0 and epochs > 0), "Not allowed to set both, 'max_steps' and 'epochs' parameter"
+    def train(self, steps=-1, epochs=-1):
+        assert not(steps <= 0 and epochs <= 0), "Either set 'steps' or 'epochs' parameter"
+        assert not(steps > 0 and epochs > 0), "Not allowed to set both, 'steps' and 'epochs' parameter"
+        
+        if epochs > 0:
+            steps = self.datasets.train.batches_per_epoch * epochs
         
         # Create a saver to store checkpoints of the model
         saver = tf.train.Saver(tf.all_variables())
@@ -103,8 +106,12 @@ class AbstractRuntime(object):
             this_step = 0
             while not coord.should_stop():
                 this_step += 1
-                if (this_step > max_steps):
+                if (this_step > steps):
                     break
+                
+                if this_step % self.datasets.train.batches_per_epoch == 1:
+                    epoch = (this_step - 1) // self.datasets.train.batches_per_epoch + 1
+                    print("Starting epoch {}...".format(epoch))
                 
                 start_time = time.time()
 
@@ -128,32 +135,38 @@ class AbstractRuntime(object):
 
                 if gstep % 10 == 0:
                     # info
-                    num_examples_per_step = self.datasets.train.batch_size * NUM_GPUS
+                    num_examples_per_step = self.datasets.train.batch_size
                     examples_per_sec = num_examples_per_step / duration
                     sec_per_batch = float(duration)
-
                     print("@{:6d}: loss: {:9.3f}, total-loss: {:9.3f} ({:7.1f} examples/sec, {:5.2f} sec/batch)" \
                           .format(gstep, loss, total_loss, examples_per_sec, sec_per_batch))
 
-                if gstep % 100:
+                if gstep % 100 or this_step == steps:
                     # summary
                     summary_str = self.session.run(self._summary_op, feed_dict=feed)
                     self.summary_writer.add_summary(summary_str, gstep)
                     self.summary_writer.flush() 
 
-                if gstep % 1000 == 0 or gstep == 100  or this_step == max_steps:
+                if gstep == 100 or this_step == steps or epochs == -1 and gstep % 1000 == 0 or \
+                   epochs > 0 and this_step % self.datasets.train.batches_per_epoch == 0 or:
                     # validate
                     print
-                    self._test_internal(self.datasets.valid, "validation", "avg_valid_loss")
+                    self._test_internal(self.datasets.valid, "validation", True)
                     print
 
-                if gstep % 1000 == 0 or this_step == max_steps:
-                    # save checkpoint
-                    checkpoint_path = os.path.join(TRAIN_DIR, 'model.ckpt')
+                if gstep % 1000 == 0 or this_step == steps:
+                    # save regular checkpoint
+                    checkpoint_path = os.path.join(TRAIN_DIR, "model.ckpt")
                     saver.save(self.session, checkpoint_path, global_step=self._global_step)
+                    
+                if epochs > 0:
+                    if this_step % self.datasets.train.batches_per_epoch == 0:
+                        # save epoch checkpoint
+                        checkpoint_path = os.path.join(TRAIN_DIR, "ep-{}_model.ckpt".format(epoch))
+                        saver.save(self.session, checkpoint_path, global_step=self._global_step)
                
         except tf.errors.OutOfRangeError:
-            print('Done training -- epoch limit reached')
+            print("Done training -- epoch limit reached")
         finally:
             # When done, ask the threads to stop
             coord.request_stop()
@@ -167,29 +180,26 @@ class AbstractRuntime(object):
     
     
     def validate(self):
-        self._test_internal(self.datasets.valid, "validation", None)
+        self._test_internal(self.datasets.valid, "validation")
         
         
     def test(self):
-        self._test_internal(self.datasets.test, "test", None)
+        self._test_internal(self.datasets.test, "test")
         
         
-    def _test_internal(self, dataset, title, summary_key):
+    def _test_internal(self, dataset, title, summary=False):
         if dataset is None:
             print("No {} dataset registered. Skipping.".format(title))
             return
         
-        dataset.reset()
-        dataset_size = dataset.dataset_size
-        batch_size = dataset.batch_size
-        num_batches = dataset_size // batch_size
-
+        num_batches = dataset.batches_per_epoch
         gstep = self.session.run(self._global_step)
         print("@{:6d}: Starting {} (batch-size: {}, dataset-size: {}):" \
-              .format(gstep, title, batch_size, dataset_size))
+              .format(gstep, title, dataset.batch_size, dataset.dataset_size))
         
+        dataset.reset()
         loss_sum = 0
-        progress = tt.utils.ui.ProgressBar(num_batches * batch_size)
+        progress = tt.utils.ui.ProgressBar(num_batches * dataset.batch_size)
         for b in xrange(num_batches):
             batch = dataset.get_batch()      
             batch_x = batch[:,0:INPUT_SEQ_LENGTH,:,:,:]
@@ -200,11 +210,11 @@ class AbstractRuntime(object):
 
             this_loss = self.session.run(self._loss, feed_dict=feed)
             loss_sum += this_loss
-            progress.update((b+1) * batch_size, [('loss', this_loss)])
+            progress.update((b+1) * dataset.batch_size, [('loss', this_loss)])
             
-        if summary_key is not None:
+        if summary:
             avg_loss = loss_sum / num_batches
-            loss_summary = tf.scalar_summary(summary_key, avg_loss)
+            loss_summary = tf.scalar_summary("{}_loss".format(title), avg_loss)
             summary_str = self.session.run(loss_summary)
             self.summary_writer.add_summary(summary_str, gstep)
             self.summary_writer.flush()
