@@ -8,7 +8,7 @@ import numpy as np
 import tensorflow as tf
 import tensortools as tt
 
-TRAIN_DIR = 'train'
+TRAIN_DIR = 'train' # (automatially train_<ModelClassName> ?)
 GPU_ALLOW_GROWTH = True
 GPU_MEMORY_FRACTION = 1.0
 
@@ -86,7 +86,7 @@ class AbstractRuntime(object):
         # start session and init all variables
         self.session.run(tf.initialize_all_variables())
         
-    def train(self, steps=-1, epochs=-1):
+    def train(self, steps=-1, epochs=-1, display_step=10):
         assert not(steps <= 0 and epochs <= 0), "Either set 'steps' or 'epochs' parameter"
         assert not(steps > 0 and epochs > 0), "Not allowed to set both, 'steps' and 'epochs' parameter"
         
@@ -105,6 +105,8 @@ class AbstractRuntime(object):
 
         try:
             this_step = 0
+            total_loss_sum = 0
+            loss_sum = 0
             while not coord.should_stop():
                 this_step += 1
                 if (this_step > steps):
@@ -134,13 +136,19 @@ class AbstractRuntime(object):
 
                 assert not np.isnan(loss), 'Warning: Model diverged with loss = NaN'
 
-                if gstep % 10 == 0:
+                total_loss_sum += total_loss
+                loss_sum += loss
+                if gstep % display_step == 0:
                     # info
                     num_examples_per_step = self.datasets.train.batch_size
                     examples_per_sec = num_examples_per_step / duration
                     sec_per_batch = float(duration)
+                    avg_total_loss = total_loss_sum / display_step
+                    avg_loss = loss_sum / display_step
+                    total_loss_sum = 0
+                    loss_sum = 0
                     print("@{:6d}: loss: {:9.3f}, total-loss: {:9.3f} ({:7.1f} examples/sec, {:5.2f} sec/batch)" \
-                          .format(gstep, loss, total_loss, examples_per_sec, sec_per_batch))
+                          .format(gstep, avg_loss, avg_total_loss, examples_per_sec, sec_per_batch))
 
                 if gstep % 100 or this_step == steps:
                     # summary
