@@ -3,6 +3,7 @@ import sys
 import h5py
 import numpy as np
 import tensortools as tt
+import base
 
 
 # we use the same MNIST dataset as University of Toronto in its 'Unsupervised Learning with LSTMS'
@@ -55,10 +56,10 @@ def _get_random_trajectory(batch_size, seq_length, image_size, digit_size, step_
     return start_y, start_x
 
 
-
-class MovingMNISTTrainDataset(object):
+class MovingMNISTTrainDataset(base.AbstractImageSequenceDataset):
     """Moving MNIST dataset that creates data on the fly."""
-    def __init__(self, batch_size, num_frames, image_size=(64, 64), num_digits=2, step_length=0.1):
+    def __init__(self, batch_size, image_size=(64, 64, 1), input_seq_length=10, target_seq_length=10,
+                 num_digits=2, step_length=0.1):
         """Creates a dataset instance.
         Reference: Based on Srivastava et al.
                    http://www.cs.toronto.edu/~nitish/unsupervised_video/
@@ -66,71 +67,37 @@ class MovingMNISTTrainDataset(object):
         ----------
         ... TODO: describe parameters of this classes.
         """
-        self._seq_length = num_frames
-        self._batch_size = batch_size
-        self._image_size = image_size
         self._num_digits = num_digits
         self._step_length = step_length
-        self._dataset_size = sys.maxint
-        self._digit_size = 28
-        self._frame_size = image_size[0] * image_size[1] # is this really needed?
-
+        
         try:
             filepath = tt.utils.data.download(MNIST_URL, 'tmp')
             f = h5py.File(filepath)
+            data = f['train'].value
         except:
             print 'Please set the correct path to MNIST dataset. Might be caused by a download error.'
             sys.exit()
-
-        self._data = f['train'].value.reshape(-1, 28, 28)
         f.close()
-        self._indices = np.arange(self._data.shape[0])
-        self._row = 0
-        self.reset()
+        
+        data = data.reshape(-1, 28, 28)
+        dataset_size = sys.maxint
+        
+        super(MovingMNISTTrainDataset, self).__init__(batch_size, data, dataset_size, image_size,
+                                                      input_seq_length, target_seq_length)
 
-    @property
-    def batch_size(self):
-        return self._batch_size
-    
-    @property
-    def batches_per_epoch(self):
-        return self._dataset_size // self._batch_size
-
-    @property
-    def dims(self): # TODO: is this used somewhere? If not, delete!
-        return self._frame_size
-    
-    @property
-    def inputs_shape(self): # TODO: self._seq_length // 2: split into input_seq_length and targets_seq_length
-        return [self._seq_length + 1 // 2, self._image_size[0], self._image_size[1], 1]
-    
-    @property
-    def targets_shape(self): # TODO: self._seq_length // 2: split into input_seq_length and targets_seq_length
-        return [self._seq_length - 1 // 2, self._image_size[0], self._image_size[1], 1]
-
-    @property
-    def dataset_size(self):
-        return self._dataset_size
-
-    @property
-    def seq_length(self):
-        return self._seq_length
-    
-    def reset(self):
-        self._row = 0
-        np.random.shuffle(self._indices)
-        pass
-
+    @tt.utils.attr.override
     def get_batch(self):
         start_y, start_x = _get_random_trajectory(self._batch_size * self._num_digits,
-                                                  self._seq_length, 
+                                                  self.input_seq_length + self.target_seq_length, 
                                                   self._image_size, 
-                                                  self._digit_size, 
+                                                  28, 
                                                   self._step_length)
     
-        # minibatch data
-        data = np.zeros((self._batch_size, self._seq_length, self._image_size[0], self._image_size[1], 1),
-                        dtype=np.float32)
+        input_data = np.zeros([self._batch_size] + self.input_shape, dtype=np.float32)
+        
+        target_data = None
+        if self.target_seq_length > 0:
+            target_data = np.zeros([self._batch_size] + self.target_shape, dtype=np.float32)
     
         for j in xrange(self._batch_size):
             for n in xrange(self._num_digits):
@@ -142,23 +109,32 @@ class MovingMNISTTrainDataset(object):
                     self.reset()
                 digit_image = self._data[ind, :, :]
         
-                # generate video
-                for i in xrange(self._seq_length):
+                # generate inputs
+                for i in xrange(self.input_seq_length):
                     top    = start_y[i, j * self._num_digits + n]
                     left   = start_x[i, j * self._num_digits + n]
-                    bottom = top  + self._digit_size
-                    right  = left + self._digit_size
+                    bottom = top  + 28
+                    right  = left + 28
                     # set data and use maximum for overlap
-                    data[j, i, top:bottom, left:right, 0] = np.maximum(data[j, i, top:bottom, left:right, 0],
-                                                                       digit_image)
+                    input_data[j, i, top:bottom, left:right, 0] = np.maximum(input_data[j, i, top:bottom, left:right, 0],
+                                                                             digit_image)
+                # generate targets
+                for i in xrange(self.target_seq_length):
+                    top    = start_y[i, j * self._num_digits + n]
+                    left   = start_x[i, j * self._num_digits + n]
+                    bottom = top  + 28
+                    right  = left + 28
+                    # set data and use maximum for overlap
+                    target_data[j, i, top:bottom, left:right, 0] = np.maximum(target_data[j, i, top:bottom, left:right, 0],
+                                                                              digit_image)
+        return input_data, target_data
     
-        return data
     
     
-    
-class MovingMNISTValidDataset(object):
-    """Moving MNIST dataset for validation."""
-    def __init__(self, batch_size, num_frames, image_size=(64, 64), num_digits=2, step_length=0.1):
+class MovingMNISTValidDataset(base.AbstractImageSequenceDataset):
+    """Moving MNIST dataset that creates data on the fly."""
+    def __init__(self, batch_size, image_size=(64, 64, 1), input_seq_length=10, target_seq_length=10,
+                 num_digits=2, step_length=0.1):
         """Creates a dataset instance.
         Reference: Based on Srivastava et al.
                    http://www.cs.toronto.edu/~nitish/unsupervised_video/
@@ -166,63 +142,37 @@ class MovingMNISTValidDataset(object):
         ----------
         ... TODO: describe parameters of this classes.
         """
-        self._seq_length = num_frames
-        self._batch_size = batch_size
-        self._image_size = image_size
         self._num_digits = num_digits
         self._step_length = step_length
-        self._dataset_size = 10000
-        self._digit_size = 28
-        self._frame_size = image_size[0] * image_size[1]
-
+        
         try:
             filepath = tt.utils.data.download(MNIST_URL, 'tmp')
             f = h5py.File(filepath)
+            data = f['validation'].value
         except:
             print 'Please set the correct path to MNIST dataset. Might be caused by a download error.'
             sys.exit()
-
-        self._data = f['validation'].value.reshape(-1, 28, 28)
         f.close()
-        self._indices = np.arange(self._data.shape[0])
-        self._row = 0
-        self.reset()
 
-    @property
-    def batch_size(self):
-        return self._batch_size
-    
-    @property
-    def batches_per_epoch(self):
-        return self._dataset_size // self._batch_size
+        data = data.reshape(-1, 28, 28)
+        dataset_size = 10000
+        
+        super(MovingMNISTValidDataset, self).__init__(batch_size, data, dataset_size, image_size,
+                                                      input_seq_length, target_seq_length)
 
-    @property
-    def dims(self):
-        return self._frame_size
-
-    @property
-    def dataset_size(self):
-        return self._dataset_size
-
-    @property
-    def seq_length(self):
-        return self._seq_length
-    
-    def reset(self):
-        self._row = 0
-        np.random.shuffle(self._indices)
-        pass
-
+    @tt.utils.attr.override
     def get_batch(self):
         start_y, start_x = _get_random_trajectory(self._batch_size * self._num_digits,
-                                                  self._seq_length, 
+                                                  self.input_seq_length + self.target_seq_length, 
                                                   self._image_size, 
-                                                  self._digit_size, 
+                                                  28, 
                                                   self._step_length)
     
-        # minibatch data
-        data = np.zeros((self._batch_size, self._seq_length, self._image_size[0], self._image_size[1], 1), 
-                        dtype=np.float32)
+        input_data = np.zeros([self._batch_size] + self.input_shape, dtype=np.float32)
+        
+        target_data = None
+        if self.target_seq_length > 0:
+            target_data = np.zeros([self._batch_size] + self.target_shape, dtype=np.float32)
     
         for j in xrange(self._batch_size):
             for n in xrange(self._num_digits):
@@ -234,71 +184,56 @@ class MovingMNISTValidDataset(object):
                     self.reset()
                 digit_image = self._data[ind, :, :]
         
-                # generate video
-                for i in xrange(self._seq_length):
+                # generate inputs
+                for i in xrange(self.input_seq_length):
                     top    = start_y[i, j * self._num_digits + n]
                     left   = start_x[i, j * self._num_digits + n]
-                    bottom = top  + self._digit_size
-                    right  = left + self._digit_size
+                    bottom = top  + 28
+                    right  = left + 28
                     # set data and use maximum for overlap
-                    data[j, i, top:bottom, left:right, 0] = np.maximum(data[j, i, top:bottom, left:right, 0],
-                                                                       digit_image)
-    
-        return data
+                    input_data[j, i, top:bottom, left:right, 0] = np.maximum(input_data[j, i, top:bottom, left:right, 0],
+                                                                             digit_image)
+                # generate targets
+                for i in xrange(self.target_seq_length):
+                    top    = start_y[i, j * self._num_digits + n]
+                    left   = start_x[i, j * self._num_digits + n]
+                    bottom = top  + 28
+                    right  = left + 28
+                    # set data and use maximum for overlap
+                    target_data[j, i, top:bottom, left:right, 0] = np.maximum(target_data[j, i, top:bottom, left:right, 0],
+                                                                              digit_image)
+        return input_data, target_data
 
     
     
 # video patches loaded from some file
-class MovingMNISTTestDataset(object):
-    def __init__(self, batch_size, num_frames):
-        self._seq_length = num_frames
-        self._batch_size = batch_size
-        self._image_size = (64, 64)
-        self._frame_size = self._image_size[0] * self._image_size[1]
-
+class MovingMNISTTestDataset(base.AbstractImageSequenceDataset):
+    def __init__(self, batch_size, input_seq_length=10, target_seq_length=10):
+        assert input_seq_length + target_seq_length <= 20, "The maximum total sequence length is 20."
+        
         try:
             filepath = tt.utils.data.download(MNIST_TEST_URL, 'tmp')
-            self._data = np.float32(np.load(filepath))
-            # introduce channel dimension
-            self._data = np.expand_dims(self._data, axis=4)
-            # use value scale [0,1]
-            self._data = self._data / 255.0  
+            data = np.float32(np.load(filepath))
         except:
             print 'Please set the correct path to the dataset. Might be caused by a download error.'
             sys.exit()
 
-        self._dataset_size = self._data.shape[0]
-        self._row = 0
-        self.reset()
-
-    @property
-    def batch_size(self):
-        return self._batch_size
-    
-    @property
-    def batches_per_epoch(self):
-        return self._dataset_size // self._batch_size
-
-    @property
-    def dims(self):
-        return self._frame_size
-
-    @property
-    def dataset_size(self):
-        return self._dataset_size
-
-    @property
-    def seq_length(self):
-        return self._seq_length
-
-    def reset(self):
-        self._row = 0
-        pass
-
+        # introduce channel dimension
+        data = np.expand_dims(data, axis=4)
+        # use value scale [0,1]
+        data = data / 255.0  
+        dataset_size = data.shape[0]
+        
+        super(MovingMNISTTestDataset, self).__init__(batch_size, data, dataset_size, (64, 64, 1),
+                                                     input_seq_length, target_seq_length)
+    @tt.utils.attr.override
     def get_batch(self):
         if self._row >= self._data.shape[0]:
             self.reset()
         
-        minibatch = self._data[self._row:self._row+self._batch_size]    
+        batch_inputs = self._data[self._row:self._row+self._batch_size,
+                                  0:self.input_seq_length,:,:,:]
+        batch_targets = self._data[self._row:self._row+self._batch_size,
+                                   self.input_seq_length:self.input_seq_length+self.target_seq_length,:,:,:]
         self._row = self._row + self._batch_size
-        return minibatch
+        return batch_inputs, batch_targets
