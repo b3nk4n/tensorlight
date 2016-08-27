@@ -25,7 +25,7 @@ NUM_GPUS = 2
 FIXED_NUM_STEPS_PER_DECAY = 10000
 NUM_EPOCHS_PER_DECAY = 75.0 # used if FIXED_NUM_STEPS_PER_DECAY is None
 
-INITIAL_LEARNING_RATE = 0.001
+INITIAL_LEARNING_RATE = 0.0001
 LEARNING_RATE_DECAY_FACTOR = 0.5
 
 FEEDING_DEFAULT = lambda x_ph, y_ph, inputs, targets : {x_ph: inputs, y_ph: targets}
@@ -39,6 +39,7 @@ class AbstractRuntime(object):
         self._session = None
         self._datasets = collections.namedtuple("datasets", ("train", "valid", "test"))
         self._model_init_func = None
+        self._models = []
         
         self._feed_func = None
         self.setup_feeding(FEEDING_DEFAULT)
@@ -148,7 +149,7 @@ class AbstractRuntime(object):
                     self.summary_writer.flush() 
 
                 if gstep == 100 or this_step == steps or epochs == -1 and gstep % 1000 == 0 or \
-                   epochs > 0 and this_step % self.datasets.train.batches_per_epoch == 0 or:
+                   epochs > 0 and this_step % self.datasets.train.batches_per_epoch == 0:
                     # validate
                     print
                     self._test_internal(self.datasets.valid, "validation", True)
@@ -178,6 +179,12 @@ class AbstractRuntime(object):
     def _build_internal(self, x, y_):
         pass
     
+    def predict(self, inputs):            
+        feed = self._feed_func(self._x, self._y_, inputs, None)
+        feed.update({self._is_training: False})
+        return self.session.run(self._models[0].predictions, feed_dict=feed)
+        
+    
     
     def validate(self):
         self._test_internal(self.datasets.valid, "validation")
@@ -201,7 +208,7 @@ class AbstractRuntime(object):
         loss_sum = 0
         progress = tt.utils.ui.ProgressBar(num_batches * dataset.batch_size)
         for b in xrange(num_batches):
-            batch = dataset.get_batch()      
+            batch = dataset.get_batch()
             batch_x = batch[:,0:INPUT_SEQ_LENGTH,:,:,:]
             batch_y = batch[:,INPUT_SEQ_LENGTH:INPUT_SEQ_LENGTH+OUTPUT_SEQ_LENGTH,:,:,:]
             
@@ -330,6 +337,7 @@ class MultiGpuRuntime(AbstractRuntime):
                     # the entire model but shares the variables across all towers.
                     model = self._model_init_func(this_inputs, this_targets,
                                                   scope=scope, is_training=self._is_training)
+                    self._models.append(model)
 
                     # Calculate the loss for one tower of the model.
                     this_total_loss, this_loss = self._tower_loss(model, scope)
