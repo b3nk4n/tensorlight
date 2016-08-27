@@ -144,7 +144,7 @@ class AbstractRuntime(object):
                 if gstep % 1000 == 0 or gstep == 100  or this_step == max_steps:
                     # validate
                     print
-                    self._validate_internal()
+                    self._test_internal(self.datasets.valid, "validation", "avg_valid_loss")
                     print
 
                 if gstep % 1000 == 0 or this_step == max_steps:
@@ -167,46 +167,47 @@ class AbstractRuntime(object):
     
     
     def validate(self):
-        self._validate_internal()
+        self._test_internal(self.datasets.valid, "validation", None)
         
         
-    def _validate_internal(self):
-        if self.datasets.valid is None:
-            print("No validation set registered. Skipping.")
+    def test(self):
+        self._test_internal(self.datasets.test, "test", None)
+        
+        
+    def _test_internal(self, dataset, title, summary_key):
+        if dataset is None:
+            print("No {} dataset registered. Skipping.".format(title))
             return
         
-        self.datasets.valid.reset()
-        dataset_size = self.datasets.valid.dataset_size
-        batch_size = self.datasets.valid.batch_size
+        dataset.reset()
+        dataset_size = dataset.dataset_size
+        batch_size = dataset.batch_size
         num_batches = dataset_size // batch_size
 
         gstep = self.session.run(self._global_step)
-        print("@{:6d}: Starting validation (batch-size: {}, dataset-size: {}):" \
-              .format(gstep, batch_size, dataset_size))
+        print("@{:6d}: Starting {} (batch-size: {}, dataset-size: {}):" \
+              .format(gstep, title, batch_size, dataset_size))
         
-        valid_loss_sum = 0
+        loss_sum = 0
         progress = tt.utils.ui.ProgressBar(num_batches * batch_size)
         for b in xrange(num_batches):
-            batch = self.datasets.valid.get_batch()      
+            batch = dataset.get_batch()      
             batch_x = batch[:,0:INPUT_SEQ_LENGTH,:,:,:]
             batch_y = batch[:,INPUT_SEQ_LENGTH:INPUT_SEQ_LENGTH+OUTPUT_SEQ_LENGTH,:,:,:]
             
             feed = self._feed_func(self._x, self._y_, batch_x, batch_y)
             feed.update({self._is_training: False})
 
-            valid_loss = self.session.run(self._loss, feed_dict=feed)
-            valid_loss_sum += valid_loss
-            progress.update((b+1) * batch_size, [('loss', valid_loss)])
+            this_loss = self.session.run(self._loss, feed_dict=feed)
+            loss_sum += this_loss
+            progress.update((b+1) * batch_size, [('loss', this_loss)])
             
-        avg_valid_loss = valid_loss_sum / num_batches
-        valid_loss_summary = tf.scalar_summary('avg_valid_loss', avg_valid_loss)
-        summary_str = self.session.run(valid_loss_summary)
-        self.summary_writer.add_summary(summary_str, gstep)
-        self.summary_writer.flush()
-        
-        
-    def test(self):
-        pass
+        if summary_key is not None:
+            avg_loss = loss_sum / num_batches
+            loss_summary = tf.scalar_summary(summary_key, avg_loss)
+            summary_str = self.session.run(loss_summary)
+            self.summary_writer.add_summary(summary_str, gstep)
+            self.summary_writer.flush()
     
     
     def _create_session(self):
