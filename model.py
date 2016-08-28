@@ -10,7 +10,8 @@ class AbstractModel(object):
     """
     __metaclass__ = ABCMeta
     
-    def __init__(self, inputs, targets, reg_lambda=5e-4):
+    def __init__(self, inputs, targets, reg_lambda=0.0, is_training=True,
+                 device_scope=None, memory_device=None):
         """Creates the model instance that is shared accross all models.
         Parameters
         ----------
@@ -20,10 +21,20 @@ class AbstractModel(object):
             The target outputs of the model.
         reg_lambda: float, optional
             The regularization factor (lambda).
+        is_training: Boolean, optional
+            Flag inidcating traing or eval mode. E.g. used for batch norm.
+        device_scope: str or None, optional
+            The tower name in case of multi-GPU runs.
+        memory_device: str, optional
+            The device where there model should put it's variables,
+            in case of multi-GPU runs.
         """
         self._inputs = inputs
         self._targets = targets
         self._reg_lambda = reg_lambda
+        self._is_training = is_training
+        self._device_scope = device_scope
+        self._memory_device = memory_device
         
         # ensure graph is builded before TF inits all variables
         self.predictions
@@ -83,6 +94,32 @@ class AbstractModel(object):
         return tf.shape(self._inputs)[0]
     
     @property
+    def inputs(self):
+        """Gets the inputs tensor."""
+        return self._inputs
+    
+    @property
+    def targets(self):
+        """Gets the targets tensor."""
+        return self._targets
+    
+    @property
     def reg_lambda(self):
         """Gets the regularization factor (lambda) for weight decay."""
         return self._reg_lambda
+    
+    @property
+    def is_training(self):
+        """Gets the flag indicating whether we are in training or eval."""
+        return self._is_training
+    
+    @property
+    def device_scope(self):
+        """Gets the device scope, used for multi-tower runtimes."""
+        return self._device_scope
+    
+    @property
+    def memory_device(self):
+        """Gets the device where to store variables, used in multi-tower
+           runtimes. None means no scrict assignment."""
+        return self._memory_device
