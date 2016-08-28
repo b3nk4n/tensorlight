@@ -9,10 +9,9 @@ import tensorflow as tf
 import tensortools as tt
 
 TRAIN_DIR = 'train' # (automatially train_<ModelClassName> ?)
-GPU_ALLOW_GROWTH = True
-GPU_MEMORY_FRACTION = 1.0
+GPU_ALLOW_GROWTH = True # fixed? :)
+GPU_MEMORY_FRACTION = 1.0 # fixed? :)
 
-NUM_GPUS = 2
 FIXED_NUM_STEPS_PER_DECAY = 10000
 NUM_EPOCHS_PER_DECAY = 75.0 # used if FIXED_NUM_STEPS_PER_DECAY is None
 
@@ -255,15 +254,19 @@ class DefaultRuntime(AbstractRuntime):
     def __init__(self):
         super(AbstractRuntime, self).__init__()
     
-    
-    
-    
-    
+
+
 class MultiGpuRuntime(AbstractRuntime):
     
-    def __init__(self):
-        super(MultiGpuRuntime, self).__init__()
+    def __init__(self, num_gpus=2):
         
+        device_list = tt.hardware.get_cuda_devices()
+        assert len(device_list) >= num_gpus, "Not enough GPU devices available."
+        print("Launing Multi-GPU runtime...")
+        print("Selecting devices: {}".format(device_list[0:num_gpus]))
+        self._num_gpus = num_gpus
+        
+        super(MultiGpuRuntime, self).__init__()
 
     def _tower_loss(self, model, scope):
         """Calculate the total loss on a single tower.
@@ -318,8 +321,8 @@ class MultiGpuRuntime(AbstractRuntime):
         tower_grads = []
         tower_total_losses = []
         tower_losses = []
-        batch_size_per_gpu = (batch_size // NUM_GPUS)
-        for i in xrange(NUM_GPUS):
+        batch_size_per_gpu = (batch_size // self.num_gpus)
+        for i in xrange(self.num_gpus):
             with tf.device('/gpu:%d' % i, ):
                 with tf.name_scope('%s_%d' % ('tower', i)) as scope:
                     this_inputs = x[i*batch_size_per_gpu:(i+1)*batch_size_per_gpu, :, :, :, :]
@@ -383,4 +386,8 @@ class MultiGpuRuntime(AbstractRuntime):
         #with self.graph.as_default(), tf.device('/cpu:0'):
         with tf.device('/cpu:0'):
             return super(MultiGpuRuntime, self).start_training()
+        
+    @property
+    def num_gpus(self):
+        return self._num_gpus
             

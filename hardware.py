@@ -1,22 +1,25 @@
 import os
 
 
-def setCudaDeviceMask(mask_string):
+def set_cuda_devices(device_list):
     """Masks the CUDA visible devices.
        Warning: Running this while another script is executed
                 might end up in the other script to crash.
     Parameters
     ----------
-    mask_string: str
-        A comma seperated string of CUDA devices, such as '0,1'.
+    mask_string: list(int)
+        A list of of CUDA devices, such as [0,1].
     """
-    os.environ['CUDA_VISIBLE_DEVICES'] = mask_string
+    mask = ','.join(str(d) for d in device_list)
+    os.environ['CUDA_VISIBLE_DEVICES'] = mask
     
 
-def getCudaDeviceMask():
+def get_cuda_devices():
     """Gets the CUDA visible devices mask.
     Returns
     ----------
-    The CUDA device mask as a string.
+    The CUDA devices as list of .
     """
-    os.environ['CUDA_VISIBLE_DEVICES']
+    mask = os.environ['CUDA_VISIBLE_DEVICES']
+    device_list = [int(d.strip()) for d in mask.split(',')]
+    return device_list
