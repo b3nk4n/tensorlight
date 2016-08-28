@@ -267,31 +267,6 @@ class MultiGpuRuntime(AbstractRuntime):
         self._num_gpus = num_gpus
         
         super(MultiGpuRuntime, self).__init__()
-
-    def _tower_loss(self, model, scope):
-        """Calculate the total loss on a single tower.
-        Args:
-            scope: unique prefix string identifying the tower, e.g. 'tower_0'
-        Returns:
-            Tensor of shape [] containing the total loss for a batch of data
-        """
-        # Build the portion of the Graph calculating the losses. Note that we will
-        # assemble the total_loss using a custom function below.
-        total_loss = model.total_loss
-        loss = model.loss
-
-        # Compute the moving average of all individual losses and the total loss.
-        # Generate moving averages of all losses and associated summaries 
-        loss_averages_op = tt.board.loss_summary([total_loss, loss] +
-                                                 tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES) + # FIXME: redundant!??! Is the list empty???
-                                                 tf.get_collection('intermediate_losses', scope),
-                                                 decay=0.9)
-
-        with tf.control_dependencies([loss_averages_op]):
-            total_loss = tf.identity(total_loss)
-            loss = tf.identity(loss)
-
-        return total_loss, loss
         
     @tt.utils.attr.override
     def _build_internal(self, x, y_):
@@ -334,8 +309,16 @@ class MultiGpuRuntime(AbstractRuntime):
                                                   scope=scope, is_training=self._is_training)
                     self._models.append(model)
 
-                    # Calculate the loss for one tower of the model.
-                    this_total_loss, this_loss = self._tower_loss(model, scope)
+                    # Calculate the moving averages of the loss for one tower of the model
+                    loss_averages_op = tt.board.loss_summary([model.total_loss, model.loss] +
+                                                             tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES) + # FIXME: redundant!??! Is the list empty???
+                                                             tf.get_collection('intermediate_losses', scope),
+                                                             decay=0.9)
+
+                    with tf.control_dependencies([loss_averages_op]):
+                        this_total_loss = tf.identity(model.total_loss)
+                        this_loss = tf.identity(model.loss)
+
                     tower_total_losses.append(this_total_loss)
                     tower_losses.append(this_loss)
 
