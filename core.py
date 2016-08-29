@@ -26,8 +26,8 @@ class AbstractRuntime(object):
         self._graph = tf.Graph() # graph really needed?
         self._session = None
         self._datasets = collections.namedtuple("datasets", ("train", "valid", "test"))
-        self._model_init_func = None
-        self._models = []
+        self._model = None
+        self._inferences = []
         
         self._feed_func = None
         
@@ -49,8 +49,8 @@ class AbstractRuntime(object):
         self._datasets.valid = valid_ds
         self._datasets.test = test_ds
         
-    def register_model(self, model_init_func):
-        self._model_init_func = model_init_func
+    def register_model(self, model):
+        self._model = model
         
     def build(self, is_autoencoder=False):
         # FIXME: placeholders not required, when datasets uses input_queue (change after DS refactoring)
@@ -176,18 +176,14 @@ class AbstractRuntime(object):
     def predict(self, inputs):            
         feed = self._feed_func(self._x, self._y_, inputs, None)
         feed.update({self._is_training: False})
-        return self.session.run(self._models[0].predictions, feed_dict=feed)
+        return self.session.run(self._inferences[0], feed_dict=feed)
         
-    
-    
     def validate(self):
         self._test_internal(self.datasets.valid, "validation")
-        
-        
+             
     def test(self):
         self._test_internal(self.datasets.test, "test")
-        
-        
+           
     def _test_internal(self, dataset, title, summary=False):
         if dataset is None:
             print("No {} dataset registered. Skipping.".format(title))
@@ -305,19 +301,24 @@ class MultiGpuRuntime(AbstractRuntime):
 
                     # Build inference Graph.This function constructs 
                     # the entire model but shares the variables across all towers.
-                    model = self._model_init_func(this_inputs, this_targets,
-                                                  scope=scope, is_training=self._is_training)
-                    self._models.append(model)
+                    inference = self._model.inference(this_inputs, this_targets,
+                                                      is_training=self._is_training,
+                                                      device_scope=scope,
+                                                      memory_device='/cpu:0')
+                    self._inferences.append(inference)
+                    
+                    loss = self._model.loss(inference, this_targets)
+                    total_loss = self._model.total_loss(loss, inference, this_targets)
 
                     # Calculate the moving averages of the loss for one tower of the model
-                    loss_averages_op = tt.board.loss_summary([model.total_loss, model.loss] +
+                    loss_averages_op = tt.board.loss_summary([total_loss, loss] +
                                                              tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES) + # FIXME: redundant!??! Is the list empty???
                                                              tf.get_collection('intermediate_losses', scope),
                                                              decay=0.9)
 
                     with tf.control_dependencies([loss_averages_op]):
-                        this_total_loss = tf.identity(model.total_loss)
-                        this_loss = tf.identity(model.loss)
+                        this_total_loss = tf.identity(total_loss)
+                        this_loss = tf.identity(loss)
 
                     tower_total_losses.append(this_total_loss)
                     tower_losses.append(this_loss)
@@ -339,10 +340,10 @@ class MultiGpuRuntime(AbstractRuntime):
         grads = tt.training.average_gradients(tower_grads)
 
         total_loss = tf.reduce_mean(tower_total_losses)                  
-        summaries.append(tf.scalar_summary('mean_total_loss', total_loss))
+        summaries.append(tf.scalar_summary('mean_total_loss', total_loss)) # TODO: really needed?
 
         loss = tf.reduce_mean(tower_losses)                  
-        summaries.append(tf.scalar_summary('mean_loss', loss))
+        summaries.append(tf.scalar_summary('mean_loss', loss)) # TODO: really needed?
 
         # Add a summary to track the learning rate.
         summaries.append(tf.scalar_summary('learning_rate', lr))
