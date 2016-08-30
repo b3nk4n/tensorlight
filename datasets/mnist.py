@@ -5,8 +5,12 @@ from tensorflow.examples.tutorials.mnist import input_data
 import tensortools as tt
 import base
 
+from abc import ABCMeta
+
 
 class MNISTBaseDataset(base.AbstractImageDataset):
+    __metaclass__ = ABCMeta
+    
     """MNIST base dataset wrapping the functions provided by tensorflow."""
     def __init__(self, batch_size, dataset):
         """Creates a dataset instance."""
