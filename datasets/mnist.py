@@ -12,21 +12,21 @@ class MNISTBaseDataset(base.AbstractImageDataset):
     __metaclass__ = ABCMeta
     
     """MNIST base dataset wrapping the functions provided by tensorflow."""
-    def __init__(self, batch_size, dataset):
+    def __init__(self, dataset):
         """Creates a dataset instance."""
         data = dataset.images.reshape((-1, 28, 28, 1))
         targets = dataset.labels
         dataset_size = dataset.num_examples
-        super(MNISTBaseDataset, self).__init__(batch_size, data, targets, dataset_size, (28, 28, 1))
+        super(MNISTBaseDataset, self).__init__(data, targets, dataset_size, (28, 28, 1))
 
     @tt.utils.attr.override
-    def get_batch(self):
-        if self._row + self.batch_size >= self._data.shape[0]:
+    def get_batch(self, batch_size):
+        if self._row + batch_size >= self._data.shape[0]:
             self.reset()
         start = self._row
-        end = start + self.batch_size
+        end = start + batch_size
         ind_range = self._indices[start:end]
-        self._row += self.batch_size
+        self._row += batch_size
         images = self._data[ind_range]
         labels = self._targets[ind_range]
         return images, labels
@@ -34,20 +34,20 @@ class MNISTBaseDataset(base.AbstractImageDataset):
 
 class MNISTTrainDataset(MNISTBaseDataset):
     """MNIST training dataset wrapping the functions provided by tensorflow."""
-    def __init__(self, batch_size):
+    def __init__(self):
         mnist = input_data.read_data_sets('MNIST_data', one_hot=True)
-        super(MNISTTrainDataset, self).__init__(batch_size, mnist.train)
+        super(MNISTTrainDataset, self).__init__(mnist.train)
         
         
 class MNISTValidDataset(MNISTBaseDataset):
     """MNIST validation dataset wrapping the functions provided by tensorflow."""
-    def __init__(self, batch_size):
+    def __init__(self):
         mnist = input_data.read_data_sets('MNIST_data', one_hot=True)
-        super(MNISTValidDataset, self).__init__(batch_size, mnist.validation)
+        super(MNISTValidDataset, self).__init__(mnist.validation)
 
     
 class MNISTTestDataset(MNISTBaseDataset):
     """MNIST test dataset wrapping the functions provided by tensorflow."""
-    def __init__(self, batch_size):
+    def __init__(self):
         mnist = input_data.read_data_sets('MNIST_data', one_hot=True)
-        super(MNISTTestDataset, self).__init__(batch_size, mnist.test)
+        super(MNISTTestDataset, self).__init__(mnist.test)

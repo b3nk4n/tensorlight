@@ -13,7 +13,7 @@ GPU_ALLOW_GROWTH = True # fixed? :)
 GPU_MEMORY_FRACTION = 1.0 # fixed? :)
 
 FIXED_NUM_STEPS_PER_DECAY = 10000
-NUM_EPOCHS_PER_DECAY = 75.0 # used if FIXED_NUM_STEPS_PER_DECAY is None
+NUM_EPOCHS_PER_DECAY = 75.0 # used if FIXED_NUM_STEPS_PER_DECAY is None <-- UNUSED; Due to batch_size refactoring
 
 INITIAL_LEARNING_RATE = 0.0001
 LEARNING_RATE_DECAY_FACTOR = 0.5
@@ -76,12 +76,14 @@ class AbstractRuntime(object):
         # start session and init all variables
         self.session.run(tf.initialize_all_variables())
         
-    def train(self, steps=-1, epochs=-1, display_step=10):
+    def train(self, batch_size, steps=-1, epochs=-1, display_step=10):
         assert not(steps <= 0 and epochs <= 0), "Either set 'steps' or 'epochs' parameter"
         assert not(steps > 0 and epochs > 0), "Not allowed to set both, 'steps' and 'epochs' parameter"
         
+        batches_per_epoch = self.datasets.train.size // batch_size
+        
         if epochs > 0:
-            steps = self.datasets.train.batches_per_epoch * epochs
+            steps = batches_per_epoch * epochs
         
         # Create a saver to store checkpoints of the model
         saver = tf.train.Saver(tf.all_variables())
@@ -102,13 +104,13 @@ class AbstractRuntime(object):
                 if (this_step > steps):
                     break
                 
-                if this_step % self.datasets.train.batches_per_epoch == 1:
-                    epoch = (this_step - 1) // self.datasets.train.batches_per_epoch + 1
+                if this_step % batches_per_epoch == 1:
+                    epoch = (this_step - 1) // batches_per_epoch + 1
                     print("Starting epoch {}...".format(epoch))
                 
                 start_time = time.time()
 
-                batch_x, batch_y = self.datasets.train.get_batch()
+                batch_x, batch_y = self.datasets.train.get_batch(batch_size)
                 feed = self._feed_func(self._x, self._y_, batch_x, batch_y)
                 feed.update({self._is_training: True})
 
@@ -126,7 +128,7 @@ class AbstractRuntime(object):
                 loss_sum += loss
                 if gstep % display_step == 0:
                     # info
-                    num_examples_per_step = self.datasets.train.batch_size
+                    num_examples_per_step = batch_size
                     examples_per_sec = num_examples_per_step / duration
                     sec_per_batch = float(duration)
                     avg_total_loss = total_loss_sum / display_step
@@ -143,10 +145,10 @@ class AbstractRuntime(object):
                     self.summary_writer.flush() 
 
                 if gstep == 100 or this_step == steps or epochs == -1 and gstep % 1000 == 0 or \
-                   epochs > 0 and this_step % self.datasets.train.batches_per_epoch == 0:
+                   epochs > 0 and this_step % batches_per_epoch == 0:
                     # validate
                     print
-                    self._test_internal(self.datasets.valid, "validation", True)
+                    self._test_internal(batch_size, self.datasets.valid, "validation", True)
                     print
 
                 if gstep % 1000 == 0 or this_step == steps:
@@ -155,7 +157,7 @@ class AbstractRuntime(object):
                     saver.save(self.session, checkpoint_path, global_step=self._global_step)
                     
                 if epochs > 0:
-                    if this_step % self.datasets.train.batches_per_epoch == 0:
+                    if this_step % batches_per_epoch == 0:
                         # save epoch checkpoint
                         checkpoint_path = os.path.join(TRAIN_DIR, "ep-{}_model.ckpt".format(epoch))
                         saver.save(self.session, checkpoint_path, global_step=self._global_step)
@@ -178,33 +180,34 @@ class AbstractRuntime(object):
         feed.update({self._is_training: False})
         return self.session.run(self._inferences[0], feed_dict=feed)
         
-    def validate(self):
-        self._test_internal(self.datasets.valid, "validation")
+    def validate(self, batch_size):
+        self._test_internal(batch_size, self.datasets.valid, "validation")
              
-    def test(self):
-        self._test_internal(self.datasets.test, "test")
+    def test(self, batch_size):
+        self._test_internal(batch_size, self.datasets.test, "test")
            
-    def _test_internal(self, dataset, title, summary=False):
+    def _test_internal(self, batch_size, dataset, title, summary=False):
         if dataset is None:
             print("No {} dataset registered. Skipping.".format(title))
             return
         
-        num_batches = dataset.batches_per_epoch
+        batches_per_epoch = dataset.size // batch_size
+        num_batches = batches_per_epoch
         gstep = self.session.run(self._global_step)
         print("@{:6d}: Starting {} (batch-size: {}, dataset-size: {}):" \
-              .format(gstep, title, dataset.batch_size, dataset.size))
+              .format(gstep, title, batch_size, dataset.size))
         
         dataset.reset()
         loss_sum = 0
-        progress = tt.utils.ui.ProgressBar(num_batches * dataset.batch_size)
+        progress = tt.utils.ui.ProgressBar(num_batches * batch_size)
         for b in xrange(num_batches):
-            batch_x, batch_y = self.datasets.train.get_batch()
+            batch_x, batch_y = dataset.get_batch(batch_size)
             feed = self._feed_func(self._x, self._y_, batch_x, batch_y)
             feed.update({self._is_training: False})
 
             this_loss = self.session.run(self._loss, feed_dict=feed)
             loss_sum += this_loss
-            progress.update((b+1) * dataset.batch_size, [('loss', this_loss)])
+            progress.update((b+1) * batch_size, [('loss', this_loss)])
             
         if summary:
             avg_loss = loss_sum / num_batches
@@ -254,9 +257,9 @@ class DefaultRuntime(AbstractRuntime):
     @tt.utils.attr.override
     def _build_internal(self, x, y_):
         # Variables that affect learning rate
-        batch_size = self.datasets.train.batch_size
-        num_batches_per_epoch = self.datasets.train.size / batch_size
-        decay_steps = num_batches_per_epoch * NUM_EPOCHS_PER_DECAY
+        #batch_size = self.datasets.train.batch_size
+        #num_batches_per_epoch = self.datasets.train.size / batch_size
+        #decay_steps = num_batches_per_epoch * NUM_EPOCHS_PER_DECAY
 
         if FIXED_NUM_STEPS_PER_DECAY is not None:
             decay_steps = FIXED_NUM_STEPS_PER_DECAY
@@ -321,9 +324,9 @@ class MultiGpuRuntime(AbstractRuntime):
     @tt.utils.attr.override
     def _build_internal(self, x, y_):
         # Variables that affect learning rate
-        batch_size = self.datasets.train.batch_size
-        num_batches_per_epoch = self.datasets.train.size / batch_size
-        decay_steps = num_batches_per_epoch * NUM_EPOCHS_PER_DECAY
+        #batch_size = self.datasets.train.batch_size
+        #num_batches_per_epoch = self.datasets.train.size / batch_size
+        #decay_steps = num_batches_per_epoch * NUM_EPOCHS_PER_DECAY
 
         if FIXED_NUM_STEPS_PER_DECAY is not None:
             decay_steps = FIXED_NUM_STEPS_PER_DECAY
@@ -342,12 +345,17 @@ class MultiGpuRuntime(AbstractRuntime):
         tower_grads = []
         tower_total_losses = []
         tower_losses = []
-        batch_size_per_gpu = (batch_size // self.num_gpus)
+        #batch_size_per_gpu = (batch_size // self.num_gpus)
+        splitted_x = tf.split(0, self.num_gpus, x)
+        splitted_y_ = tf.split(0, self.num_gpus, y_)
         for i in xrange(self.num_gpus):
             with tf.device('/gpu:%d' % i, ):
                 with tf.name_scope('%s_%d' % ('tower', i)) as scope:
-                    this_inputs = x[i*batch_size_per_gpu:(i+1)*batch_size_per_gpu, :, :, :, :]
-                    this_targets = y_[i*batch_size_per_gpu:(i+1)*batch_size_per_gpu, :, :, :, :]
+                    # TODO: use tf.split() before the loops?
+                    #this_inputs = x[i*batch_size_per_gpu:(i+1)*batch_size_per_gpu, :, :, :, :]
+                    #this_targets = y_[i*batch_size_per_gpu:(i+1)*batch_size_per_gpu, :, :, :, :]
+                    this_inputs = splitted_x[i]
+                    this_targets = splitted_y_[i]
 
                     # Build inference Graph.This function constructs 
                     # the entire model but shares the variables across all towers.

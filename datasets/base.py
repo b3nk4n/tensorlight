@@ -6,7 +6,7 @@ from abc import ABCMeta, abstractmethod, abstractproperty
 class AbstractDataset(object):
     __metaclass__ = ABCMeta
 
-    def __init__(self, batch_size, data, targets, dataset_size):
+    def __init__(self, data, targets, dataset_size):
         """Creates a dataset instance.
         Reference: Based on Srivastava et al.
                    http://www.cs.toronto.edu/~nitish/unsupervised_video/
@@ -15,7 +15,6 @@ class AbstractDataset(object):
         ... TODO: describe parameters of this classes.
         targets can be None: e.g. for image sequences or generated data
         """
-        self._batch_size = batch_size
         self._dataset_size = dataset_size
 
         self._data = data
@@ -23,14 +22,6 @@ class AbstractDataset(object):
         self._indices = np.arange(data.shape[0])
         self._row = 0
         self.reset()
-
-    @property
-    def batch_size(self):
-        return self._batch_size
-    
-    @property
-    def batches_per_epoch(self):
-        return self._dataset_size // self._batch_size
 
     @property
     def input_dims(self):
@@ -57,18 +48,18 @@ class AbstractDataset(object):
         np.random.shuffle(self._indices)
 
     @abstractmethod
-    def get_batch(self):
+    def get_batch(self, batch_size):
         pass
     
     
 class AbstractImageDataset(AbstractDataset):
     __metaclass__ = ABCMeta
 
-    def __init__(self, batch_size, data, targets, dataset_size, image_size):
+    def __init__(self, data, targets, dataset_size, image_size):
         assert len(image_size) == 3, "Image size has to have ndim=3."
         
         self._image_size = image_size
-        super(AbstractImageDataset, self).__init__(batch_size, data, targets, dataset_size)
+        super(AbstractImageDataset, self).__init__(data, targets, dataset_size)
     
     @property
     @tt.utils.attr.override
@@ -88,11 +79,11 @@ class AbstractImageDataset(AbstractDataset):
 class AbstractImageSequenceDataset(AbstractImageDataset):
     __metaclass__ = ABCMeta
 
-    def __init__(self, batch_size, data, dataset_size, image_size,
+    def __init__(self, data, dataset_size, image_size,
                  input_seq_length, target_seq_length):
         self._input_seq_length = input_seq_length
         self._target_seq_length = target_seq_length
-        super(AbstractImageSequenceDataset, self).__init__(batch_size, data, None, dataset_size, image_size)
+        super(AbstractImageSequenceDataset, self).__init__(data, None, dataset_size, image_size)
     
     @property
     @tt.utils.attr.override
