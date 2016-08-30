@@ -248,8 +248,62 @@ class AbstractRuntime(object):
 class DefaultRuntime(AbstractRuntime):
     
     def __init__(self):
-        super(AbstractRuntime, self).__init__()
-    
+        print("Launing default runtime...")
+        super(DefaultRuntime, self).__init__()
+        
+    @tt.utils.attr.override
+    def _build_internal(self, x, y_):
+        # Variables that affect learning rate
+        batch_size = self.datasets.train.batch_size
+        num_batches_per_epoch = self.datasets.train.size / batch_size
+        decay_steps = num_batches_per_epoch * NUM_EPOCHS_PER_DECAY
+
+        if FIXED_NUM_STEPS_PER_DECAY is not None:
+            decay_steps = FIXED_NUM_STEPS_PER_DECAY
+
+        # Decay the learning rate exponentially based on the number of steps
+        lr = tf.train.exponential_decay(INITIAL_LEARNING_RATE,
+                                        self._global_step,
+                                        decay_steps,
+                                        LEARNING_RATE_DECAY_FACTOR,
+                                        staircase=True)
+        tf.scalar_summary('learning_rate', lr)
+        
+        # Build inference Graph.This function constructs 
+        # the entire model but shares the variables across all towers.
+        inference = self._model.inference(x, y_,
+                                          is_training=self._is_training)
+        self._inferences.append(inference)
+        
+        loss = self._model.loss(inference, y_)
+        total_loss = self._model.total_loss(loss, inference, y_)
+
+        # Generate moving averages of all losses and associated summaries
+        loss_averages_op = tt.board.loss_summary([total_loss, loss] +
+                                                 tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES) + # FIXME: redundant!??! Is the list empty???
+                                                 tf.get_collection('intermediate_losses'),
+                                                 decay=0.9)
+
+        # Compute gradients
+        with tf.control_dependencies([loss_averages_op]):
+            opt = tf.train.AdamOptimizer(lr)
+            grads = opt.compute_gradients(total_loss)
+
+        # Apply gradients
+        apply_gradient_op = opt.apply_gradients(grads, global_step=self._global_step)
+
+        tt.board.variables_histogram_summary()
+
+        # Add histograms for gradients
+        tt.board.gradients_histogram_summary(grads)
+
+        # Track the moving averages of all trainable variables
+        variable_averages = tf.train.ExponentialMovingAverage(0.9999, self._global_step)
+        variables_averages_op = variable_averages.apply(tf.trainable_variables())
+
+        train_op = tf.group(apply_gradient_op, variables_averages_op, name="train_op")
+        return train_op, total_loss, loss, None # FIXME: collect summaries above? Return get_all_sum?
+        
 
 
 class MultiGpuRuntime(AbstractRuntime):
@@ -266,10 +320,6 @@ class MultiGpuRuntime(AbstractRuntime):
         
     @tt.utils.attr.override
     def _build_internal(self, x, y_):
-        """Train sequence model.
-        predictions_for_input:
-            Either the same as predictions or None
-        """
         # Variables that affect learning rate
         batch_size = self.datasets.train.batch_size
         num_batches_per_epoch = self.datasets.train.size / batch_size
@@ -362,7 +412,6 @@ class MultiGpuRuntime(AbstractRuntime):
 
         # Group all updates to into a single train op.
         train_op = tf.group(apply_gradient_op, variables_averages_op, name="train_op")
-
         return train_op, total_loss, loss, summaries
         
         
