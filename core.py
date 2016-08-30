@@ -422,11 +422,22 @@ class MultiGpuRuntime(AbstractRuntime):
         train_op = tf.group(apply_gradient_op, variables_averages_op, name="train_op")
         return train_op, total_loss, loss, summaries
         
-        
-    def start_training(self):
+    @tt.utils.attr.override
+    def train(self, batch_size, steps=-1, epochs=-1, display_step=10):
+        assert batch_size % float(self.num_gpus) == 0, "Batch-size has to be multiples of 'num_gpus'."
         #with self.graph.as_default(), tf.device('/cpu:0'):
         with tf.device('/cpu:0'):
-            return super(MultiGpuRuntime, self).start_training()
+            return super(MultiGpuRuntime, self).train(batch_size, steps, epochs, display_step)              
+    
+    @tt.utils.attr.override
+    def validate(self, batch_size):
+        assert batch_size % float(self.num_gpus) == 0, "Batch-size has to be multiples of 'num_gpus'."
+        return super(MultiGpuRuntime, self).validate(batch_size)
+    
+    @tt.utils.attr.override
+    def test(self, batch_size):
+        assert batch_size % float(self.num_gpus) == 0, "Batch-size has to be multiples of 'num_gpus'."
+        return super(MultiGpuRuntime, self).test(batch_size)
         
     @property
     def num_gpus(self):

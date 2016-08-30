@@ -11,9 +11,13 @@ from abc import ABCMeta
 class MNISTBaseDataset(base.AbstractImageDataset):
     __metaclass__ = ABCMeta
     
+    # load the dataset file lazily and just once
+    _mnist = None
+    
     """MNIST base dataset wrapping the functions provided by tensorflow."""
     def __init__(self, dataset):
         """Creates a dataset instance."""
+        
         data = dataset.images.reshape((-1, 28, 28, 1))
         targets = dataset.labels
         dataset_size = dataset.num_examples
@@ -30,24 +34,31 @@ class MNISTBaseDataset(base.AbstractImageDataset):
         images = self._data[ind_range]
         labels = self._targets[ind_range]
         return images, labels
+    
+    @staticmethod
+    def mnist():
+        if MNISTBaseDataset._mnist is None:
+            MNISTBaseDataset._mnist = input_data.read_data_sets('MNIST_data', one_hot=True)
+        return MNISTBaseDataset._mnist
+
 
 
 class MNISTTrainDataset(MNISTBaseDataset):
     """MNIST training dataset wrapping the functions provided by tensorflow."""
     def __init__(self):
-        mnist = input_data.read_data_sets('MNIST_data', one_hot=True)
+        mnist = MNISTBaseDataset.mnist()
         super(MNISTTrainDataset, self).__init__(mnist.train)
         
         
 class MNISTValidDataset(MNISTBaseDataset):
     """MNIST validation dataset wrapping the functions provided by tensorflow."""
     def __init__(self):
-        mnist = input_data.read_data_sets('MNIST_data', one_hot=True)
+        mnist = MNISTBaseDataset.mnist()
         super(MNISTValidDataset, self).__init__(mnist.validation)
 
     
 class MNISTTestDataset(MNISTBaseDataset):
     """MNIST test dataset wrapping the functions provided by tensorflow."""
     def __init__(self):
-        mnist = input_data.read_data_sets('MNIST_data', one_hot=True)
+        mnist = MNISTBaseDataset.mnist()
         super(MNISTTestDataset, self).__init__(mnist.test)
