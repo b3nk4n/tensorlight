@@ -49,10 +49,6 @@ class AbstractDataset(object):
     @property
     def size(self):
         return self._dataset_size
-
-    #@property
-    #def seq_length(self):
-    #    return self._seq_length
     
     def reset(self):
         self._row = 0
