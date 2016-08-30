@@ -231,6 +231,8 @@ class MovingMNISTTestDataset(base.AbstractImageSequenceDataset):
         if self._row >= self._data.shape[0]:
             self.reset()
         
+        # TODO: random index: 
+        # ind = self._indices[self._row]
         batch_inputs = self._data[self._row:self._row+self._batch_size,
                                   0:self.input_seq_length,:,:,:]
         batch_targets = self._data[self._row:self._row+self._batch_size,
