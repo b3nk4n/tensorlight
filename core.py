@@ -33,12 +33,17 @@ class AbstractRuntime(object):
         self._threads = None
         
         self._feed_func = None
-        
         self._x = None
-        self._y_ = None
+        self._y = None
+        
+        #self._feed_func_queue = None
+        #self._x_queue = None
+        #self._y_queue = None
+        self._batch_size_ph = None
         
         self._is_training = tf.placeholder(tf.bool, name='is_training')
         self._global_step = tf.Variable(0, trainable=False)
+        self._uses_queue = tf.placeholder(tf.bool, name='uses_queue')
         
         self._summary_writer = None
         
@@ -57,25 +62,49 @@ class AbstractRuntime(object):
         
     def build(self, is_autoencoder=False):
         if self._datasets.train.uses_queue:
-            inputs, targets = self._datasets.train.get_batch(32) # TODO: !?!?!?!? BATCH SIZE HERE ALREADY? :(
+            # Note: the passes batch_size=1 is used as a placeholder
+            self._batch_size_ph = tf.placeholder(tf.int32, name='batch_size')
+            inputs, targets = self._datasets.train.get_batch(self._batch_size_ph)
             self._x = inputs
             if is_autoencoder:
-                self._y_ = inputs
-                self._feed_func = lambda x_ph, y_ph, inputs, targets : {}
+                self._y = inputs
+                self._feed_func = lambda inputs, targets, bs : {self._batch_size_ph: bs}
             else:
-                self._y_ = targets
-                self._feed_func = lambda x_ph, y_ph, inputs, targets : {}
+                self._y = targets
+                self._feed_func = lambda inputs, targets, bs : {self._batch_size_ph: bs}
         else:
             self._x = tf.placeholder(tf.float32, [None] + self._datasets.train.input_shape, "X")
             if is_autoencoder:
-                self._y_ = tf.placeholder(tf.float32, [None] + self._datasets.train.input_shape, "Y_")
-                self._feed_func = lambda x_ph, y_ph, inputs, targets : {x_ph: inputs, y_ph: inputs}
+                self._y = tf.placeholder(tf.float32, [None] + self._datasets.train.input_shape, "Y")
+                self._feed_func = lambda inputs, targets, bs : {self._x: inputs,
+                                                                self._y: inputs,
+                                                                self._batch_size_ph: bs}
             else:
-                self._y_ = tf.placeholder(tf.float32, [None] + self._datasets.train.target_shape, "Y_")
-                self._feed_func = lambda x_ph, y_ph, inputs, targets : {x_ph: inputs, y_ph: targets}
-            
+                self._y = tf.placeholder(tf.float32, [None] + self._datasets.train.target_shape, "Y")
+                self._feed_func = lambda inputs, targets, bs : {self._x: inputs,
+                                                                self._y: targets,
+                                                                self._batch_size_ph: bs}
+          
+        # using queues
+        """inputs, targets = self._datasets.train.get_batch(32) # TODO: !?!?!?!? BATCH SIZE HERE ALREADY? :(
+        self._x_queue = inputs
+        if is_autoencoder:
+            self._y_queue = inputs
+            self._feed_func_queue = lambda x_ph, y_ph, inputs, targets : {}
+        else:
+            self._y_queue = targets
+            self._feed_func_queue = lambda x_ph, y_ph, inputs, targets : {}
+                
+        # using placeholders
+        self._x = tf.placeholder(tf.float32, [None] + self._datasets.train.input_shape, "X")
+        if is_autoencoder:
+            self._y = tf.placeholder(tf.float32, [None] + self._datasets.train.input_shape, "Y")
+            self._feed_func = lambda x_ph, y_ph, inputs, targets : {x_ph: inputs, y_ph: inputs}
+        else:
+            self._y = tf.placeholder(tf.float32, [None] + self._datasets.train.target_shape, "Y")
+            self._feed_func = lambda x_ph, y_ph, inputs, targets : {x_ph: inputs, y_ph: targets} """           
         
-        train_op, total_loss, loss, summaries = self._build_internal(self._x, self._y_)
+        train_op, total_loss, loss, summaries = self._build_internal(self._x, self._y)
 
         self._train_op = train_op
         self._total_loss = total_loss
@@ -136,18 +165,20 @@ class AbstractRuntime(object):
                     batch_y = None
                 else:
                     batch_x, batch_y = self.datasets.train.get_batch(batch_size)
-                feed = self._feed_func(self._x, self._y_, batch_x, batch_y)
+                feed = self._feed_func(batch_x, batch_y, batch_size)
                 feed.update({self._is_training: True})
 
                 if this_step == 1 and self.datasets.train.uses_queue:
-                    print("Filling queue with {} examples...".format(99999))
+                    print("Filling queue with {} examples...".format(-1)) # TODO: retrieve real number...
                     
                 # step counter is increment when train_op is executed
-                _, gstep, total_loss, loss = self.session.run([self._train_op,
+                pred, _, gstep, total_loss, loss = self.session.run([self._inferences[0], self._train_op,
                                                               self._global_step,
                                                               self._total_loss,
                                                               self._loss],
                                                              feed_dict=feed)
+                print('pred', pred.shape) # TODO remove ths line
+                
                 duration = time.time() - start_time
 
                 assert not np.isnan(loss), 'Warning: Model diverged with loss = NaN'
@@ -202,14 +233,15 @@ class AbstractRuntime(object):
             #self._coord.join(self._threads)
 
     @abstractmethod
-    def _build_internal(self, x, y_):
+    def _build_internal(self, x, y):
         pass
     
     def run(self, input_vector):
         if self.datasets.train.uses_queue:
-            feed = {}
+            #feed = {}
+            feed = self._feed_func(None, None, 1) # FIXME: BATCH-SIZE? For queue, inputs are ignored?
         else:
-            #feed = self._feed_func(self._x, self._y_, inputs, None)
+            #feed = self._feed_func(self._x, self._y, inputs, None)
             feed = {} # this run() method makes only sense when anything is not related to input data...
         feed.update({self._is_training: False})
         result = self.session.run(input_vector, feed_dict=feed)
@@ -217,7 +249,7 @@ class AbstractRuntime(object):
         return result
     
     def predict(self, inputs):            
-        feed = self._feed_func(self._x, self._y_, inputs, None)
+        feed = self._feed_func(inputs, None, 1) # FIXME: BATCH-SIZE? For queue, inputs are ignored?
         feed.update({self._is_training: False})
         return self.session.run(self._inferences[0], feed_dict=feed)
         
@@ -247,7 +279,7 @@ class AbstractRuntime(object):
                 batch_y = None
             else:
                 batch_x, batch_y = dataset.get_batch(batch_size)
-            feed = self._feed_func(self._x, self._y_, batch_x, batch_y)
+            feed = self._feed_func(batch_x, batch_y, batch_size)
             feed.update({self._is_training: False})
 
             this_loss = self.session.run(self._loss, feed_dict=feed)
@@ -307,7 +339,7 @@ class DefaultRuntime(AbstractRuntime):
         super(DefaultRuntime, self).__init__()
         
     @tt.utils.attr.override
-    def _build_internal(self, x, y_):
+    def _build_internal(self, x, y):
         # Variables that affect learning rate
         #batch_size = self.datasets.train.batch_size
         #num_batches_per_epoch = self.datasets.train.size / batch_size
@@ -326,12 +358,12 @@ class DefaultRuntime(AbstractRuntime):
         
         # Build inference Graph.This function constructs 
         # the entire model but shares the variables across all towers.
-        inference = self._model.inference(x, y_,
+        inference = self._model.inference(x, y,
                                           is_training=self._is_training)
         self._inferences.append(inference)
         
-        loss = self._model.loss(inference, y_)
-        total_loss = self._model.total_loss(loss, inference, y_)
+        loss = self._model.loss(inference, y)
+        total_loss = self._model.total_loss(loss, inference, y)
 
         # Generate moving averages of all losses and associated summaries
         loss_averages_op = tt.board.loss_summary([total_loss, loss] +
@@ -377,7 +409,7 @@ class MultiGpuRuntime(AbstractRuntime):
         super(MultiGpuRuntime, self).__init__()
         
     @tt.utils.attr.override
-    def _build_internal(self, x, y_):
+    def _build_internal(self, x, y):
         # Variables that affect learning rate
         #batch_size = self.datasets.train.batch_size
         #num_batches_per_epoch = self.datasets.train.size / batch_size
@@ -402,15 +434,15 @@ class MultiGpuRuntime(AbstractRuntime):
         tower_losses = []
         #batch_size_per_gpu = (batch_size // self.num_gpus)
         splitted_x = tf.split(0, self.num_gpus, x)
-        splitted_y_ = tf.split(0, self.num_gpus, y_)
+        splitted_y = tf.split(0, self.num_gpus, y)
         for i in xrange(self.num_gpus):
             with tf.device('/gpu:%d' % i, ):
                 with tf.name_scope('%s_%d' % ('tower', i)) as scope:
                     # TODO: use tf.split() before the loops?
                     #this_inputs = x[i*batch_size_per_gpu:(i+1)*batch_size_per_gpu, :, :, :, :]
-                    #this_targets = y_[i*batch_size_per_gpu:(i+1)*batch_size_per_gpu, :, :, :, :]
+                    #this_targets = y[i*batch_size_per_gpu:(i+1)*batch_size_per_gpu, :, :, :, :]
                     this_inputs = splitted_x[i]
-                    this_targets = splitted_y_[i]
+                    this_targets = splitted_y[i]
 
                     # Build inference Graph.This function constructs 
                     # the entire model but shares the variables across all towers.

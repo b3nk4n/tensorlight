@@ -19,7 +19,8 @@ class UCF11TrainDataset(base.AbstractImageSequenceDataset):
     """
     def __init__(self, input_seq_length=10, target_seq_length=10,
                  image_size=(FRAME_HEIGHT, FRAME_WIDTH, FRAME_CHANNELS),
-                 serialized_sequence_length=30, min_exampled_in_queue=256,
+                 serialized_sequence_length=30,
+                 min_exampled_in_queue=256, queue_capacitiy=512,
                  num_threads=8, do_distortion=True):
         """Creates a dataset instance.
         Parameters
@@ -29,6 +30,7 @@ class UCF11TrainDataset(base.AbstractImageSequenceDataset):
         """
         self._serialized_sequence_length = serialized_sequence_length
         self._min_examples_in_queue = min_exampled_in_queue
+        self._queue_capacitiy = queue_capacitiy
         self._num_threads = num_threads
         self._do_distortion = do_distortion
         
@@ -48,6 +50,9 @@ class UCF11TrainDataset(base.AbstractImageSequenceDataset):
         
         super(UCF11TrainDataset, self).__init__(data, dataset_size, image_size,
                                                      input_seq_length, target_seq_length)
+        x, y, = self._build_preprocessing_queue()
+        self._sequence_inputs = x
+        self._sequence_targets = y
 
     @staticmethod
     def _serialize_frame_sequences(dataset_path, image_size, serialized_sequence_length):
@@ -138,15 +143,8 @@ class UCF11TrainDataset(base.AbstractImageSequenceDataset):
                                        [total_seq_length, record.height, record.width, record.depth]),
                               tf.float32)
         return record
-
-    def get_batch(self, batch_size):
-        """Construct input using the Reader ops.
-        Args:
-            data_dir: Path to the data directory.
-            batch_size: Number of image sequences per batch.
-        Returns:
-            images: Images. 4D tensor of [batch_size, FRAME_HEIGHT, FRAME_WIDTH, 3] size.
-        """
+    
+    def _build_preprocessing_queue(self):
         seq_filenames = tt.utils.path.get_filenames(self._data_dir, '*.seq')
         with tf.name_scope('preprocessing'):
             filename_queue = tf.train.string_input_producer(seq_filenames)
@@ -163,14 +161,26 @@ class UCF11TrainDataset(base.AbstractImageSequenceDataset):
                         images_to_distort.append(reshaped_seq[i,:,:,:])
 
                     distorted_images = tt.image.equal_random_distortion(images_to_distort)
-                    stacked_distorted_inputs = tf.pack(distorted_images[0:self.input_seq_length], axis=0)
-                    stacked_distorted_targets = tf.pack(distorted_images[self.input_seq_length:], axis=0)
+                    sequence_inputs = tf.pack(distorted_images[0:self.input_seq_length], axis=0)
+                    sequence_targets = tf.pack(distorted_images[self.input_seq_length:], axis=0)
             else:
-                stacked_distorted_inputs = reshaped_seq[0:self.input_seq_length,:,:,:]
-                stacked_distorted_targets = reshaped_seq[self.input_seq_length:,:,:,:]
+                sequence_inputs = reshaped_seq[0:self.input_seq_length,:,:,:]
+                sequence_targets = reshaped_seq[self.input_seq_length:,:,:,:]
+                
+        return sequence_inputs, sequence_targets
 
+    def get_batch(self, batch_size):
+        """Construct input using the Reader ops.
+        Args:
+            data_dir: Path to the data directory.
+            batch_size: int or Tensor/Placeholder
+                Number of image sequences per batch.
+        Returns:
+            images: Images. 4D tensor of [batch_size, FRAME_HEIGHT, FRAME_WIDTH, 3] size.
+        """
         # Generate a batch of sequences and labels by building up a queue of examples.
-        batch = tt.inputs.generate_batch(stacked_distorted_inputs, stacked_distorted_targets,
-                                        batch_size, self._min_examples_in_queue, 
-                                        shuffle=True, num_threads=self._num_threads)
-        return batch
+        batch_tuple = tt.inputs.generate_batch(self._sequence_inputs, self._sequence_targets,
+                                               batch_size,
+                                               self._min_examples_in_queue, self._queue_capacitiy,
+                                               shuffle=True, num_threads=self._num_threads)
+        return batch_tuple
