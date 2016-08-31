@@ -50,9 +50,6 @@ class UCF11TrainDataset(base.AbstractImageSequenceDataset):
         
         super(UCF11TrainDataset, self).__init__(data, dataset_size, image_size,
                                                      input_seq_length, target_seq_length)
-        x, y, = self._build_preprocessing_queue()
-        self._sequence_inputs = x
-        self._sequence_targets = y
 
     @staticmethod
     def _serialize_frame_sequences(dataset_path, image_size, serialized_sequence_length):
@@ -143,8 +140,18 @@ class UCF11TrainDataset(base.AbstractImageSequenceDataset):
                                        [total_seq_length, record.height, record.width, record.depth]),
                               tf.float32)
         return record
-    
-    def _build_preprocessing_queue(self):
+
+    @tt.utils.attr.override
+    def get_batch(self, batch_size):
+        """Construct input using the Reader ops.
+        Args:
+            data_dir: Path to the data directory.
+            batch_size: int or Tensor/Placeholder
+                Number of image sequences per batch.
+        Returns:
+            images: Images. 4D tensor of [batch_size, FRAME_HEIGHT, FRAME_WIDTH, 3] size.
+        """
+        # Generate a batch of sequences and labels by building up a queue of examples.
         seq_filenames = tt.utils.path.get_filenames(self._data_dir, '*.seq')
         with tf.name_scope('preprocessing'):
             filename_queue = tf.train.string_input_producer(seq_filenames)
@@ -166,21 +173,8 @@ class UCF11TrainDataset(base.AbstractImageSequenceDataset):
             else:
                 sequence_inputs = reshaped_seq[0:self.input_seq_length,:,:,:]
                 sequence_targets = reshaped_seq[self.input_seq_length:,:,:,:]
-                
-        return sequence_inputs, sequence_targets
 
-    def get_batch(self, batch_size):
-        """Construct input using the Reader ops.
-        Args:
-            data_dir: Path to the data directory.
-            batch_size: int or Tensor/Placeholder
-                Number of image sequences per batch.
-        Returns:
-            images: Images. 4D tensor of [batch_size, FRAME_HEIGHT, FRAME_WIDTH, 3] size.
-        """
-        # Generate a batch of sequences and labels by building up a queue of examples.
-        batch_tuple = tt.inputs.generate_batch(self._sequence_inputs, self._sequence_targets,
-                                               batch_size,
-                                               self._min_examples_in_queue, self._queue_capacitiy,
-                                               shuffle=True, num_threads=self._num_threads)
-        return batch_tuple
+        return tt.inputs.generate_batch(sequence_inputs, sequence_targets,
+                                        batch_size,
+                                        self._min_examples_in_queue, self._queue_capacitiy,
+                                        shuffle=True, num_threads=self._num_threads)
