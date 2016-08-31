@@ -144,6 +144,7 @@ def image_from_array(img_array, format='png'):
 
 def display_image(image):
     """Display an image object.
+    Remarks: Some RGB images might be displayed with changed colors.
     Parameters
     ----------
     image : IPython.display.Image
@@ -152,21 +153,26 @@ def display_image(image):
     display(image)
 
 
-def display_batch(img_array_batch, nrows=2, ncols=2, title=''):
+def display_batch(img_array_batch, nrows=2, ncols=2, title='',
+                  min_value=0, max_value=255):
     """Display a batch of images given as a 4D numpy array.
+    Remarks: Some RGB images might be displayed with changed colors.
     Parameters
     ----------
     img_array_batch : numpy.ndarray
         The image numpy data in format [batch_size, height, width, channels]
         or a list of numpy arrays in format [height, width, channels],
         which can have 1 or 3 color channels.
-        The data values have to be in range [0,1].
     nrows : uint, optional
         The number or rows.
     ncols : uint, optional
         The number or colums.
     title: str, optional
         The title of the figure.
+    min_value: int/float, optional
+        The minimum value of the image data.
+    max_value: int/float, optional
+        The maximum value of the image data.
     """
     # create figure with random id
     fig = plt.figure(random.randint(1, sys.maxint))
@@ -175,18 +181,19 @@ def display_batch(img_array_batch, nrows=2, ncols=2, title=''):
         current_img = img_array_batch[i]
         
         if len(current_img.shape) > 2 and current_img.shape[2] == 3:
-            cmap = plt.cm.rgb
+            cmap = None
         else:
             if len(current_img.shape) > 2:
                 current_img=np.squeeze(current_img)
             cmap = plt.cm.gray
         
         plt.subplot(nrows,ncols,i + 1)
-        plt.imshow(current_img, cmap=cmap)
+        plt.imshow(current_img, cmap=cmap, vmin=min_value, vmax=max_value)
 
 
 def display_array(img_array, format='png'):
     """Display an image object from a given numpy array.
+    Remarks: Some RGB images might be displayed with changed colors.
     Parameters
     ----------
     img_array : numpy.ndarray
