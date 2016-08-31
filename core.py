@@ -364,11 +364,14 @@ class DefaultRuntime(AbstractRuntime):
 class MultiGpuRuntime(AbstractRuntime):
     
     def __init__(self, num_gpus=2):
+        print("Launing Multi-GPU runtime...")
         
         device_list = tt.hardware.get_cuda_devices()
-        assert len(device_list) >= num_gpus, "Not enough GPU devices available."
-        print("Launing Multi-GPU runtime...")
-        print("Selecting devices: {}".format(device_list[0:num_gpus]))
+        if len(device_list) == 0:
+            print("Selecting all GPU devices.")
+        else:
+            assert len(device_list) >= num_gpus, "Not enough GPU devices available."
+            print("Selecting GPU devices: {}".format(device_list[0:num_gpus]))
         self._num_gpus = num_gpus
         
         super(MultiGpuRuntime, self).__init__()
