@@ -19,17 +19,23 @@ class AbstractDataset(object):
 
         self._data = data
         self._targets = targets
-        self._indices = np.arange(data.shape[0])
+        
+        self._indices = np.arange(dataset_size)
         self._row = 0
+            
         self.reset()
+        
+    @property
+    def uses_queue(self):
+        return self._data is None and self._targets is None
 
     @property
     def input_dims(self):
-        return np.prod(self.input_shape)
+        return int(np.prod(self.input_shape))
     
     @property
     def target_dims(self):
-        return np.prod(self.target_shape)
+        return int(np.prod(self.target_shape))
     
     @abstractproperty
     def input_shape(self):
