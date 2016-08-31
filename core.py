@@ -23,32 +23,33 @@ class AbstractRuntime(object):
     __metaclass__ = ABCMeta
     
     def __init__(self):
-        self._graph = tf.Graph() # graph really needed?
-        self._session = None
-        self._datasets = collections.namedtuple("datasets", ("train", "valid", "test"))
-        self._model = None
-        self._inferences = []
-        
-        self._coord = None
-        self._threads = None
-        
-        self._feed_func = None
-        self._x = None
-        self._y = None
-        
-        self._batch_size_ph = None
-        
-        self._is_training = tf.placeholder(tf.bool, name='is_training')
-        self._global_step = tf.Variable(0, trainable=False)
-        self._batch_size_ph = tf.placeholder(tf.int32, name='batch_size')
-        self._input_from_queue = tf.placeholder(tf.bool, name='input_from_queue')
-        
-        self._summary_writer = None
-        
-        self._train_op = None
-        self._total_loss = None
-        self._loss = None
-        self._summary_op = None
+        self._graph = tf.Graph()
+        with self.graph.as_default():
+            self._session = None
+            self._datasets = collections.namedtuple("datasets", ("train", "valid", "test"))
+            self._model = None
+            self._inferences = []
+
+            self._coord = None
+            self._threads = None
+
+            self._feed_func = None
+            self._x = None
+            self._y = None
+
+            self._batch_size_ph = None
+
+            self._is_training = tf.placeholder(tf.bool, name='is_training')
+            self._global_step = tf.Variable(0, trainable=False)
+            self._batch_size_ph = tf.placeholder(tf.int32, name='batch_size')
+            self._input_from_queue = tf.placeholder(tf.bool, name='input_from_queue')
+
+            self._summary_writer = None
+
+            self._train_op = None
+            self._total_loss = None
+            self._loss = None
+            self._summary_op = None
            
     def register_datasets(self, train_ds, valid_ds=None, test_ds=None):
         self._datasets.train = train_ds
@@ -59,182 +60,186 @@ class AbstractRuntime(object):
         self._model = model
         
     def build(self, is_autoencoder=False):
-        
-        self._x = tf.placeholder(tf.float32, [None] + self._datasets.train.input_shape, "X")
-        if is_autoencoder:
-            self._y = tf.placeholder(tf.float32, [None] + self._datasets.train.input_shape, "Y")
-        else:
-            self._y = tf.placeholder(tf.float32, [None] + self._datasets.train.target_shape, "Y")
-            
-        if self._datasets.train.uses_queue:
-            inputs, targets = self._datasets.train.get_batch(self._batch_size_ph)
+        with self.graph.as_default():
+            self._x = tf.placeholder(tf.float32, [None] + self._datasets.train.input_shape, "X")
             if is_autoencoder:
-                targets = inputs
-        else:
-            # we have to assign these to have their tensor shape equal,
-            # even if this is never evaluated by tf.cond().
-            inputs = self._x
-            targets = self._y
-        
-        x = tf.cond(self._input_from_queue, lambda: inputs, lambda: self._x)
-        y = tf.cond(self._input_from_queue, lambda: targets, lambda: self._y)
-        
-        
-        if is_autoencoder:
-            self._feed_func = lambda inputs, targets, bs, is_train: {self._x: inputs,
-                                                                     self._y: inputs,
-                                                                     self._batch_size_ph: bs,
-                                                                     self._is_training: is_train}
-        else:
-            self._feed_func = lambda inputs, targets, bs, is_train : {self._x: inputs,
-                                                                      self._y: targets,
-                                                                      self._batch_size_ph: bs,
-                                                                      self._is_training: is_train}
+                self._y = tf.placeholder(tf.float32, [None] + self._datasets.train.input_shape, "Y")
+            else:
+                self._y = tf.placeholder(tf.float32, [None] + self._datasets.train.target_shape, "Y")
 
-        train_op, total_loss, loss, summaries = self._build_internal(x, y)
+            if self._datasets.train.uses_queue:
+                inputs, targets = self._datasets.train.get_batch(self._batch_size_ph)
+                if is_autoencoder:
+                    targets = inputs
+            else:
+                # we have to assign these to have their tensor shape equal,
+                # even if this is never evaluated by tf.cond().
+                inputs = self._x
+                targets = self._y
 
-        self._train_op = train_op
-        self._total_loss = total_loss
-        self._loss = loss
-        if summaries is None:
-            self._summary_op = tf.merge_all_summaries()
-        else:
-            self._summary_op = tf.merge_summary(summaries)
- 
-        # start session and init all variables
-        self.session.run(tf.initialize_all_variables())
-        
-        # creates coordinatior and queue threads
-        self._coord = tf.train.Coordinator()
-        if self.datasets.train.uses_queue:
-            self._threads = tf.train.start_queue_runners(sess=self.session, coord=self._coord)
+            x = tf.cond(self._input_from_queue, lambda: inputs, lambda: self._x)
+            y = tf.cond(self._input_from_queue, lambda: targets, lambda: self._y)
+
+
+            if is_autoencoder:
+                self._feed_func = lambda inputs, targets, bs, is_train: {self._x: inputs,
+                                                                         self._y: inputs,
+                                                                         self._batch_size_ph: bs,
+                                                                         self._is_training: is_train}
+            else:
+                self._feed_func = lambda inputs, targets, bs, is_train : {self._x: inputs,
+                                                                          self._y: targets,
+                                                                          self._batch_size_ph: bs,
+                                                                          self._is_training: is_train}
+
+            train_op, total_loss, loss, summaries = self._build_internal(x, y)
+
+            self._train_op = train_op
+            self._total_loss = total_loss
+            self._loss = loss
+            if summaries is None:
+                self._summary_op = tf.merge_all_summaries()
+            else:
+                self._summary_op = tf.merge_summary(summaries)
+
+            # start session and init all variables
+            self.session.run(tf.initialize_all_variables())
+
+            # creates coordinatior and queue threads
+            self._coord = tf.train.Coordinator()
+            if self.datasets.train.uses_queue:
+                self._threads = tf.train.start_queue_runners(sess=self.session, coord=self._coord)
         
     def train(self, batch_size, steps=-1, epochs=-1, display_step=10):
         assert not(steps <= 0 and epochs <= 0), "Either set 'steps' or 'epochs' parameter"
         assert not(steps > 0 and epochs > 0), "Not allowed to set both, 'steps' and 'epochs' parameter"
         
-        batches_per_epoch = self.datasets.train.size // batch_size
-        
-        if epochs > 0:
-            steps = batches_per_epoch * epochs
-        
-        # Create a saver to store checkpoints of the model
-        saver = tf.train.Saver(tf.all_variables())
-        
-        # TODO: this is only required for inpute Queue!!!
-        # Start input enqueue threads
-        #coord = tf.train.Coordinator()
-        
-        #if self.datasets.train.uses_queue:
-        #    threads = tf.train.start_queue_runners(sess=self.session, coord=coord)
-        #else:
-        #    threads = None
+        with self.graph.as_default():
+            batches_per_epoch = self.datasets.train.size // batch_size
 
-        self.datasets.train.reset()
+            if epochs > 0:
+                steps = batches_per_epoch * epochs
 
-        try:
-            this_step = 0
-            total_loss_sum = 0
-            loss_sum = 0
-            
-            x_dummy = np.zeros([batch_size] + self.datasets.train.input_shape)
-            y_dummy = np.zeros([batch_size] + self.datasets.train.target_shape)
-            
-            while not self._coord.should_stop():
-                this_step += 1
-                if (this_step > steps):
-                    break
-                
-                if this_step % batches_per_epoch == 1:
-                    epoch = (this_step - 1) // batches_per_epoch + 1
-                    print("Starting epoch {}...".format(epoch))
-                
-                start_time = time.time()
+            # Create a saver to store checkpoints of the model
+            saver = tf.train.Saver(tf.all_variables())
 
-                if self.datasets.train.uses_queue:
-                    batch_x = x_dummy
-                    batch_y = y_dummy
-                else:
-                    batch_x, batch_y = self.datasets.train.get_batch(batch_size)
-                feed = self._feed_func(batch_x, batch_y, batch_size, True)
-                feed.update({self._input_from_queue: True if self.datasets.train.uses_queue else False})
+            # TODO: this is only required for inpute Queue!!!
+            # Start input enqueue threads
+            #coord = tf.train.Coordinator()
 
-                if this_step == 1 and self.datasets.train.uses_queue:
-                    print("Filling queue with {} examples...".format(-1)) # TODO: retrieve real number...
-                    
-                # step counter is increment when train_op is executed
-                pred, _, gstep, total_loss, loss = self.session.run([self._inferences[0], self._train_op,
-                                                              self._global_step,
-                                                              self._total_loss,
-                                                              self._loss],
-                                                             feed_dict=feed)
-                duration = time.time() - start_time
+            #if self.datasets.train.uses_queue:
+            #    threads = tf.train.start_queue_runners(sess=self.session, coord=coord)
+            #else:
+            #    threads = None
 
-                assert not np.isnan(loss), 'Warning: Model diverged with loss = NaN'
+            self.datasets.train.reset()
 
-                total_loss_sum += total_loss
-                loss_sum += loss
-                if gstep % display_step == 0:
-                    # info
-                    num_examples_per_step = batch_size
-                    examples_per_sec = num_examples_per_step / duration
-                    sec_per_batch = float(duration)
-                    avg_total_loss = total_loss_sum / display_step
-                    avg_loss = loss_sum / display_step
-                    total_loss_sum = 0
-                    loss_sum = 0
-                    print("@{:6d}: loss: {:9.3f}, total-loss: {:9.3f} ({:7.1f} examples/sec, {:5.2f} sec/batch)" \
-                          .format(gstep, avg_loss, avg_total_loss, examples_per_sec, sec_per_batch))
+            try:
+                this_step = 0
+                total_loss_sum = 0
+                loss_sum = 0
 
-                if gstep % 100 or this_step == steps:
-                    # summary
-                    summary_str = self.session.run(self._summary_op, feed_dict=feed)
-                    self.summary_writer.add_summary(summary_str, gstep)
-                    self.summary_writer.flush() 
+                x_dummy = np.zeros([batch_size] + self.datasets.train.input_shape)
+                y_dummy = np.zeros([batch_size] + self.datasets.train.target_shape)
 
-                if gstep == 100 or this_step == steps or epochs == -1 and gstep % 1000 == 0 or \
-                   epochs > 0 and this_step % batches_per_epoch == 0:
-                    # validate
-                    print
-                    self._test_internal(batch_size, self.datasets.valid, "validation", True)
-                    print
+                while not self._coord.should_stop():
+                    this_step += 1
+                    if (this_step > steps):
+                        break
 
-                if gstep % 1000 == 0 or this_step == steps:
-                    # save regular checkpoint
-                    checkpoint_path = os.path.join(TRAIN_DIR, "model.ckpt")
-                    saver.save(self.session, checkpoint_path, global_step=self._global_step)
-                    
-                if epochs > 0:
-                    if this_step % batches_per_epoch == 0:
-                        # save epoch checkpoint
-                        checkpoint_path = os.path.join(TRAIN_DIR, "ep-{}_model.ckpt".format(epoch))
+                    if this_step % batches_per_epoch == 1:
+                        epoch = (this_step - 1) // batches_per_epoch + 1
+                        print("Starting epoch {}...".format(epoch))
+
+                    start_time = time.time()
+
+                    if self.datasets.train.uses_queue:
+                        batch_x = x_dummy
+                        batch_y = y_dummy
+                    else:
+                        batch_x, batch_y = self.datasets.train.get_batch(batch_size)
+                    feed = self._feed_func(batch_x, batch_y, batch_size, True)
+                    feed.update({self._input_from_queue: True if self.datasets.train.uses_queue else False})
+
+                    if this_step == 1 and self.datasets.train.uses_queue:
+                        print("Filling queue with {} examples...".format(-1)) # TODO: retrieve real number...
+
+                    # step counter is increment when train_op is executed
+                    pred, _, gstep, total_loss, loss = self.session.run([self._inferences[0], self._train_op,
+                                                                  self._global_step,
+                                                                  self._total_loss,
+                                                                  self._loss],
+                                                                 feed_dict=feed)
+                    duration = time.time() - start_time
+
+                    assert not np.isnan(loss), 'Warning: Model diverged with loss = NaN'
+
+                    total_loss_sum += total_loss
+                    loss_sum += loss
+                    if gstep % display_step == 0:
+                        # info
+                        num_examples_per_step = batch_size
+                        examples_per_sec = num_examples_per_step / duration
+                        sec_per_batch = float(duration)
+                        avg_total_loss = total_loss_sum / display_step
+                        avg_loss = loss_sum / display_step
+                        total_loss_sum = 0
+                        loss_sum = 0
+                        print("@{:6d}: loss: {:9.3f}, total-loss: {:9.3f} ({:7.1f} examples/sec, {:5.2f} sec/batch)" \
+                              .format(gstep, avg_loss, avg_total_loss, examples_per_sec, sec_per_batch))
+
+                    if gstep % 100 or this_step == steps:
+                        # summary
+                        summary_str = self.session.run(self._summary_op, feed_dict=feed)
+                        self.summary_writer.add_summary(summary_str, gstep)
+                        self.summary_writer.flush() 
+
+                    if gstep == 100 or this_step == steps or epochs == -1 and gstep % 1000 == 0 or \
+                       epochs > 0 and this_step % batches_per_epoch == 0:
+                        # validate
+                        print
+                        self._test_internal(batch_size, self.datasets.valid, "validation", True)
+                        print
+
+                    if gstep % 1000 == 0 or this_step == steps:
+                        # save regular checkpoint
+                        checkpoint_path = os.path.join(TRAIN_DIR, "model.ckpt")
                         saver.save(self.session, checkpoint_path, global_step=self._global_step)
-               
-        except tf.errors.OutOfRangeError:
-            print("Done training -- epoch limit reached")
-        #finally:
-            # When done, ask the threads to stop
-            #self._coord.request_stop()
-            #print("Coordinator stopped.")
 
-        # Wait for threads to finish
-        #if self._threads is not None:
-            #self._coord.join(self._threads)
+                    if epochs > 0:
+                        if this_step % batches_per_epoch == 0:
+                            # save epoch checkpoint
+                            checkpoint_path = os.path.join(TRAIN_DIR, "ep-{}_model.ckpt".format(epoch))
+                            saver.save(self.session, checkpoint_path, global_step=self._global_step)
+
+            except tf.errors.OutOfRangeError:
+                print("Done training -- epoch limit reached")
+            #finally:
+                # When done, ask the threads to stop
+                #self._coord.request_stop()
+                #print("Coordinator stopped.")
+
+            # Wait for threads to finish
+            #if self._threads is not None:
+                #self._coord.join(self._threads)
 
     @abstractmethod
     def _build_internal(self, x, y):
         pass
     
-    def predict(self, inputs):            
-        feed = self._feed_func(inputs, None, inputs.shape[0], False)
-        feed.update({self._input_from_queue: False})
-        return self.session.run(self._inferences[0], feed_dict=feed)
+    def predict(self, inputs): 
+        with self.graph.as_default():
+            feed = self._feed_func(inputs, None, inputs.shape[0], False)
+            feed.update({self._input_from_queue: False})
+            return self.session.run(self._inferences[0], feed_dict=feed)
         
     def validate(self, batch_size):
-        self._test_internal(batch_size, self.datasets.valid, "validation")
+        with self.graph.as_default():
+            self._test_internal(batch_size, self.datasets.valid, "validation")
              
     def test(self, batch_size):
-        self._test_internal(batch_size, self.datasets.test, "test")
+        with self.graph.as_default():
+            self._test_internal(batch_size, self.datasets.test, "test")
            
     def _test_internal(self, batch_size, dataset, title, summary=False):
         if dataset is None:
@@ -486,7 +491,6 @@ class MultiGpuRuntime(AbstractRuntime):
     @tt.utils.attr.override
     def train(self, batch_size, steps=-1, epochs=-1, display_step=10):
         assert batch_size % float(self.num_gpus) == 0, "Batch-size has to be multiples of 'num_gpus'."
-        #with self.graph.as_default(), tf.device('/cpu:0'):
         with tf.device('/cpu:0'):
             return super(MultiGpuRuntime, self).train(batch_size, steps, epochs, display_step)              
     
