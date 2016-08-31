@@ -29,6 +29,9 @@ class AbstractRuntime(object):
         self._model = None
         self._inferences = []
         
+        self._coord = None
+        self._threads = None
+        
         self._feed_func = None
         
         self._x = None
@@ -53,14 +56,23 @@ class AbstractRuntime(object):
         self._model = model
         
     def build(self, is_autoencoder=False):
-        # FIXME: placeholders not required, when datasets uses input_queue (change after DS refactoring)
-        self._x = tf.placeholder(tf.float32, [None] + self._datasets.train.input_shape, "X")
-        if is_autoencoder:
-            self._y_ = tf.placeholder(tf.float32, [None] + self._datasets.train.input_shape, "Y_")
-            self._feed_func = lambda x_ph, y_ph, inputs, targets : {x_ph: inputs, y_ph: inputs}
+        if self._datasets.train.uses_queue:
+            inputs, targets = self._datasets.train.get_batch(32) # TODO: !?!?!?!? BATCH SIZE HERE ALREADY? :(
+            self._x = inputs
+            if is_autoencoder:
+                self._y_ = inputs
+                self._feed_func = lambda x_ph, y_ph, inputs, targets : {}
+            else:
+                self._y_ = targets
+                self._feed_func = lambda x_ph, y_ph, inputs, targets : {}
         else:
-            self._y_ = tf.placeholder(tf.float32, [None] + self._datasets.train.target_shape, "Y_")
-            self._feed_func = lambda x_ph, y_ph, inputs, targets : {x_ph: inputs, y_ph: targets}
+            self._x = tf.placeholder(tf.float32, [None] + self._datasets.train.input_shape, "X")
+            if is_autoencoder:
+                self._y_ = tf.placeholder(tf.float32, [None] + self._datasets.train.input_shape, "Y_")
+                self._feed_func = lambda x_ph, y_ph, inputs, targets : {x_ph: inputs, y_ph: inputs}
+            else:
+                self._y_ = tf.placeholder(tf.float32, [None] + self._datasets.train.target_shape, "Y_")
+                self._feed_func = lambda x_ph, y_ph, inputs, targets : {x_ph: inputs, y_ph: targets}
             
         
         train_op, total_loss, loss, summaries = self._build_internal(self._x, self._y_)
@@ -76,6 +88,11 @@ class AbstractRuntime(object):
         # start session and init all variables
         self.session.run(tf.initialize_all_variables())
         
+        # creates coordinatior and queue threads
+        self._coord = tf.train.Coordinator()
+        if self.datasets.train.uses_queue:
+            self._threads = tf.train.start_queue_runners(sess=self.session, coord=self._coord)
+        
     def train(self, batch_size, steps=-1, epochs=-1, display_step=10):
         assert not(steps <= 0 and epochs <= 0), "Either set 'steps' or 'epochs' parameter"
         assert not(steps > 0 and epochs > 0), "Not allowed to set both, 'steps' and 'epochs' parameter"
@@ -90,8 +107,12 @@ class AbstractRuntime(object):
         
         # TODO: this is only required for inpute Queue!!!
         # Start input enqueue threads
-        coord = tf.train.Coordinator()
-        threads = tf.train.start_queue_runners(sess=self.session, coord=coord)
+        #coord = tf.train.Coordinator()
+        
+        #if self.datasets.train.uses_queue:
+        #    threads = tf.train.start_queue_runners(sess=self.session, coord=coord)
+        #else:
+        #    threads = None
 
         self.datasets.train.reset()
 
@@ -99,7 +120,7 @@ class AbstractRuntime(object):
             this_step = 0
             total_loss_sum = 0
             loss_sum = 0
-            while not coord.should_stop():
+            while not self._coord.should_stop():
                 this_step += 1
                 if (this_step > steps):
                     break
@@ -110,10 +131,17 @@ class AbstractRuntime(object):
                 
                 start_time = time.time()
 
-                batch_x, batch_y = self.datasets.train.get_batch(batch_size)
+                if self.datasets.train.uses_queue:
+                    batch_x = None
+                    batch_y = None
+                else:
+                    batch_x, batch_y = self.datasets.train.get_batch(batch_size)
                 feed = self._feed_func(self._x, self._y_, batch_x, batch_y)
                 feed.update({self._is_training: True})
 
+                if this_step == 1 and self.datasets.train.uses_queue:
+                    print("Filling queue with {} examples...".format(99999))
+                    
                 # step counter is increment when train_op is executed
                 _, gstep, total_loss, loss = self.session.run([self._train_op,
                                                               self._global_step,
@@ -164,16 +192,29 @@ class AbstractRuntime(object):
                
         except tf.errors.OutOfRangeError:
             print("Done training -- epoch limit reached")
-        finally:
+        #finally:
             # When done, ask the threads to stop
-            coord.request_stop()
+            #self._coord.request_stop()
+            #print("Coordinator stopped.")
 
         # Wait for threads to finish
-        coord.join(threads)
+        #if self._threads is not None:
+            #self._coord.join(self._threads)
 
     @abstractmethod
     def _build_internal(self, x, y_):
         pass
+    
+    def run(self, input_vector):
+        if self.datasets.train.uses_queue:
+            feed = {}
+        else:
+            #feed = self._feed_func(self._x, self._y_, inputs, None)
+            feed = {} # this run() method makes only sense when anything is not related to input data...
+        feed.update({self._is_training: False})
+        result = self.session.run(input_vector, feed_dict=feed)
+        
+        return result
     
     def predict(self, inputs):            
         feed = self._feed_func(self._x, self._y_, inputs, None)
@@ -201,7 +242,11 @@ class AbstractRuntime(object):
         loss_sum = 0
         progress = tt.utils.ui.ProgressBar(num_batches * batch_size)
         for b in xrange(num_batches):
-            batch_x, batch_y = dataset.get_batch(batch_size)
+            if self.datasets.train.uses_queue:
+                batch_x = None
+                batch_y = None
+            else:
+                batch_x, batch_y = dataset.get_batch(batch_size)
             feed = self._feed_func(self._x, self._y_, batch_x, batch_y)
             feed.update({self._is_training: False})
 
@@ -224,6 +269,13 @@ class AbstractRuntime(object):
         return tf.Session(config=tf.ConfigProto(gpu_options=gpu_options))
         
     def close(self):
+        self._coord.request_stop()
+        print("Coordinator stopped.")
+
+        # Wait for threads to finish
+        if self._threads is not None:
+            self._coord.join(self._threads)
+        
         self.session.close()
         
     @property
