@@ -152,7 +152,7 @@ def display_image(image):
     display(image)
 
 
-def display_batch(img_array_batch, nrows=2, ncols=2):
+def display_batch(img_array_batch, nrows=2, ncols=2, title=''):
     """Display a batch of images given as a 4D numpy array.
     Parameters
     ----------
@@ -163,12 +163,14 @@ def display_batch(img_array_batch, nrows=2, ncols=2):
         The data values have to be in range [0,1].
     nrows : uint, optional
         The number or rows.
-     ncols : uint, optional
+    ncols : uint, optional
         The number or colums.
+    title: str, optional
+        The title of the figure.
     """
     # create figure with random id
     fig = plt.figure(random.randint(1, sys.maxint))
-    
+    fig.suptitle(title, fontsize=12, fontweight='semibold')
     for i in xrange(min(nrows * ncols, len(img_array_batch))):
         current_img = img_array_batch[i]
         

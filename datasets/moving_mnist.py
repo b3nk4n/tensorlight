@@ -47,7 +47,11 @@ class MovingMNISTBaseGeneratedDataset(base.AbstractImageSequenceDataset):
     
     @tt.utils.attr.override
     def get_batch(self, batch_size):
-        start_y, start_x = self._get_random_trajectory(batch_size * self._num_digits)
+        total_seq_length = self.input_seq_length + self.target_seq_length
+        start_y, start_x = MovingMNISTBaseGeneratedDataset._get_random_trajectory(batch_size * self._num_digits,
+                                                                                  total_seq_length,
+                                                                                  self.image_size, self._digit_size,
+                                                                                  self._step_length)
     
         input_data = np.zeros([batch_size] + self.input_shape, dtype=np.float32)
         
@@ -69,26 +73,27 @@ class MovingMNISTBaseGeneratedDataset(base.AbstractImageSequenceDataset):
                 for i in xrange(self.input_seq_length):
                     top    = start_y[i, j * self._num_digits + n]
                     left   = start_x[i, j * self._num_digits + n]
-                    bottom = top  + 28
-                    right  = left + 28
+                    bottom = top  + self._digit_size
+                    right  = left + self._digit_size
                     # set data and use maximum for overlap
                     input_data[j, i, top:bottom, left:right, 0] = np.maximum(input_data[j, i, top:bottom, left:right, 0],
                                                                              digit_image)
                 # generate targets
+                offset = self.input_seq_length
                 for i in xrange(self.target_seq_length):
-                    top    = start_y[i, j * self._num_digits + n]
-                    left   = start_x[i, j * self._num_digits + n]
-                    bottom = top  + 28
-                    right  = left + 28
+                    top    = start_y[i + offset, j * self._num_digits + n]
+                    left   = start_x[i + offset, j * self._num_digits + n]
+                    bottom = top  + self._digit_size
+                    right  = left + self._digit_size
                     # set data and use maximum for overlap
                     target_data[j, i, top:bottom, left:right, 0] = np.maximum(target_data[j, i, top:bottom, left:right, 0],
                                                                               digit_image)
         return input_data, target_data
     
-    def _get_random_trajectory(self, batch_size):
-        length = self.input_seq_length + self.target_seq_length
-        canvas_size_h = self.image_size[0] - self._digit_size
-        canvas_size_w = self.image_size[1] - self._digit_size
+    @staticmethod
+    def _get_random_trajectory(batch_size, length, image_size, digit_size, step_length):
+        canvas_size_h = image_size[0] - digit_size
+        canvas_size_w = image_size[1] - digit_size
 
         # Initial position uniform random inside the box.
         y = np.random.rand(batch_size)
@@ -103,8 +108,8 @@ class MovingMNISTBaseGeneratedDataset(base.AbstractImageSequenceDataset):
         start_x = np.zeros((length, batch_size))
         for i in xrange(length):
             # Take a step along velocity.
-            y += v_y * self._step_length
-            x += v_x * self._step_length
+            y += v_y * step_length
+            x += v_x * step_length
 
             # Bounce off edges.
             for j in xrange(batch_size):
