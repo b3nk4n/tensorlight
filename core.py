@@ -60,16 +60,21 @@ class AbstractRuntime(object):
         
     def build(self, is_autoencoder=False):
         
-        if self._datasets.train.uses_queue:
-            inputs, targets = self._datasets.train.get_batch(self._batch_size_ph)
-            if is_autoencoder:
-                targets = inputs
-        
         self._x = tf.placeholder(tf.float32, [None] + self._datasets.train.input_shape, "X")
         if is_autoencoder:
             self._y = tf.placeholder(tf.float32, [None] + self._datasets.train.input_shape, "Y")
         else:
             self._y = tf.placeholder(tf.float32, [None] + self._datasets.train.target_shape, "Y")
+            
+        if self._datasets.train.uses_queue:
+            inputs, targets = self._datasets.train.get_batch(self._batch_size_ph)
+            if is_autoencoder:
+                targets = inputs
+        else:
+            # we have to assign these to have their tensor shape equal,
+            # even if this is never evaluated by tf.cond().
+            inputs = self._x
+            targets = self._y
         
         x = tf.cond(self._input_from_queue, lambda: inputs, lambda: self._x)
         y = tf.cond(self._input_from_queue, lambda: targets, lambda: self._y)
@@ -163,8 +168,6 @@ class AbstractRuntime(object):
                                                               self._total_loss,
                                                               self._loss],
                                                              feed_dict=feed)
-                print('pred', pred.shape) # TODO remove ths line
-                
                 duration = time.time() - start_time
 
                 assert not np.isnan(loss), 'Warning: Model diverged with loss = NaN'
