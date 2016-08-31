@@ -36,14 +36,12 @@ class AbstractRuntime(object):
         self._x = None
         self._y = None
         
-        #self._feed_func_queue = None
-        #self._x_queue = None
-        #self._y_queue = None
         self._batch_size_ph = None
         
         self._is_training = tf.placeholder(tf.bool, name='is_training')
         self._global_step = tf.Variable(0, trainable=False)
-        self._uses_queue = tf.placeholder(tf.bool, name='uses_queue')
+        self._batch_size_ph = tf.placeholder(tf.int32, name='batch_size')
+        self._input_from_queue = tf.placeholder(tf.bool, name='input_from_queue')
         
         self._summary_writer = None
         
@@ -61,50 +59,34 @@ class AbstractRuntime(object):
         self._model = model
         
     def build(self, is_autoencoder=False):
+        
         if self._datasets.train.uses_queue:
-            # Note: the passes batch_size=1 is used as a placeholder
-            self._batch_size_ph = tf.placeholder(tf.int32, name='batch_size')
             inputs, targets = self._datasets.train.get_batch(self._batch_size_ph)
-            self._x = inputs
             if is_autoencoder:
-                self._y = inputs
-                self._feed_func = lambda inputs, targets, bs : {self._batch_size_ph: bs}
-            else:
-                self._y = targets
-                self._feed_func = lambda inputs, targets, bs : {self._batch_size_ph: bs}
-        else:
-            self._x = tf.placeholder(tf.float32, [None] + self._datasets.train.input_shape, "X")
-            if is_autoencoder:
-                self._y = tf.placeholder(tf.float32, [None] + self._datasets.train.input_shape, "Y")
-                self._feed_func = lambda inputs, targets, bs : {self._x: inputs,
-                                                                self._y: inputs,
-                                                                self._batch_size_ph: bs}
-            else:
-                self._y = tf.placeholder(tf.float32, [None] + self._datasets.train.target_shape, "Y")
-                self._feed_func = lambda inputs, targets, bs : {self._x: inputs,
-                                                                self._y: targets,
-                                                                self._batch_size_ph: bs}
-          
-        # using queues
-        """inputs, targets = self._datasets.train.get_batch(32) # TODO: !?!?!?!? BATCH SIZE HERE ALREADY? :(
-        self._x_queue = inputs
-        if is_autoencoder:
-            self._y_queue = inputs
-            self._feed_func_queue = lambda x_ph, y_ph, inputs, targets : {}
-        else:
-            self._y_queue = targets
-            self._feed_func_queue = lambda x_ph, y_ph, inputs, targets : {}
-                
-        # using placeholders
+                targets = inputs
+        
         self._x = tf.placeholder(tf.float32, [None] + self._datasets.train.input_shape, "X")
         if is_autoencoder:
             self._y = tf.placeholder(tf.float32, [None] + self._datasets.train.input_shape, "Y")
-            self._feed_func = lambda x_ph, y_ph, inputs, targets : {x_ph: inputs, y_ph: inputs}
         else:
             self._y = tf.placeholder(tf.float32, [None] + self._datasets.train.target_shape, "Y")
-            self._feed_func = lambda x_ph, y_ph, inputs, targets : {x_ph: inputs, y_ph: targets} """           
         
-        train_op, total_loss, loss, summaries = self._build_internal(self._x, self._y)
+        x = tf.cond(self._input_from_queue, lambda: inputs, lambda: self._x)
+        y = tf.cond(self._input_from_queue, lambda: targets, lambda: self._y)
+        
+        
+        if is_autoencoder:
+            self._feed_func = lambda inputs, targets, bs, is_train: {self._x: inputs,
+                                                                     self._y: inputs,
+                                                                     self._batch_size_ph: bs,
+                                                                     self._is_training: is_train}
+        else:
+            self._feed_func = lambda inputs, targets, bs, is_train : {self._x: inputs,
+                                                                      self._y: targets,
+                                                                      self._batch_size_ph: bs,
+                                                                      self._is_training: is_train}
+
+        train_op, total_loss, loss, summaries = self._build_internal(x, y)
 
         self._train_op = train_op
         self._total_loss = total_loss
@@ -149,6 +131,10 @@ class AbstractRuntime(object):
             this_step = 0
             total_loss_sum = 0
             loss_sum = 0
+            
+            x_dummy = np.zeros([batch_size] + self.datasets.train.input_shape)
+            y_dummy = np.zeros([batch_size] + self.datasets.train.target_shape)
+            
             while not self._coord.should_stop():
                 this_step += 1
                 if (this_step > steps):
@@ -161,12 +147,12 @@ class AbstractRuntime(object):
                 start_time = time.time()
 
                 if self.datasets.train.uses_queue:
-                    batch_x = None
-                    batch_y = None
+                    batch_x = x_dummy
+                    batch_y = y_dummy
                 else:
                     batch_x, batch_y = self.datasets.train.get_batch(batch_size)
-                feed = self._feed_func(batch_x, batch_y, batch_size)
-                feed.update({self._is_training: True})
+                feed = self._feed_func(batch_x, batch_y, batch_size, True)
+                feed.update({self._input_from_queue: True if self.datasets.train.uses_queue else False})
 
                 if this_step == 1 and self.datasets.train.uses_queue:
                     print("Filling queue with {} examples...".format(-1)) # TODO: retrieve real number...
@@ -236,21 +222,9 @@ class AbstractRuntime(object):
     def _build_internal(self, x, y):
         pass
     
-    def run(self, input_vector):
-        if self.datasets.train.uses_queue:
-            #feed = {}
-            feed = self._feed_func(None, None, 1) # FIXME: BATCH-SIZE? For queue, inputs are ignored?
-        else:
-            #feed = self._feed_func(self._x, self._y, inputs, None)
-            feed = {} # this run() method makes only sense when anything is not related to input data...
-        feed.update({self._is_training: False})
-        result = self.session.run(input_vector, feed_dict=feed)
-        
-        return result
-    
     def predict(self, inputs):            
-        feed = self._feed_func(inputs, None, 1) # FIXME: BATCH-SIZE? For queue, inputs are ignored?
-        feed.update({self._is_training: False})
+        feed = self._feed_func(inputs, None, inputs.shape[0], False)
+        feed.update({self._input_from_queue: False})
         return self.session.run(self._inferences[0], feed_dict=feed)
         
     def validate(self, batch_size):
@@ -272,15 +246,17 @@ class AbstractRuntime(object):
         
         dataset.reset()
         loss_sum = 0
+        x_dummy = np.zeros([batch_size] + dataset.input_shape)
+        y_dummy = np.zeros([batch_size] + dataset.target_shape)
         progress = tt.utils.ui.ProgressBar(num_batches * batch_size)
         for b in xrange(num_batches):
             if self.datasets.train.uses_queue:
-                batch_x = None
-                batch_y = None
+                batch_x = x_dummy
+                batch_y = y_dummy
             else:
                 batch_x, batch_y = dataset.get_batch(batch_size)
-            feed = self._feed_func(batch_x, batch_y, batch_size)
-            feed.update({self._is_training: False})
+            feed = self._feed_func(batch_x, batch_y, batch_size, False)
+            feed.update({self._input_from_queue: True if dataset.uses_queue else False})
 
             this_loss = self.session.run(self._loss, feed_dict=feed)
             loss_sum += this_loss
@@ -292,7 +268,6 @@ class AbstractRuntime(object):
             summary_str = self.session.run(loss_summary)
             self.summary_writer.add_summary(summary_str, gstep)
             self.summary_writer.flush()
-    
     
     def _create_session(self):
         gpu_options = tf.GPUOptions(
@@ -432,15 +407,11 @@ class MultiGpuRuntime(AbstractRuntime):
         tower_grads = []
         tower_total_losses = []
         tower_losses = []
-        #batch_size_per_gpu = (batch_size // self.num_gpus)
         splitted_x = tf.split(0, self.num_gpus, x)
         splitted_y = tf.split(0, self.num_gpus, y)
         for i in xrange(self.num_gpus):
             with tf.device('/gpu:%d' % i, ):
                 with tf.name_scope('%s_%d' % ('tower', i)) as scope:
-                    # TODO: use tf.split() before the loops?
-                    #this_inputs = x[i*batch_size_per_gpu:(i+1)*batch_size_per_gpu, :, :, :, :]
-                    #this_targets = y[i*batch_size_per_gpu:(i+1)*batch_size_per_gpu, :, :, :, :]
                     this_inputs = splitted_x[i]
                     this_targets = splitted_y[i]
 
