@@ -109,6 +109,9 @@ class AbstractRuntime(object):
             self._coord = tf.train.Coordinator()
             if self.datasets.train.uses_queue:
                 self._threads = tf.train.start_queue_runners(sess=self.session, coord=self._coord)
+                
+            params_count = tt.core.trainable_parameters_count()
+            print("Total model-params: {}".format(params_count))
         
     def train(self, batch_size, steps=-1, epochs=-1, display_step=10):
         assert not(steps <= 0 and epochs <= 0), "Either set 'steps' or 'epochs' parameter"
@@ -507,4 +510,21 @@ class MultiGpuRuntime(AbstractRuntime):
     @property
     def num_gpus(self):
         return self._num_gpus
-            
+
+    
+    
+def trainable_parameters_count():
+    """Gets the number of trainable parameters in this graph.
+    Returns
+    ----------
+    The number of trainable variables (= model parameters).
+    """
+    total_parameters = 0
+    for variable in tf.trainable_variables():
+        # shape is an array of tf.Dimension
+        shape = variable.get_shape()
+        variable_parametes = 1
+        for dim in shape:
+            variable_parametes *= dim.value
+        total_parameters += variable_parametes
+    return total_parameters
