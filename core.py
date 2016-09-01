@@ -2,6 +2,7 @@ import os
 import sys
 import time
 import collections
+import copy
 from datetime import datetime
 from abc import ABCMeta, abstractmethod
 
@@ -35,7 +36,7 @@ class AbstractRuntime(object):
         self._summary_writer = None
 
         self._train_op = None
-        self._summary_op = None
+        self._summaries = None
         
         self._total_loss = None
         self._loss = None
@@ -129,8 +130,8 @@ class AbstractRuntime(object):
 
             train_op = tf.group(apply_gradient_op, variables_averages_op, name="train_op")
 
-            self._summary_op = tf.merge_summary(summaries)
             self._train_op = train_op
+            self._summaries = summaries
             self._total_loss = total_loss
             self._loss = loss
                 
@@ -179,6 +180,11 @@ class AbstractRuntime(object):
 
                 x_dummy = np.zeros([batch_size] + self.datasets.train.input_shape)
                 y_dummy = np.zeros([batch_size] + self.datasets.train.target_shape)
+                
+                # add batch-size to summary. Copy is required to allow rerun training
+                summaries_copy = copy.copy(self._summaries)
+                summaries_copy.append(tf.scalar_summary('batch_size', batch_size))
+                summary_op = tf.merge_summary(summaries_copy)
 
                 while not self._coord.should_stop():
                     this_step += 1
@@ -230,7 +236,7 @@ class AbstractRuntime(object):
                     if gstep % summary_steps == 0 or this_step == steps:
                         # summary
                         if do_summary == True:
-                            summary_str = self.session.run(self._summary_op, feed_dict=feed)
+                            summary_str = self.session.run(summary_op, feed_dict=feed)
                             self.summary_writer.add_summary(summary_str, gstep)
                             self.summary_writer.flush() 
 
