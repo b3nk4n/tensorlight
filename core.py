@@ -8,10 +8,6 @@ import numpy as np
 import tensorflow as tf
 import tensortools as tt
 
-TRAIN_DIR = 'train' # (automatially train_<ModelClassName> ?)
-MAX_CHECKPOINTS_TO_KEEP = 5 # (default = 5, None/0 == all)
-GPU_ALLOW_GROWTH = True # fixed? :)
-GPU_MEMORY_FRACTION = 1.0 # fixed? :)
 
 FIXED_NUM_STEPS_PER_DECAY = 10000
 NUM_EPOCHS_PER_DECAY = 75.0 # used if FIXED_NUM_STEPS_PER_DECAY is None <-- UNUSED; Due to batch_size refactoring
@@ -19,13 +15,17 @@ NUM_EPOCHS_PER_DECAY = 75.0 # used if FIXED_NUM_STEPS_PER_DECAY is None <-- UNUS
 INITIAL_LEARNING_RATE = 0.0001
 LEARNING_RATE_DECAY_FACTOR = 0.5
 
-DO_CHECKPOINTS = True
+
+
 LATEST_CHECKPOINT = 'LATEST'
+
 
 class AbstractRuntime(object):
     __metaclass__ = ABCMeta
     
-    def __init__(self):
+    def __init__(self, train_dir='train', max_checkpoints_to_keep=5,
+                 gpu_allow_growth=True, gpu_memory_fraction=1.0):
+        """ max_checkpoints_to_keep 0/None == keep all! """
         self._graph = tf.Graph()
         self._session = None
         self._datasets = collections.namedtuple("datasets", ("train", "valid", "test"))
@@ -48,6 +48,7 @@ class AbstractRuntime(object):
             
         with self.graph.as_default():
             self._global_step = tf.Variable(0, trainable=False)
+            
             self._ph = collections.namedtuple("placeholders", ("inputs",
                                                                "targets"
                                                                "is_training",
@@ -56,6 +57,13 @@ class AbstractRuntime(object):
             self._ph.is_training = tf.placeholder(tf.bool, name='is_training')
             self._ph.batch_size = tf.placeholder(tf.int32, name='batch_size')
             self._ph.input_from_queue = tf.placeholder(tf.bool, name='input_from_queue')
+            
+        self._train_dir = train_dir
+        self._max_checkpoints_to_keep = max_checkpoints_to_keep
+        
+        self._gpu = collections.namedtuple("placeholders", ("allow_growth", "memory_fraction"))
+        self._gpu.allow_growth = gpu_allow_growth
+        self._gpu.memory_fraction = gpu_memory_fraction
            
     def register_datasets(self, train_ds, valid_ds=None, test_ds=None):
         self._datasets.train = train_ds
@@ -110,17 +118,17 @@ class AbstractRuntime(object):
                 self._summary_op = tf.merge_summary(summaries)
                 
             # Create a saver to store checkpoints of the model
-            self._saver = tf.train.Saver(max_to_keep=MAX_CHECKPOINTS_TO_KEEP)
+            self._saver = tf.train.Saver(max_to_keep=self.max_checkpoints_to_keep)
 
             if checkpoint_file is None:
                 # start session and init all variables
                 self.session.run(tf.initialize_all_variables())
             else:
                 if checkpoint_file == LATEST_CHECKPOINT:
-                    checkpoint_path = tf.train.latest_checkpoint(TRAIN_DIR)
+                    checkpoint_path = tf.train.latest_checkpoint(self.train_dir)
                     assert checkpoint_path is not None, "No latest checkpoint file found."
                 else:
-                    checkpoint_path = os.path.join(TRAIN_DIR, checkpoint_file)
+                    checkpoint_path = os.path.join(self.train_dir, checkpoint_file)
                 self._saver.restore(self.session, checkpoint_path)
                 print("Restoring variables from: {}".format(checkpoint_path))
 
@@ -132,7 +140,7 @@ class AbstractRuntime(object):
             params_count = tt.core.trainable_parameters_count()
             print("Total model-params: {}".format(params_count))
         
-    def train(self, batch_size, steps=-1, epochs=-1, display_step=10):
+    def train(self, batch_size, steps=-1, epochs=-1, display_step=10, do_checkpoints=True):
         assert not(steps <= 0 and epochs <= 0), "Either set 'steps' or 'epochs' parameter"
         assert not(steps > 0 and epochs > 0), "Not allowed to set both, 'steps' and 'epochs' parameter"
         
@@ -220,16 +228,16 @@ class AbstractRuntime(object):
                         self._test_internal(batch_size, self.datasets.valid, "validation", True)
                         print
 
-                    if DO_CHECKPOINTS:
+                    if do_checkpoints:
                         if gstep % 1000 == 0 or this_step == steps:
                             # save regular checkpoint
-                            checkpoint_path = os.path.join(TRAIN_DIR, "model.ckpt")
+                            checkpoint_path = os.path.join(self.train_dir, "model.ckpt")
                             self._saver.save(self.session, checkpoint_path, global_step=self._global_step)
 
                         if epochs > 0:
                             if this_step % batches_per_epoch == 0:
                                 # save epoch checkpoint
-                                checkpoint_path = os.path.join(TRAIN_DIR, "ep-{}_model.ckpt".format(epoch))
+                                checkpoint_path = os.path.join(self.train_dir, "ep-{}_model.ckpt".format(epoch))
                                 self._saver.save(self.session, checkpoint_path, global_step=self._global_step)
 
             except tf.errors.OutOfRangeError:
@@ -299,8 +307,8 @@ class AbstractRuntime(object):
     
     def _create_session(self):
         gpu_options = tf.GPUOptions(
-            per_process_gpu_memory_fraction=GPU_MEMORY_FRACTION,
-            allow_growth=GPU_ALLOW_GROWTH)
+            per_process_gpu_memory_fraction=self._gpu.memory_fraction,
+            allow_growth=self._gpu.allow_growth)
         return tf.Session(config=tf.ConfigProto(gpu_options=gpu_options))
         
     def close(self):
@@ -312,6 +320,7 @@ class AbstractRuntime(object):
             self._coord.join(self._threads)
         
         self.session.close()
+        self._session = None
         
     @property
     def graph(self):
@@ -334,14 +343,23 @@ class AbstractRuntime(object):
     @property
     def summary_writer(self):
         if self._summary_writer is None:
-            self._summary_writer = tf.train.SummaryWriter(TRAIN_DIR, self.session.graph)
+            self._summary_writer = tf.train.SummaryWriter(self.train_dir, self.session.graph)
         return self._summary_writer
+    
+    @property
+    def train_dir(self):
+        return self._train_dir
+    
+    @property
+    def max_checkpoints_to_keep(self):
+        return self._max_checkpoints_to_keep
     
     
     
 class DefaultRuntime(AbstractRuntime):
     
-    def __init__(self):
+    def __init__(self, train_dir='train', max_checkpoints_to_keep=5,
+                 gpu_allow_growth=True, gpu_memory_fraction=1.0):
         print("Launing default runtime...")
         
         device_list = tt.hardware.get_cuda_devices()
@@ -350,7 +368,8 @@ class DefaultRuntime(AbstractRuntime):
         else:
             print("Selecting GPU device: {}".format(device_list[0]))
         
-        super(DefaultRuntime, self).__init__()
+        super(DefaultRuntime, self).__init__(train_dir, max_checkpoints_to_keep,
+                                             gpu_allow_growth, gpu_memory_fraction)
         
     @tt.utils.attr.override
     def _build_internal(self, x, y):
@@ -409,7 +428,8 @@ class DefaultRuntime(AbstractRuntime):
 
 class MultiGpuRuntime(AbstractRuntime):
     
-    def __init__(self, num_gpus=2):
+    def __init__(self, num_gpus=2, train_dir='train', max_checkpoints_to_keep=5,
+                 gpu_allow_growth=True, gpu_memory_fraction=1.0):
         print("Launing Multi-GPU runtime...")
         
         device_list = tt.hardware.get_cuda_devices()
@@ -420,7 +440,8 @@ class MultiGpuRuntime(AbstractRuntime):
             print("Selecting GPU devices: {}".format(device_list[0:num_gpus]))
         self._num_gpus = num_gpus
         
-        super(MultiGpuRuntime, self).__init__()
+        super(MultiGpuRuntime, self).__init__(train_dir, max_checkpoints_to_keep,
+                                              gpu_allow_growth, gpu_memory_fraction)
         
     @tt.utils.attr.override
     def _build_internal(self, x, y):
