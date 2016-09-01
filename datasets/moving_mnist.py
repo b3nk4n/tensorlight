@@ -15,17 +15,30 @@ MNIST_TEST_URL = 'http://www.cs.toronto.edu/~emansim/datasets/bouncing_mnist_tes
 
 
 class MovingMNISTBaseGeneratedDataset(base.AbstractDataset):
+    """Moving MNIST dataset.
+       Reference: Based on Srivastava et al.
+                  http://www.cs.toronto.edu/~nitish/unsupervised_video/
+    """
     __metaclass__ = ABCMeta
     
     """Moving MNIST dataset that creates data on the fly."""
     def __init__(self, dataset_key, dataset_size, input_shape=[10, 64, 64, 1],
                  target_shape=[10, 64, 64, 1], num_digits=2, step_length=0.1):
-        """Creates a dataset instance.
-        Reference: Based on Srivastava et al.
-                   http://www.cs.toronto.edu/~nitish/unsupervised_video/
+        """Creates a base MovingMNIST dataset instance.
         Parameters
         ----------
-        ... TODO: describe parameters of this classes.
+        dataset_key: str
+            The dataset dictionary key.
+        dataset_size: int
+            The dataset size.
+        input_shape: list(int) of shape [t, h, w, c]
+            The input image sequence shape.
+        target_shape: list(int) of shape [t, h, w, c]
+            The taget image sequence shape.
+        num_digits: int, optional
+            The number of flying MNIST digits.
+        step_length: float, optional
+            The step length of movement per frame.
         """
         assert input_shape[1:] == target_shape[1:], "Image data shapes have to be equal."
         assert len(input_shape) == 4, "Input and target shapes require ndims == 4."
@@ -153,6 +166,18 @@ class MovingMNISTTrainDataset(MovingMNISTBaseGeneratedDataset):
     """Moving MNIST train dataset that creates data on the fly."""
     def __init__(self, input_shape=[10, 64, 64, 1], target_shape=[10, 64, 64, 1],
                  num_digits=2, step_length=0.1):
+        """Creates a traning MovingMNIST dataset instance.
+        Parameters
+        ----------
+        input_shape: list(int) of shape [t, h, w, c]
+            The input image sequence shape.
+        target_shape: list(int) of shape [t, h, w, c]
+            The taget image sequence shape.
+        num_digits: int, optional
+            The number of flying MNIST digits.
+        step_length: float, optional
+            The step length of movement per frame.
+        """
         dataset_size = sys.maxint
         super(MovingMNISTTrainDataset, self).__init__('train', dataset_size,
                                                       input_shape, target_shape,
@@ -164,6 +189,18 @@ class MovingMNISTValidDataset(MovingMNISTBaseGeneratedDataset):
     """Moving MNIST validation dataset that creates data on the fly."""
     def __init__(self, input_shape=[10, 64, 64, 1], target_shape=[10, 64, 64, 1],
                  num_digits=2, step_length=0.1):
+        """Creates a validation MovingMNIST dataset instance.
+        Parameters
+        ----------
+        input_shape: list(int) of shape [t, h, w, c]
+            The input image sequence shape.
+        target_shape: list(int) of shape [t, h, w, c]
+            The taget image sequence shape.
+        num_digits: int, optional
+            The number of flying MNIST digits.
+        step_length: float, optional
+            The step length of movement per frame.
+        """
         dataset_size = 10000
         super(MovingMNISTValidDataset, self).__init__('validation', dataset_size,
                                                       input_shape, target_shape,
@@ -174,6 +211,14 @@ class MovingMNISTValidDataset(MovingMNISTBaseGeneratedDataset):
 class MovingMNISTTestDataset(base.AbstractDataset):
     """Moving MNIST test dataset that that uses the same data as in other papers."""
     def __init__(self, input_seq_length=10, target_seq_length=10):
+        """Creates a test MovingMNIST dataset instance.
+        Parameters
+        ----------
+        input_seq_length: int, optional
+            The input sequence length
+        target_seq_length: int, optional
+            The target sequence length
+        """
         assert input_seq_length + target_seq_length <= 20, "The maximum total test sequence length is 20."
         
         try:

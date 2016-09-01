@@ -19,13 +19,32 @@ class UCF11TrainDataset(base.AbstractQueueDataset):
     """
     def __init__(self, input_seq_length=5, target_seq_length=5,
                  image_size=(FRAME_HEIGHT, FRAME_WIDTH, FRAME_CHANNELS),
-                 min_examples_in_queue=256, queue_capacitiy=512, num_threads=8,
+                 min_examples_in_queue=512, queue_capacitiy=1024, num_threads=8,
                  serialized_sequence_length=30, do_distortion=True):
-        """Creates a dataset instance.
+        """Creates a dataset instance that uses a queue.
         Parameters
         ----------
-        ... TODO: describe parameters of this classes.
-        do_distortion: factor >8x slower for long frame sequences
+        dataset_size: int, optional
+            The dataset site.
+        input_seq_length: int, optional
+            The length of the input sequence.
+        target_seq_length: length
+            The length of the target sequence.
+        image_size: list(int) of shape [h, w, c]
+            The image size, how the data with default scale [240, 320, 3]
+            should be scaled to.
+        min_examples_in_queue: int, optional
+            The minimum examples that have to be in the queue.
+            A higher value ensures a good mix.
+        queue_capacitiy: int, optional
+            The maximum capacity of the input queue.
+        num_threads: int, optional
+            The number of threads to generate the inputs.
+        serialized_sequence_length: int, optional
+            The sequence length of each serialized file.
+        do_distortion: Boolean, optional
+            Whether image distortion should be performed or not.
+            Can have a very bad influence on performance.
         """
         self._serialized_sequence_length = serialized_sequence_length
         self._do_distortion = do_distortion
@@ -148,14 +167,6 @@ class UCF11TrainDataset(base.AbstractQueueDataset):
 
     @tt.utils.attr.override
     def get_batch(self, batch_size):
-        """Construct input using the Reader ops.
-        Args:
-            data_dir: Path to the data directory.
-            batch_size: int or Tensor/Placeholder
-                Number of image sequences per batch.
-        Returns:
-            images: Images. 4D tensor of [batch_size, FRAME_HEIGHT, FRAME_WIDTH, 3] size.
-        """
         # Generate a batch of sequences and labels by building up a queue of examples.
         seq_filenames = tt.utils.path.get_filenames(self._data_dir, '*.seq')
         with tf.name_scope('preprocessing'):
@@ -188,8 +199,10 @@ class UCF11TrainDataset(base.AbstractQueueDataset):
 
     @property
     def serialized_sequence_length(self):
+        """Gets the serialized sequence length"""
         return self._serialized_sequence_length
     
     @property
     def do_distortion(self):
+        """Gets whether distorion is activated."""
         return self._do_distortion

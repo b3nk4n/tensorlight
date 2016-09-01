@@ -9,6 +9,7 @@ from abc import ABCMeta
 
 
 class MNISTBaseDataset(base.AbstractDataset):
+    """MNIST base dataset wrapping the functions provided by tensorflow."""
     __metaclass__ = ABCMeta
     
     # load the dataset file lazily and just once
@@ -16,8 +17,12 @@ class MNISTBaseDataset(base.AbstractDataset):
     
     """MNIST base dataset wrapping the functions provided by tensorflow."""
     def __init__(self, dataset):
-        """Creates a dataset instance."""
-        
+        """Creates a dataset instance.
+        Parameters
+        ----------
+        dataset: Dataset
+            The TensorFlow MNIST dataset to use.
+        """
         self._data = dataset.images.reshape((-1, 28, 28, 1))
         self._targets = dataset.labels
         dataset_size = dataset.num_examples
