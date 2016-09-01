@@ -14,12 +14,12 @@ MNIST_URL = 'http://www.cs.toronto.edu/~emansim/datasets/mnist.h5'
 MNIST_TEST_URL = 'http://www.cs.toronto.edu/~emansim/datasets/bouncing_mnist_test.npy'
 
 
-class MovingMNISTBaseGeneratedDataset(base.AbstractImageSequenceBatchDataset):
+class MovingMNISTBaseGeneratedDataset(base.AbstractDataset):
     __metaclass__ = ABCMeta
     
     """Moving MNIST dataset that creates data on the fly."""
-    def __init__(self, dataset_key, dataset_size, image_size=(64, 64, 1),
-                 input_seq_length=10, target_seq_length=10, num_digits=2, step_length=0.1):
+    def __init__(self, dataset_key, dataset_size, input_shape=[10, 64, 64, 1],
+                 target_shape=[10, 64, 64, 1], num_digits=2, step_length=0.1):
         """Creates a dataset instance.
         Reference: Based on Srivastava et al.
                    http://www.cs.toronto.edu/~nitish/unsupervised_video/
@@ -27,6 +27,9 @@ class MovingMNISTBaseGeneratedDataset(base.AbstractImageSequenceBatchDataset):
         ----------
         ... TODO: describe parameters of this classes.
         """
+        assert input_shape[1:] == target_shape[1:], "Image data shapes have to be equal."
+        assert len(input_shape) == 4, "Input and target shapes require ndims == 4."
+        
         self._num_digits = num_digits
         self._step_length = step_length
         self._digit_size = 28
@@ -40,23 +43,29 @@ class MovingMNISTBaseGeneratedDataset(base.AbstractImageSequenceBatchDataset):
             sys.exit()
         f.close()
         
-        data = data.reshape(-1, self._digit_size, self._digit_size)
+        self._data = data.reshape(-1, self._digit_size, self._digit_size)
         
-        super(MovingMNISTBaseGeneratedDataset, self).__init__(data, dataset_size, image_size,
-                                                              input_seq_length, target_seq_length)
+        # here: the indices/rows are used for the internal MNIST data 
+        self._indices = np.arange(self._data.shape[0])
+        self._row = 0
+        
+        super(MovingMNISTBaseGeneratedDataset, self).__init__(dataset_size, input_shape, target_shape)
     
     @tt.utils.attr.override
     def get_batch(self, batch_size):
-        total_seq_length = self.input_seq_length + self.target_seq_length
+        input_seq_length = self.input_shape[0]
+        target_seq_length = self.target_shape[0]
+        total_seq_length = input_seq_length + target_seq_length
         start_y, start_x = MovingMNISTBaseGeneratedDataset._get_random_trajectory(batch_size * self._num_digits,
                                                                                   total_seq_length,
-                                                                                  self.image_size, self._digit_size,
+                                                                                  self.input_shape[1:],
+                                                                                  self._digit_size,
                                                                                   self._step_length)
     
         input_data = np.zeros([batch_size] + self.input_shape, dtype=np.float32)
         
         target_data = None
-        if self.target_seq_length > 0:
+        if target_seq_length > 0:
             target_data = np.zeros([batch_size] + self.target_shape, dtype=np.float32)
     
         for j in xrange(batch_size):
@@ -70,7 +79,7 @@ class MovingMNISTBaseGeneratedDataset(base.AbstractImageSequenceBatchDataset):
                 digit_image = self._data[ind, :, :]
         
                 # generate inputs
-                for i in xrange(self.input_seq_length):
+                for i in xrange(input_seq_length):
                     top    = start_y[i, j * self._num_digits + n]
                     left   = start_x[i, j * self._num_digits + n]
                     bottom = top  + self._digit_size
@@ -79,8 +88,8 @@ class MovingMNISTBaseGeneratedDataset(base.AbstractImageSequenceBatchDataset):
                     input_data[j, i, top:bottom, left:right, 0] = np.maximum(input_data[j, i, top:bottom, left:right, 0],
                                                                              digit_image)
                 # generate targets
-                offset = self.input_seq_length
-                for i in xrange(self.target_seq_length):
+                offset = input_seq_length
+                for i in xrange(target_seq_length):
                     top    = start_y[i + offset, j * self._num_digits + n]
                     left   = start_x[i + offset, j * self._num_digits + n]
                     bottom = top  + self._digit_size
@@ -89,6 +98,11 @@ class MovingMNISTBaseGeneratedDataset(base.AbstractImageSequenceBatchDataset):
                     target_data[j, i, top:bottom, left:right, 0] = np.maximum(target_data[j, i, top:bottom, left:right, 0],
                                                                               digit_image)
         return input_data, target_data
+    
+    @tt.utils.attr.override
+    def reset(self):
+        self._row = 0
+        np.random.shuffle(self._indices)
     
     @staticmethod
     def _get_random_trajectory(batch_size, length, image_size, digit_size, step_length):
@@ -137,27 +151,27 @@ class MovingMNISTBaseGeneratedDataset(base.AbstractImageSequenceBatchDataset):
 
 class MovingMNISTTrainDataset(MovingMNISTBaseGeneratedDataset):
     """Moving MNIST train dataset that creates data on the fly."""
-    def __init__(self, image_size=(64, 64, 1), input_seq_length=10, target_seq_length=10,
+    def __init__(self, input_shape=[10, 64, 64, 1], target_shape=[10, 64, 64, 1],
                  num_digits=2, step_length=0.1):
         dataset_size = sys.maxint
         super(MovingMNISTTrainDataset, self).__init__('train', dataset_size,
-                                                      image_size, input_seq_length,
-                                                      target_seq_length, num_digits, step_length)
+                                                      input_shape, target_shape,
+                                                      num_digits, step_length)
     
     
     
 class MovingMNISTValidDataset(MovingMNISTBaseGeneratedDataset):
     """Moving MNIST validation dataset that creates data on the fly."""
-    def __init__(self, image_size=(64, 64, 1), input_seq_length=10, target_seq_length=10,
+    def __init__(self, input_shape=[10, 64, 64, 1], target_shape=[10, 64, 64, 1],
                  num_digits=2, step_length=0.1):
         dataset_size = 10000
         super(MovingMNISTValidDataset, self).__init__('validation', dataset_size,
-                                                      image_size, input_seq_length,
-                                                      target_seq_length, num_digits, step_length)
+                                                      input_shape, target_shape,
+                                                      num_digits, step_length)
 
     
     
-class MovingMNISTTestDataset(base.AbstractImageSequenceBatchDataset):
+class MovingMNISTTestDataset(base.AbstractDataset):
     """Moving MNIST test dataset that that uses the same data as in other papers."""
     def __init__(self, input_seq_length=10, target_seq_length=10):
         assert input_seq_length + target_seq_length <= 20, "The maximum total test sequence length is 20."
@@ -175,18 +189,22 @@ class MovingMNISTTestDataset(base.AbstractImageSequenceBatchDataset):
         data = data / 255.0  
         dataset_size = data.shape[0]
         
-        super(MovingMNISTTestDataset, self).__init__(data, dataset_size, (64, 64, 1),
-                                                     input_seq_length, target_seq_length)
+        self._row = 0
+        
+        super(MovingMNISTTestDataset, self).__init__(data, dataset_size, input_shape=[input_seq_length, 64, 64, 1],
+                                                     target_shape=[target_seq_length, 64, 64, 1])
     @tt.utils.attr.override
     def get_batch(self, batch_size):
         if self._row >= self._data.shape[0]:
             self.reset()
         
-        # TODO: random index: 
-        # ind = self._indices[self._row]
         batch_inputs = self._data[self._row:self._row+batch_size,
                                   0:self.input_seq_length,:,:,:]
         batch_targets = self._data[self._row:self._row+batch_size,
                                    self.input_seq_length:self.input_seq_length+self.target_seq_length,:,:,:]
         self._row = self._row + batch_size
         return batch_inputs, batch_targets
+    
+    @tt.utils.attr.override
+    def reset(self):
+        self._row = 0

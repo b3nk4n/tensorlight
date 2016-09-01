@@ -182,7 +182,7 @@ class AbstractRuntime(object):
                                  if isinstance(self.datasets.train, tt.datasets.base.AbstractQueueDataset) else False})
 
                     if this_step == 1 and isinstance(self.datasets.train, tt.datasets.base.AbstractQueueDataset):
-                        print("Filling queue with {} examples...".format(-1)) # TODO: retrieve real number...
+                        print("Filling queue with {} examples...".format(self.datasets.train.min_examples_in_queue))
 
                     # step counter is increment when train_op is executed
                     pred, _, gstep, total_loss, loss = self.session.run([self._inferences[0], self._train_op,

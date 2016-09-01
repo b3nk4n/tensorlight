@@ -8,7 +8,7 @@ import base
 from abc import ABCMeta
 
 
-class MNISTBaseDataset(base.AbstractImageBatchDataset):
+class MNISTBaseDataset(base.AbstractDataset):
     __metaclass__ = ABCMeta
     
     # load the dataset file lazily and just once
@@ -18,10 +18,14 @@ class MNISTBaseDataset(base.AbstractImageBatchDataset):
     def __init__(self, dataset):
         """Creates a dataset instance."""
         
-        data = dataset.images.reshape((-1, 28, 28, 1))
-        targets = dataset.labels
+        self._data = dataset.images.reshape((-1, 28, 28, 1))
+        self._targets = dataset.labels
         dataset_size = dataset.num_examples
-        super(MNISTBaseDataset, self).__init__(data, targets, dataset_size, (28, 28, 1))
+        
+        self._indices = np.arange(dataset_size)
+        self._row = 0
+        
+        super(MNISTBaseDataset, self).__init__(dataset_size, [28,28,1], [10])
 
     @tt.utils.attr.override
     def get_batch(self, batch_size):
@@ -34,6 +38,11 @@ class MNISTBaseDataset(base.AbstractImageBatchDataset):
         images = self._data[ind_range]
         labels = self._targets[ind_range]
         return images, labels
+    
+    @tt.utils.attr.override
+    def reset(self):
+        self._row = 0
+        np.random.shuffle(self._indices)
     
     @staticmethod
     def mnist():

@@ -13,11 +13,11 @@ FRAME_HEIGHT = 240
 FRAME_WIDTH = 320
 FRAME_CHANNELS = 3
 
-class UCF11TrainDataset(base.AbstractImageSequenceQueueDataset):
+class UCF11TrainDataset(base.AbstractQueueDataset):
     """UCF-11 sports dataset that creates a bunch of binary frame sequences
        and uses a file queue for multi-threaded input reading.
     """
-    def __init__(self, input_seq_length=10, target_seq_length=10,
+    def __init__(self, input_seq_length=5, target_seq_length=5,
                  image_size=(FRAME_HEIGHT, FRAME_WIDTH, FRAME_CHANNELS),
                  min_examples_in_queue=256, queue_capacitiy=512, num_threads=8,
                  serialized_sequence_length=30, do_distortion=True):
@@ -42,7 +42,8 @@ class UCF11TrainDataset(base.AbstractImageSequenceQueueDataset):
         dataset_size = UCF11TrainDataset._serialize_frame_sequences(dataset_path,
                                                                     image_size,
                                                                     serialized_sequence_length)
-        super(UCF11TrainDataset, self).__init__(dataset_size, image_size, input_seq_length, target_seq_length,
+        super(UCF11TrainDataset, self).__init__(dataset_size, [input_seq_length, image_size[0], image_size[1], image_size[2]],
+                                                [target_seq_length, image_size[0], image_size[1], image_size[2]],
                                                 min_examples_in_queue, queue_capacitiy, num_threads)
 
     @staticmethod
@@ -104,13 +105,16 @@ class UCF11TrainDataset(base.AbstractImageSequenceQueueDataset):
             pass
         
         record = FrameSeqRecord()
-        record.height = self.image_size[0]
-        record.width = self.image_size[1]
-        record.depth = self.image_size[2]
+        record.height = self.input_shape[1]
+        record.width = self.input_shape[2]
+        record.depth = self.input_shape[3]
+        
+        input_seq_length = self.input_shape[0]
+        target_seq_length = self.target_shape[0]
+        total_seq_length = input_seq_length + target_seq_length
 
         frame_bytes = record.height * record.width * record.depth
-        total_seq_length = self.input_seq_length + self.target_seq_length
-        record_bytes = frame_bytes * (self.input_seq_length + self.target_seq_length)
+        record_bytes = frame_bytes * (total_seq_length)
         total_file_bytes = frame_bytes * self._serialized_sequence_length
 
         reader = tf.FixedLengthRecordReader(total_file_bytes)
@@ -118,7 +122,7 @@ class UCF11TrainDataset(base.AbstractImageSequenceQueueDataset):
         record.key, value = reader.read(filename_queue)
         decoded_record_bytes = tf.decode_raw(value, tf.uint8)
 
-        record.data = decoded_record_bytes[0:self.input_seq_length]
+        record.data = decoded_record_bytes[0:input_seq_length]
 
         decoded_record_bytes = tf.reshape(decoded_record_bytes,
                                           [self._serialized_sequence_length, record.height, record.width, record.depth])
@@ -154,19 +158,21 @@ class UCF11TrainDataset(base.AbstractImageSequenceQueueDataset):
             reshaped_seq = tf.cast(seq_record.data, tf.float32)
             reshaped_seq = (reshaped_seq - 127.5) / 127.5
     
-            # distort images
+            input_seq_length = self.input_shape[0]
+            target_seq_length = self.target_shape[0]
+            total_seq_length = input_seq_length + target_seq_length
             if self._do_distortion:
                 with tf.name_scope('distort_inputs'):
                     images_to_distort = []
-                    for i in xrange(self.input_seq_length + self.target_seq_length):
+                    for i in xrange(total_seq_length):
                         images_to_distort.append(reshaped_seq[i,:,:,:])
 
                     distorted_images = tt.image.equal_random_distortion(images_to_distort)
-                    sequence_inputs = tf.pack(distorted_images[0:self.input_seq_length], axis=0)
-                    sequence_targets = tf.pack(distorted_images[self.input_seq_length:], axis=0)
+                    sequence_inputs = tf.pack(distorted_images[0:input_seq_length], axis=0)
+                    sequence_targets = tf.pack(distorted_images[input_seq_length:], axis=0)
             else:
-                sequence_inputs = reshaped_seq[0:self.input_seq_length,:,:,:]
-                sequence_targets = reshaped_seq[self.input_seq_length:,:,:,:]
+                sequence_inputs = reshaped_seq[0:input_seq_length,:,:,:]
+                sequence_targets = reshaped_seq[input_seq_length:,:,:,:]
 
         return tt.inputs.generate_batch(sequence_inputs, sequence_targets,
                                         batch_size,
