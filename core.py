@@ -141,7 +141,8 @@ class AbstractRuntime(object):
             params_count = tt.core.trainable_parameters_count()
             print("Total model-params: {}".format(params_count))
         
-    def train(self, batch_size, steps=-1, epochs=-1, display_step=10, do_checkpoints=True):
+    def train(self, batch_size, steps=-1, epochs=-1, display_step=10,
+              do_checkpoints=True, do_summary=True):
         assert not(steps <= 0 and epochs <= 0), "Either set 'steps' or 'epochs' parameter"
         assert not(steps > 0 and epochs > 0), "Not allowed to set both, 'steps' and 'epochs' parameter"
         
@@ -210,15 +211,16 @@ class AbstractRuntime(object):
 
                     if gstep % 100 or this_step == steps:
                         # summary
-                        summary_str = self.session.run(self._summary_op, feed_dict=feed)
-                        self.summary_writer.add_summary(summary_str, gstep)
-                        self.summary_writer.flush() 
+                        if do_summary == True:
+                            summary_str = self.session.run(self._summary_op, feed_dict=feed)
+                            self.summary_writer.add_summary(summary_str, gstep)
+                            self.summary_writer.flush() 
 
                     if gstep == 100 or this_step == steps or epochs == -1 and gstep % 1000 == 0 or \
                        epochs > 0 and this_step % batches_per_epoch == 0:
                         # validate
                         print
-                        self._test_internal(batch_size, self.datasets.valid, "validation", True)
+                        self._test_internal(batch_size, self.datasets.valid, "validation", do_summary)
                         print
 
                     if do_checkpoints:
@@ -248,13 +250,13 @@ class AbstractRuntime(object):
         
     def validate(self, batch_size):
         with self.graph.as_default():
-            self._test_internal(batch_size, self.datasets.valid, "validation")
+            self._test_internal(batch_size, self.datasets.valid, "validation", False)
              
     def test(self, batch_size):
         with self.graph.as_default():
-            self._test_internal(batch_size, self.datasets.test, "test")
+            self._test_internal(batch_size, self.datasets.test, "test", False)
            
-    def _test_internal(self, batch_size, dataset, title, summary=False):
+    def _test_internal(self, batch_size, dataset, title, do_summary):
         if dataset is None:
             print("No {} dataset registered. Skipping.".format(title))
             return
@@ -284,7 +286,7 @@ class AbstractRuntime(object):
             loss_sum += this_loss
             progress.update((b+1) * batch_size, [('loss', this_loss)])
             
-        if summary:
+        if do_summary:
             avg_loss = loss_sum / num_batches
             loss_summary = tf.scalar_summary("{}_loss".format(title), avg_loss)
             summary_str = self.session.run(loss_summary)
