@@ -9,6 +9,7 @@ import tensorflow as tf
 import tensortools as tt
 
 TRAIN_DIR = 'train' # (automatially train_<ModelClassName> ?)
+MAX_CHECKPOINTS_TO_KEEP = 5 # (default = 5, None/0 == all)
 GPU_ALLOW_GROWTH = True # fixed? :)
 GPU_MEMORY_FRACTION = 1.0 # fixed? :)
 
@@ -18,6 +19,7 @@ NUM_EPOCHS_PER_DECAY = 75.0 # used if FIXED_NUM_STEPS_PER_DECAY is None <-- UNUS
 INITIAL_LEARNING_RATE = 0.0001
 LEARNING_RATE_DECAY_FACTOR = 0.5
 
+LATEST_CHECKPOINT = 'LATEST'
 
 class AbstractRuntime(object):
     __metaclass__ = ABCMeta
@@ -44,6 +46,7 @@ class AbstractRuntime(object):
             self._batch_size_ph = tf.placeholder(tf.int32, name='batch_size')
             self._input_from_queue = tf.placeholder(tf.bool, name='input_from_queue')
 
+            self._saver = None
             self._summary_writer = None
 
             self._train_op = None
@@ -59,7 +62,8 @@ class AbstractRuntime(object):
     def register_model(self, model):
         self._model = model
         
-    def build(self, is_autoencoder=False):
+    def build(self, is_autoencoder=False, checkpoint_file=None):
+        """ checkpoint_file: file-name in TRAIN_DIR, or 'latest' """
         with self.graph.as_default():
             self._x = tf.placeholder(tf.float32, [None] + self._datasets.train.input_shape, "X")
             if is_autoencoder:
@@ -101,9 +105,21 @@ class AbstractRuntime(object):
                 self._summary_op = tf.merge_all_summaries()
             else:
                 self._summary_op = tf.merge_summary(summaries)
+                
+            # Create a saver to store checkpoints of the model
+            self._saver = tf.train.Saver(max_to_keep=MAX_CHECKPOINTS_TO_KEEP)
 
-            # start session and init all variables
-            self.session.run(tf.initialize_all_variables())
+            if checkpoint_file is None:
+                # start session and init all variables
+                self.session.run(tf.initialize_all_variables())
+            else:
+                if checkpoint_file == LATEST_CHECKPOINT:
+                    checkpoint_path = tf.train.latest_checkpoint(TRAIN_DIR)
+                    assert checkpoint_path is not None, "No latest checkpoint file found."
+                else:
+                    checkpoint_path = os.path.join(TRAIN_DIR, checkpoint_file)
+                self._saver.restore(self.session, checkpoint_path)
+                print("Restoring variables from: {}".format(checkpoint_path))
 
             # creates coordinatior and queue threads
             self._coord = tf.train.Coordinator()
@@ -122,9 +138,6 @@ class AbstractRuntime(object):
 
             if epochs > 0:
                 steps = batches_per_epoch * epochs
-
-            # Create a saver to store checkpoints of the model
-            saver = tf.train.Saver(tf.all_variables())
 
             # TODO: this is only required for inpute Queue!!!
             # Start input enqueue threads
@@ -207,13 +220,13 @@ class AbstractRuntime(object):
                     if gstep % 1000 == 0 or this_step == steps:
                         # save regular checkpoint
                         checkpoint_path = os.path.join(TRAIN_DIR, "model.ckpt")
-                        saver.save(self.session, checkpoint_path, global_step=self._global_step)
+                        self._saver.save(self.session, checkpoint_path, global_step=self._global_step)
 
                     if epochs > 0:
                         if this_step % batches_per_epoch == 0:
                             # save epoch checkpoint
                             checkpoint_path = os.path.join(TRAIN_DIR, "ep-{}_model.ckpt".format(epoch))
-                            saver.save(self.session, checkpoint_path, global_step=self._global_step)
+                            self._saver.save(self.session, checkpoint_path, global_step=self._global_step)
 
             except tf.errors.OutOfRangeError:
                 print("Done training -- epoch limit reached")
