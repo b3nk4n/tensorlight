@@ -8,7 +8,7 @@ import base
 from abc import ABCMeta
 
 
-class MNISTBaseDataset(base.AbstractImageDataset):
+class MNISTBaseDataset(base.AbstractImageBatchDataset):
     __metaclass__ = ABCMeta
     
     # load the dataset file lazily and just once

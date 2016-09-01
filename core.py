@@ -76,7 +76,7 @@ class AbstractRuntime(object):
             else:
                 self._ph.targets = tf.placeholder(tf.float32, [None] + self._datasets.train.target_shape, "Y")
 
-            if self._datasets.train.uses_queue:
+            if isinstance(self.datasets.train, tt.datasets.base.AbstractQueueDataset):
                 inputs, targets = self._datasets.train.get_batch(self._ph.batch_size)
                 if is_autoencoder:
                     targets = inputs
@@ -135,7 +135,7 @@ class AbstractRuntime(object):
 
             # creates coordinatior and queue threads
             self._coord = tf.train.Coordinator()
-            if self.datasets.train.uses_queue:
+            if isinstance(self.datasets.train, tt.datasets.base.AbstractQueueDataset):
                 self._threads = tf.train.start_queue_runners(sess=self.session, coord=self._coord)
                 
             params_count = tt.core.trainable_parameters_count()
@@ -172,15 +172,16 @@ class AbstractRuntime(object):
 
                     start_time = time.time()
 
-                    if self.datasets.train.uses_queue:
+                    if isinstance(self.datasets.train, tt.datasets.base.AbstractQueueDataset):
                         batch_x = x_dummy
                         batch_y = y_dummy
                     else:
                         batch_x, batch_y = self.datasets.train.get_batch(batch_size)
                     feed = self._feed_func(batch_x, batch_y, batch_size, True)
-                    feed.update({self._ph.input_from_queue: True if self.datasets.train.uses_queue else False})
+                    feed.update({self._ph.input_from_queue: True \
+                                 if isinstance(self.datasets.train, tt.datasets.base.AbstractQueueDataset) else False})
 
-                    if this_step == 1 and self.datasets.train.uses_queue:
+                    if this_step == 1 and isinstance(self.datasets.train, tt.datasets.base.AbstractQueueDataset):
                         print("Filling queue with {} examples...".format(-1)) # TODO: retrieve real number...
 
                     # step counter is increment when train_op is executed
@@ -270,13 +271,14 @@ class AbstractRuntime(object):
         y_dummy = np.zeros([batch_size] + dataset.target_shape)
         progress = tt.utils.ui.ProgressBar(num_batches * batch_size)
         for b in xrange(num_batches):
-            if self.datasets.train.uses_queue:
+            if isinstance(dataset, tt.datasets.base.AbstractQueueDataset):
                 batch_x = x_dummy
                 batch_y = y_dummy
             else:
                 batch_x, batch_y = dataset.get_batch(batch_size)
             feed = self._feed_func(batch_x, batch_y, batch_size, False)
-            feed.update({self._ph.input_from_queue: True if dataset.uses_queue else False})
+            feed.update({self._ph.input_from_queue: True \
+                         if isinstance(dataset, tt.datasets.base.AbstractQueueDataset) else False})
 
             this_loss = self.session.run(self._loss, feed_dict=feed)
             loss_sum += this_loss

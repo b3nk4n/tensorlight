@@ -14,7 +14,7 @@ MNIST_URL = 'http://www.cs.toronto.edu/~emansim/datasets/mnist.h5'
 MNIST_TEST_URL = 'http://www.cs.toronto.edu/~emansim/datasets/bouncing_mnist_test.npy'
 
 
-class MovingMNISTBaseGeneratedDataset(base.AbstractImageSequenceDataset):
+class MovingMNISTBaseGeneratedDataset(base.AbstractImageSequenceBatchDataset):
     __metaclass__ = ABCMeta
     
     """Moving MNIST dataset that creates data on the fly."""
@@ -157,7 +157,7 @@ class MovingMNISTValidDataset(MovingMNISTBaseGeneratedDataset):
 
     
     
-class MovingMNISTTestDataset(base.AbstractImageSequenceDataset):
+class MovingMNISTTestDataset(base.AbstractImageSequenceBatchDataset):
     """Moving MNIST test dataset that that uses the same data as in other papers."""
     def __init__(self, input_seq_length=10, target_seq_length=10):
         assert input_seq_length + target_seq_length <= 20, "The maximum total test sequence length is 20."

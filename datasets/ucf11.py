@@ -13,15 +13,14 @@ FRAME_HEIGHT = 240
 FRAME_WIDTH = 320
 FRAME_CHANNELS = 3
 
-class UCF11TrainDataset(base.AbstractImageSequenceDataset):
+class UCF11TrainDataset(base.AbstractImageSequenceQueueDataset):
     """UCF-11 sports dataset that creates a bunch of binary frame sequences
        and uses a file queue for multi-threaded input reading.
     """
     def __init__(self, input_seq_length=10, target_seq_length=10,
                  image_size=(FRAME_HEIGHT, FRAME_WIDTH, FRAME_CHANNELS),
-                 serialized_sequence_length=30,
-                 min_exampled_in_queue=256, queue_capacitiy=512,
-                 num_threads=8, do_distortion=True):
+                 min_examples_in_queue=256, queue_capacitiy=512, num_threads=8,
+                 serialized_sequence_length=30, do_distortion=True):
         """Creates a dataset instance.
         Parameters
         ----------
@@ -29,9 +28,6 @@ class UCF11TrainDataset(base.AbstractImageSequenceDataset):
         do_distortion: factor >8x slower for long frame sequences
         """
         self._serialized_sequence_length = serialized_sequence_length
-        self._min_examples_in_queue = min_exampled_in_queue
-        self._queue_capacitiy = queue_capacitiy
-        self._num_threads = num_threads
         self._do_distortion = do_distortion
         
         try:
@@ -46,10 +42,8 @@ class UCF11TrainDataset(base.AbstractImageSequenceDataset):
         dataset_size = UCF11TrainDataset._serialize_frame_sequences(dataset_path,
                                                                     image_size,
                                                                     serialized_sequence_length)
-        data = None
-        
-        super(UCF11TrainDataset, self).__init__(data, dataset_size, image_size,
-                                                     input_seq_length, target_seq_length)
+        super(UCF11TrainDataset, self).__init__(dataset_size, image_size, input_seq_length, target_seq_length,
+                                                min_examples_in_queue, queue_capacitiy, num_threads)
 
     @staticmethod
     def _serialize_frame_sequences(dataset_path, image_size, serialized_sequence_length):
@@ -178,3 +172,11 @@ class UCF11TrainDataset(base.AbstractImageSequenceDataset):
                                         batch_size,
                                         self._min_examples_in_queue, self._queue_capacitiy,
                                         shuffle=True, num_threads=self._num_threads)
+
+    @property
+    def serialized_sequence_length(self):
+        return self._serialized_sequence_length
+    
+    @property
+    def do_distortion(self):
+        return self._do_distortion
