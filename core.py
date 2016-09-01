@@ -119,7 +119,7 @@ class AbstractRuntime(object):
             apply_gradient_op = opt.apply_gradients(grads, global_step=self._global_step)
 
             # Add summaries
-            summaries.extend(tf.scalar_summary('learning_rate', lr))
+            summaries.append(tf.scalar_summary('learning_rate', lr))
             summaries.extend(tt.board.gradients_histogram_summary(grads))
             summaries.extend(tt.board.variables_histogram_summary())
 
@@ -157,7 +157,9 @@ class AbstractRuntime(object):
             params_count = tt.core.trainable_parameters_count()
             print("Total model-params: {}".format(params_count))
         
-    def train(self, batch_size, steps=-1, epochs=-1, display_step=10,
+    def train(self, batch_size, steps=-1, epochs=-1,
+              display_step=10, summary_steps=100, checkpoint_steps=1000,
+              validation_steps=1000, early_validation_at_step=100,
               do_checkpoints=True, do_summary=True):
         assert not(steps <= 0 and epochs <= 0), "Either set 'steps' or 'epochs' parameter"
         assert not(steps > 0 and epochs > 0), "Not allowed to set both, 'steps' and 'epochs' parameter"
@@ -225,22 +227,23 @@ class AbstractRuntime(object):
                         print("@{:6d}: loss: {:9.3f}, total-loss: {:9.3f} ({:7.1f} examples/sec, {:5.2f} sec/batch)" \
                               .format(gstep, avg_loss, avg_total_loss, examples_per_sec, sec_per_batch))
 
-                    if gstep % 100 == 0 or this_step == steps:
+                    if gstep % summary_steps == 0 or this_step == steps:
                         # summary
                         if do_summary == True:
                             summary_str = self.session.run(self._summary_op, feed_dict=feed)
                             self.summary_writer.add_summary(summary_str, gstep)
                             self.summary_writer.flush() 
 
-                    if gstep == 100 or this_step == steps or epochs == -1 and gstep % 1000 == 0 or \
-                       epochs > 0 and this_step % batches_per_epoch == 0:
+                    if gstep == early_validation_at_step or this_step == steps or \
+                        epochs == -1 and gstep % validation_steps == 0 or \
+                        epochs > 0 and this_step % batches_per_epoch == 0:
                         # validate
                         print
                         self._test_internal(batch_size, self.datasets.valid, "validation", do_summary)
                         print
 
                     if do_checkpoints:
-                        if gstep % 1000 == 0 or this_step == steps:
+                        if gstep % checkpoint_steps == 0 or this_step == steps:
                             # save regular checkpoint
                             checkpoint_path = os.path.join(self.train_dir, "model.ckpt")
                             self._saver.save(self.session, checkpoint_path, global_step=self._global_step)
@@ -255,7 +258,7 @@ class AbstractRuntime(object):
                 print("Done training -- epoch limit reached")
 
     @abstractmethod
-    def _build_internal(self, x, y, lr):
+    def _build_computation_graph(self, x, y, opt):
         pass
     
     def predict(self, inputs): 
