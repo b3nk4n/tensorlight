@@ -117,27 +117,28 @@ class UCF11TrainDataset(base.AbstractQueueDataset):
         record_bytes = frame_bytes * (total_seq_length)
         total_file_bytes = frame_bytes * self._serialized_sequence_length
 
-        reader = tf.FixedLengthRecordReader(total_file_bytes)
+        with tf.name_scope('read_record'):
+            reader = tf.FixedLengthRecordReader(total_file_bytes)
 
-        record.key, value = reader.read(filename_queue)
-        decoded_record_bytes = tf.decode_raw(value, tf.uint8)
+            record.key, value = reader.read(filename_queue)
+            decoded_record_bytes = tf.decode_raw(value, tf.uint8)
 
-        record.data = decoded_record_bytes[0:input_seq_length]
+            record.data = decoded_record_bytes[0:input_seq_length]
 
-        decoded_record_bytes = tf.reshape(decoded_record_bytes,
-                                          [self._serialized_sequence_length, record.height, record.width, record.depth])
+            decoded_record_bytes = tf.reshape(decoded_record_bytes,
+                                              [self._serialized_sequence_length, record.height, record.width, record.depth])
 
-        # calculcate tensors [start, 0, 0, 0]
-        rnd_start_index = tf.to_int32(tf.random_uniform([1], 0, self._serialized_sequence_length - (total_seq_length), 
-                                                        tf.int32))
-        seq_start_offset = tf.SparseTensor(indices=[[0]], values=rnd_start_index, shape=[4])
-        sequence_start = tf.sparse_tensor_to_dense(seq_start_offset)
+            # calculcate tensors [start, 0, 0, 0]
+            rnd_start_index = tf.to_int32(tf.random_uniform([1], 0, self._serialized_sequence_length - (total_seq_length), 
+                                                            tf.int32))
+            seq_start_offset = tf.SparseTensor(indices=[[0]], values=rnd_start_index, shape=[4])
+            sequence_start = tf.sparse_tensor_to_dense(seq_start_offset)
 
-        # take first frames as input
-        record.data = tf.cast(tf.slice(decoded_record_bytes, sequence_start,
-                                       [total_seq_length, record.height, record.width, record.depth]),
-                              tf.float32)
-        return record
+            # take first frames as input
+            record.data = tf.cast(tf.slice(decoded_record_bytes, sequence_start,
+                                           [total_seq_length, record.height, record.width, record.depth]),
+                                  tf.float32)
+            return record
 
     @tt.utils.attr.override
     def get_batch(self, batch_size):

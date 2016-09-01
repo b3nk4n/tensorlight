@@ -75,11 +75,11 @@ class AbstractModel(object):
         wd_losses = tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES)
         if len(wd_losses) > 0:
             reg_loss = tf.add_n(wd_losses, name="reg_loss")
-            total_loss = tf.add(loss, reg_loss, name="total_loss")
+            return tf.add(loss, reg_loss, name="loss_with_reg")
         else:
-            total_loss = tf.identity(loss, name="total_loss")
-        
-        return total_loss
+            # we have to wrap this with identity, because in in other case it
+            # would rise a summary-writer error that this loss was already added
+            return tf.identity(loss, name="loss_with_reg*")
 
     @property
     def batch_size(self):

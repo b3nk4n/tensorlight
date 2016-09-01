@@ -11,6 +11,7 @@ import tensortools as tt
 
 
 LATEST_CHECKPOINT = 'LATEST'
+INTERMEDIATE_LOSSES = 'intermediate_losses'
 
 
 class AbstractRuntime(object):
@@ -86,20 +87,21 @@ class AbstractRuntime(object):
                 inputs = self._ph.inputs
                 targets = self._ph.targets
 
-            x = tf.cond(self._ph.input_from_queue, lambda: inputs, lambda: self._ph.inputs)
-            y = tf.cond(self._ph.input_from_queue, lambda: targets, lambda: self._ph.inputs)
+            with tf.name_scope("feed_or_queue"):
+                x = tf.cond(self._ph.input_from_queue, lambda: inputs, lambda: self._ph.inputs)
+                y = tf.cond(self._ph.input_from_queue, lambda: targets, lambda: self._ph.inputs)
 
 
-            if is_autoencoder:
-                self._feed_func = lambda inputs, targets, bs, is_train: {self._ph.inputs: inputs,
-                                                                         self._ph.targets: inputs,
-                                                                         self._ph.batch_size: bs,
-                                                                         self._ph.is_training: is_train}
-            else:
-                self._feed_func = lambda inputs, targets, bs, is_train : {self._ph.inputs: inputs,
-                                                                          self._ph_targets: targets,
-                                                                          self._ph.batch_size: bs,
-                                                                          self._ph.is_training: is_train}
+                if is_autoencoder:
+                    self._feed_func = lambda inputs, targets, bs, is_train: {self._ph.inputs: inputs,
+                                                                             self._ph.targets: inputs,
+                                                                             self._ph.batch_size: bs,
+                                                                             self._ph.is_training: is_train}
+                else:
+                    self._feed_func = lambda inputs, targets, bs, is_train : {self._ph.inputs: inputs,
+                                                                              self._ph_targets: targets,
+                                                                              self._ph.batch_size: bs,
+                                                                              self._ph.is_training: is_train}
 
             # Decay the learning rate exponentially based on the number of steps
             lr = tf.train.exponential_decay(initial_lr,
@@ -186,7 +188,7 @@ class AbstractRuntime(object):
                         print("Filling queue with {} examples...".format(self.datasets.train.min_examples_in_queue))
 
                     # step counter is increment when train_op is executed
-                    pred, _, gstep, total_loss, loss = self.session.run([self._inferences[0], self._train_op,
+                    _, gstep, total_loss, loss = self.session.run([self._train_op,
                                                                   self._global_step,
                                                                   self._total_loss,
                                                                   self._loss],
@@ -363,17 +365,21 @@ class DefaultRuntime(AbstractRuntime):
     def _build_internal(self, x, y, lr):
         # Build inference Graph.This function constructs 
         # the entire model but shares the variables across all towers.
-        inference = self._model.inference(x, y,
-                                          is_training=self._ph.is_training)
+        with tf.name_scope("inference"):
+            inference = self._model.inference(x, y,
+                                              is_training=self._ph.is_training)
         self._inferences.append(inference)
         
-        loss = self._model.loss(inference, y)
-        total_loss = self._model.total_loss(loss, inference, y)
+        with tf.name_scope("loss"):
+            loss = self._model.loss(inference, y)
+            
+        with tf.name_scope("total_loss"):
+            total_loss = self._model.total_loss(loss, inference, y)
 
         # Generate moving averages of all losses and associated summaries
-        loss_averages_op = tt.board.loss_summary([total_loss, loss] +
-                                                 tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES) + # FIXME: redundant!??! Is the list empty???
-                                                 tf.get_collection('intermediate_losses'),
+        loss_averages_op = tt.board.loss_summary([total_loss, loss] + \
+                                                 tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES) + \
+                                                 tf.get_collection(INTERMEDIATE_LOSSES),
                                                  decay=0.9)
 
         # Compute gradients
@@ -433,22 +439,26 @@ class MultiGpuRuntime(AbstractRuntime):
 
                     # Build inference Graph.This function constructs 
                     # the entire model but shares the variables across all towers.
-                    inference = self._model.inference(this_inputs, this_targets,
-                                                      is_training=self._ph.is_training,
-                                                      device_scope=scope,
-                                                      memory_device='/cpu:0')
-                    self._inferences.append(inference)
+                    with tf.name_scope("inference"):
+                        inference = self._model.inference(this_inputs, this_targets,
+                                                          is_training=self._ph.is_training,
+                                                          device_scope=scope,
+                                                          memory_device='/cpu:0')
+                        self._inferences.append(inference)
                     
-                    loss = self._model.loss(inference, this_targets)
-                    total_loss = self._model.total_loss(loss, inference, this_targets)
+                    with tf.name_scope("loss"):
+                        loss = self._model.loss(inference, this_targets)
+                    
+                    with tf.name_scope("total_loss"):
+                        total_loss = self._model.total_loss(loss, inference, this_targets)
 
                     # Calculate the moving averages of the loss for one tower of the model
-                    loss_averages_op = tt.board.loss_summary([total_loss, loss] +
-                                                             tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES) + # FIXME: redundant!??! Is the list empty???
-                                                             tf.get_collection('intermediate_losses', scope),
+                    loss_averages_op = tt.board.loss_summary([total_loss, loss] + \
+                                                             tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES) + \
+                                                             tf.get_collection(INTERMEDIATE_LOSSES, scope),
                                                              decay=0.9)
 
-                    with tf.control_dependencies([loss_averages_op]):
+                    with tf.control_dependencies([loss_averages_op]): # <-- this is why we have a summary at every step???
                         this_total_loss = tf.identity(total_loss)
                         this_loss = tf.identity(loss)
 
@@ -475,11 +485,11 @@ class MultiGpuRuntime(AbstractRuntime):
         apply_gradient_op = opt.apply_gradients(grads, global_step=self._global_step)
         
         # Add summaries
-        summaries.append(tf.scalar_summary('learning_rate', lr))
-        total_loss = tf.reduce_mean(tower_total_losses)                  
-        summaries.append(tf.scalar_summary('mean_total_loss', total_loss)) # TODO: really needed?
-        loss = tf.reduce_mean(tower_losses)                  
-        summaries.append(tf.scalar_summary('mean_loss', loss)) # TODO: really needed?
+        #summaries.append(tf.scalar_summary('learning_rate', lr))
+        #total_loss = tf.reduce_mean(tower_total_losses)                  
+        #summaries.append(tf.scalar_summary('mean_total_loss', total_loss)) # TODO: really needed?
+        #loss = tf.reduce_mean(tower_losses)                  
+        #summaries.append(tf.scalar_summary('mean_loss', loss)) # TODO: really needed?
         summaries.extend(tt.board.gradients_histogram_summary(grads))
         summaries.extend(tt.board.variables_histogram_summary())
 
@@ -492,7 +502,8 @@ class MultiGpuRuntime(AbstractRuntime):
         return train_op, total_loss, loss, summaries
         
     @tt.utils.attr.override
-    def train(self, batch_size, steps=-1, epochs=-1, display_step=10):
+    def train(self, batch_size, steps=-1, epochs=-1, display_step=10,
+              do_checkpoints=True, do_summary=True):
         assert batch_size % float(self.num_gpus) == 0, "Batch-size has to be multiples of 'num_gpus'."
         with tf.device('/cpu:0'):
             return super(MultiGpuRuntime, self).train(batch_size, steps, epochs, display_step)              
