@@ -211,7 +211,7 @@ class AbstractRuntime(object):
                         print("@{:6d}: loss: {:9.3f}, total-loss: {:9.3f} ({:7.1f} examples/sec, {:5.2f} sec/batch)" \
                               .format(gstep, avg_loss, avg_total_loss, examples_per_sec, sec_per_batch))
 
-                    if gstep % 100 or this_step == steps:
+                    if gstep % 100 == 0 or this_step == steps:
                         # summary
                         if do_summary == True:
                             summary_str = self.session.run(self._summary_op, feed_dict=feed)
@@ -458,7 +458,7 @@ class MultiGpuRuntime(AbstractRuntime):
                                                              tf.get_collection(INTERMEDIATE_LOSSES, scope),
                                                              decay=0.9)
 
-                    with tf.control_dependencies([loss_averages_op]): # <-- this is why we have a summary at every step???
+                    with tf.control_dependencies([loss_averages_op]):
                         this_total_loss = tf.identity(total_loss)
                         this_loss = tf.identity(loss)
 
