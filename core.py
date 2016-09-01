@@ -19,6 +19,7 @@ NUM_EPOCHS_PER_DECAY = 75.0 # used if FIXED_NUM_STEPS_PER_DECAY is None <-- UNUS
 INITIAL_LEARNING_RATE = 0.0001
 LEARNING_RATE_DECAY_FACTOR = 0.5
 
+DO_CHECKPOINTS = True
 LATEST_CHECKPOINT = 'LATEST'
 
 class AbstractRuntime(object):
@@ -26,33 +27,35 @@ class AbstractRuntime(object):
     
     def __init__(self):
         self._graph = tf.Graph()
+        self._session = None
+        self._datasets = collections.namedtuple("datasets", ("train", "valid", "test"))
+        self._model = None
+        self._inferences = []
+
+        self._coord = None
+        self._threads = None
+
+        self._feed_func = None
+
+        self._saver = None
+        self._summary_writer = None
+
+        self._train_op = None
+        self._summary_op = None
+        
+        self._total_loss = None
+        self._loss = None
+            
         with self.graph.as_default():
-            self._session = None
-            self._datasets = collections.namedtuple("datasets", ("train", "valid", "test"))
-            self._model = None
-            self._inferences = []
-
-            self._coord = None
-            self._threads = None
-
-            self._feed_func = None
-            self._x = None
-            self._y = None
-
-            self._batch_size_ph = None
-
-            self._is_training = tf.placeholder(tf.bool, name='is_training')
             self._global_step = tf.Variable(0, trainable=False)
-            self._batch_size_ph = tf.placeholder(tf.int32, name='batch_size')
-            self._input_from_queue = tf.placeholder(tf.bool, name='input_from_queue')
-
-            self._saver = None
-            self._summary_writer = None
-
-            self._train_op = None
-            self._total_loss = None
-            self._loss = None
-            self._summary_op = None
+            self._ph = collections.namedtuple("placeholders", ("inputs",
+                                                               "targets"
+                                                               "is_training",
+                                                               "batch_size",
+                                                               "input_from_queue"))
+            self._ph.is_training = tf.placeholder(tf.bool, name='is_training')
+            self._ph.batch_size = tf.placeholder(tf.int32, name='batch_size')
+            self._ph.input_from_queue = tf.placeholder(tf.bool, name='input_from_queue')
            
     def register_datasets(self, train_ds, valid_ds=None, test_ds=None):
         self._datasets.train = train_ds
@@ -65,36 +68,36 @@ class AbstractRuntime(object):
     def build(self, is_autoencoder=False, checkpoint_file=None):
         """ checkpoint_file: file-name in TRAIN_DIR, or 'latest' """
         with self.graph.as_default():
-            self._x = tf.placeholder(tf.float32, [None] + self._datasets.train.input_shape, "X")
+            self._ph.inputs = tf.placeholder(tf.float32, [None] + self._datasets.train.input_shape, "X")
             if is_autoencoder:
-                self._y = tf.placeholder(tf.float32, [None] + self._datasets.train.input_shape, "Y")
+                self._ph.targets = tf.placeholder(tf.float32, [None] + self._datasets.train.input_shape, "Y")
             else:
-                self._y = tf.placeholder(tf.float32, [None] + self._datasets.train.target_shape, "Y")
+                self._ph.targets = tf.placeholder(tf.float32, [None] + self._datasets.train.target_shape, "Y")
 
             if self._datasets.train.uses_queue:
-                inputs, targets = self._datasets.train.get_batch(self._batch_size_ph)
+                inputs, targets = self._datasets.train.get_batch(self._ph.batch_size)
                 if is_autoencoder:
                     targets = inputs
             else:
                 # we have to assign these to have their tensor shape equal,
                 # even if this is never evaluated by tf.cond().
-                inputs = self._x
-                targets = self._y
+                inputs = self._ph.inputs
+                targets = self._ph.targets
 
-            x = tf.cond(self._input_from_queue, lambda: inputs, lambda: self._x)
-            y = tf.cond(self._input_from_queue, lambda: targets, lambda: self._y)
+            x = tf.cond(self._ph.input_from_queue, lambda: inputs, lambda: self._ph.inputs)
+            y = tf.cond(self._ph.input_from_queue, lambda: targets, lambda: self._ph.inputs)
 
 
             if is_autoencoder:
-                self._feed_func = lambda inputs, targets, bs, is_train: {self._x: inputs,
-                                                                         self._y: inputs,
-                                                                         self._batch_size_ph: bs,
-                                                                         self._is_training: is_train}
+                self._feed_func = lambda inputs, targets, bs, is_train: {self._ph.inputs: inputs,
+                                                                         self._ph.targets: inputs,
+                                                                         self._ph.batch_size: bs,
+                                                                         self._ph.is_training: is_train}
             else:
-                self._feed_func = lambda inputs, targets, bs, is_train : {self._x: inputs,
-                                                                          self._y: targets,
-                                                                          self._batch_size_ph: bs,
-                                                                          self._is_training: is_train}
+                self._feed_func = lambda inputs, targets, bs, is_train : {self._ph.inputs: inputs,
+                                                                          self._ph_targets: targets,
+                                                                          self._ph.batch_size: bs,
+                                                                          self._ph.is_training: is_train}
 
             train_op, total_loss, loss, summaries = self._build_internal(x, y)
 
@@ -175,7 +178,7 @@ class AbstractRuntime(object):
                     else:
                         batch_x, batch_y = self.datasets.train.get_batch(batch_size)
                     feed = self._feed_func(batch_x, batch_y, batch_size, True)
-                    feed.update({self._input_from_queue: True if self.datasets.train.uses_queue else False})
+                    feed.update({self._ph.input_from_queue: True if self.datasets.train.uses_queue else False})
 
                     if this_step == 1 and self.datasets.train.uses_queue:
                         print("Filling queue with {} examples...".format(-1)) # TODO: retrieve real number...
@@ -217,16 +220,17 @@ class AbstractRuntime(object):
                         self._test_internal(batch_size, self.datasets.valid, "validation", True)
                         print
 
-                    if gstep % 1000 == 0 or this_step == steps:
-                        # save regular checkpoint
-                        checkpoint_path = os.path.join(TRAIN_DIR, "model.ckpt")
-                        self._saver.save(self.session, checkpoint_path, global_step=self._global_step)
-
-                    if epochs > 0:
-                        if this_step % batches_per_epoch == 0:
-                            # save epoch checkpoint
-                            checkpoint_path = os.path.join(TRAIN_DIR, "ep-{}_model.ckpt".format(epoch))
+                    if DO_CHECKPOINTS:
+                        if gstep % 1000 == 0 or this_step == steps:
+                            # save regular checkpoint
+                            checkpoint_path = os.path.join(TRAIN_DIR, "model.ckpt")
                             self._saver.save(self.session, checkpoint_path, global_step=self._global_step)
+
+                        if epochs > 0:
+                            if this_step % batches_per_epoch == 0:
+                                # save epoch checkpoint
+                                checkpoint_path = os.path.join(TRAIN_DIR, "ep-{}_model.ckpt".format(epoch))
+                                self._saver.save(self.session, checkpoint_path, global_step=self._global_step)
 
             except tf.errors.OutOfRangeError:
                 print("Done training -- epoch limit reached")
@@ -246,7 +250,7 @@ class AbstractRuntime(object):
     def predict(self, inputs): 
         with self.graph.as_default():
             feed = self._feed_func(inputs, None, inputs.shape[0], False)
-            feed.update({self._input_from_queue: False})
+            feed.update({self._ph.input_from_queue: False})
             return self.session.run(self._inferences[0], feed_dict=feed)
         
     def validate(self, batch_size):
@@ -280,7 +284,7 @@ class AbstractRuntime(object):
             else:
                 batch_x, batch_y = dataset.get_batch(batch_size)
             feed = self._feed_func(batch_x, batch_y, batch_size, False)
-            feed.update({self._input_from_queue: True if dataset.uses_queue else False})
+            feed.update({self._ph.input_from_queue: True if dataset.uses_queue else False})
 
             this_loss = self.session.run(self._loss, feed_dict=feed)
             loss_sum += this_loss
@@ -322,6 +326,10 @@ class AbstractRuntime(object):
     @property
     def datasets(self):
         return self._datasets
+    
+    @property
+    def placeholders(self):
+        return self._ph
 
     @property
     def summary_writer(self):
@@ -335,6 +343,13 @@ class DefaultRuntime(AbstractRuntime):
     
     def __init__(self):
         print("Launing default runtime...")
+        
+        device_list = tt.hardware.get_cuda_devices()
+        if len(device_list) == 0:
+            print("CPU-only mode or selecting GPU device: 0")
+        else:
+            print("Selecting GPU device: {}".format(device_list[0]))
+        
         super(DefaultRuntime, self).__init__()
         
     @tt.utils.attr.override
@@ -358,7 +373,7 @@ class DefaultRuntime(AbstractRuntime):
         # Build inference Graph.This function constructs 
         # the entire model but shares the variables across all towers.
         inference = self._model.inference(x, y,
-                                          is_training=self._is_training)
+                                          is_training=self._ph.is_training)
         self._inferences.append(inference)
         
         loss = self._model.loss(inference, y)
@@ -442,7 +457,7 @@ class MultiGpuRuntime(AbstractRuntime):
                     # Build inference Graph.This function constructs 
                     # the entire model but shares the variables across all towers.
                     inference = self._model.inference(this_inputs, this_targets,
-                                                      is_training=self._is_training,
+                                                      is_training=self._ph.is_training,
                                                       device_scope=scope,
                                                       memory_device='/cpu:0')
                     self._inferences.append(inference)
