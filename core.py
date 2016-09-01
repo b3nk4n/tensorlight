@@ -112,13 +112,10 @@ class AbstractRuntime(object):
                 
             train_op, total_loss, loss, summaries = self._build_internal(x, y, lr)
 
+            self._summary_op = tf.merge_summary(summaries)
             self._train_op = train_op
             self._total_loss = total_loss
             self._loss = loss
-            if summaries is None:
-                self._summary_op = tf.merge_all_summaries()
-            else:
-                self._summary_op = tf.merge_summary(summaries)
                 
             # Create a saver to store checkpoints of the model
             self._saver = tf.train.Saver(max_to_keep=self.max_checkpoints_to_keep)
@@ -391,16 +388,18 @@ class DefaultRuntime(AbstractRuntime):
         apply_gradient_op = opt.apply_gradients(grads, global_step=self._global_step)
 
         # Add summaries
-        tf.scalar_summary('learning_rate', lr)        
-        tt.board.variables_histogram_summary()
-        tt.board.gradients_histogram_summary(grads)
+        # Retain the summaries from the final tower.
+        summaries = tf.get_collection(tf.GraphKeys.SUMMARIES)
+        tf.scalar_summary('learning_rate', lr)
+        summaries.extend(tt.board.gradients_histogram_summary(grads))
+        summaries.extend(tt.board.variables_histogram_summary())
 
         # Track the moving averages of all trainable variables
         variable_averages = tf.train.ExponentialMovingAverage(0.9999, self._global_step)
         variables_averages_op = variable_averages.apply(tf.trainable_variables())
 
         train_op = tf.group(apply_gradient_op, variables_averages_op, name="train_op")
-        return train_op, total_loss, loss, None # FIXME: collect summaries above? Return get_all_sum?
+        return train_op, total_loss, loss, summaries
         
 
 
@@ -485,11 +484,11 @@ class MultiGpuRuntime(AbstractRuntime):
         apply_gradient_op = opt.apply_gradients(grads, global_step=self._global_step)
         
         # Add summaries
-        #summaries.append(tf.scalar_summary('learning_rate', lr))
+        summaries.append(tf.scalar_summary('learning_rate', lr))
         #total_loss = tf.reduce_mean(tower_total_losses)                  
-        #summaries.append(tf.scalar_summary('mean_total_loss', total_loss)) # TODO: really needed?
+        #summaries.append(tf.scalar_summary('mean_total_loss', total_loss))
         #loss = tf.reduce_mean(tower_losses)                  
-        #summaries.append(tf.scalar_summary('mean_loss', loss)) # TODO: really needed?
+        #summaries.append(tf.scalar_summary('mean_loss', loss))
         summaries.extend(tt.board.gradients_histogram_summary(grads))
         summaries.extend(tt.board.variables_histogram_summary())
 
