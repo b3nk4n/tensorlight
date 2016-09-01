@@ -180,9 +180,11 @@ def ms_ssim(img1, img2, patch_size=11, sigma=1.5, L=255, K1=0.01, K2=0.03,
             level_weights=[0.0448, 0.2856, 0.3001, 0.2363, 0.1333]):
     """Calculates the Multi-Scale Structural Similarity (MS-SSIM) Image
        Quality Assessment according to Z. Wang.
-       Warning:
+       Problem:
            In TensorFlow 0.10: reduce_prod() causes Error while back-prop.
            Wrap the Optimizer with tf.device('/cpu:0')!
+       Solution:
+           https://github.com/girving/tensorflow/commit/957fe73546f25c7f88232ed560ed285c1c97067d
        References:
             Z. Wang's "Multi-scale structural similarity
             for image quality assessment" Invited Paper, IEEE Asilomar Conference on
