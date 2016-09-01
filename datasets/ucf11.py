@@ -68,7 +68,11 @@ class UCF11TrainDataset(base.AbstractQueueDataset):
 
         video_filenames = tt.utils.path.get_filenames(dataset_path, '*.mpg')
         frame_scale_factor = image_size[0] / float(FRAME_HEIGHT)
-        seq_counter = 0
+        progress = tt.utils.ui.ProgressBar(len(video_filenames))
+        success_counter = 0
+        bounds_counter = 0
+        short_counter = 0
+        print("Serializing frame sequences...")
         for i, video_filename in enumerate(video_filenames):
             with tt.utils.video.VideoReader(video_filename) as vr:
                 frames = []
@@ -85,19 +89,21 @@ class UCF11TrainDataset(base.AbstractQueueDataset):
                                 frame = tt.utils.image.to_grayscale(frame)
                             frames.append(frame)
                         else:
-                            print('Warning: Frame bounds too small. Skipping.')
+                            bounds_counter += 1
                             break
                     else:
-                        print('Warning: Frame sequence too short. Skipping.')
+                        short_counter += 1
                         break
 
                 if len(frames) == serialized_sequence_length:
                     # TODO: seqences from one folder to a single file?
                     seq_filepath = os.path.splitext(video_filename)[0] + '.seq'
                     tt.utils.image.write_as_binary(seq_filepath, np.asarray(frames))
-                    seq_counter += 1
-        print('Successfully extracted {} frame sequences.'.format(seq_counter))
-        return seq_counter
+                    success_counter += 1
+            progress.update(i+1)
+        print("Successfully extracted {} frame sequences. Too short: {}, Too small bounds: {}" \
+              .format(success_counter, short_counter, bounds_counter))
+        return success_counter
     
     def _read_record(self, filename_queue):
         
