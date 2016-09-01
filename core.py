@@ -109,8 +109,25 @@ class AbstractRuntime(object):
                                             lr_decay_step_interval,
                                             lr_decay_factor,
                                             staircase=lr_decay_staircase)
-                
-            train_op, total_loss, loss, summaries = self._build_internal(x, y, lr)
+            
+            opt = tf.train.AdamOptimizer(lr)
+              
+            # build (multi-)device specific computation graph for inference
+            grads, summaries, total_loss, loss = self._build_computation_graph(x, y, opt)
+            
+            # Apply gradients
+            apply_gradient_op = opt.apply_gradients(grads, global_step=self._global_step)
+
+            # Add summaries
+            summaries.extend(tf.scalar_summary('learning_rate', lr))
+            summaries.extend(tt.board.gradients_histogram_summary(grads))
+            summaries.extend(tt.board.variables_histogram_summary())
+
+            # Track the moving averages of all trainable variables
+            variable_averages = tf.train.ExponentialMovingAverage(0.9999, self._global_step)
+            variables_averages_op = variable_averages.apply(tf.trainable_variables())
+
+            train_op = tf.group(apply_gradient_op, variables_averages_op, name="train_op")
 
             self._summary_op = tf.merge_summary(summaries)
             self._train_op = train_op
@@ -359,7 +376,7 @@ class DefaultRuntime(AbstractRuntime):
                                              gpu_allow_growth, gpu_memory_fraction)
         
     @tt.utils.attr.override
-    def _build_internal(self, x, y, lr):
+    def _build_computation_graph(self, x, y, opt):
         # Build inference Graph.This function constructs 
         # the entire model but shares the variables across all towers.
         with tf.name_scope("inference"):
@@ -381,25 +398,11 @@ class DefaultRuntime(AbstractRuntime):
 
         # Compute gradients
         with tf.control_dependencies([loss_averages_op]):
-            opt = tf.train.AdamOptimizer(lr)
             grads = opt.compute_gradients(total_loss)
 
-        # Apply gradients
-        apply_gradient_op = opt.apply_gradients(grads, global_step=self._global_step)
+        summaries = tf.get_collection(tf.GraphKeys.SUMMARIES)    
 
-        # Add summaries
-        # Retain the summaries from the final tower.
-        summaries = tf.get_collection(tf.GraphKeys.SUMMARIES)
-        tf.scalar_summary('learning_rate', lr)
-        summaries.extend(tt.board.gradients_histogram_summary(grads))
-        summaries.extend(tt.board.variables_histogram_summary())
-
-        # Track the moving averages of all trainable variables
-        variable_averages = tf.train.ExponentialMovingAverage(0.9999, self._global_step)
-        variables_averages_op = variable_averages.apply(tf.trainable_variables())
-
-        train_op = tf.group(apply_gradient_op, variables_averages_op, name="train_op")
-        return train_op, total_loss, loss, summaries
+        return grads, summaries, total_loss, loss
         
 
 
@@ -421,9 +424,7 @@ class MultiGpuRuntime(AbstractRuntime):
                                               gpu_allow_growth, gpu_memory_fraction)
         
     @tt.utils.attr.override
-    def _build_internal(self, x, y, lr):
-        # Compute gradients
-        opt = tf.train.AdamOptimizer(lr) # TODO: make optimizer parameterizable? or spcify in model?
+    def _build_computation_graph(self, x, y, opt):
         # Calculate the gradients for each model tower.
         tower_grads = []
         tower_total_losses = []
@@ -480,25 +481,7 @@ class MultiGpuRuntime(AbstractRuntime):
         # This is also the synchronization point across all towers.
         grads = tt.training.average_gradients(tower_grads)
         
-        # Apply the gradients to adjust the shared variables and increment the step counter
-        apply_gradient_op = opt.apply_gradients(grads, global_step=self._global_step)
-        
-        # Add summaries
-        summaries.append(tf.scalar_summary('learning_rate', lr))
-        #total_loss = tf.reduce_mean(tower_total_losses)                  
-        #summaries.append(tf.scalar_summary('mean_total_loss', total_loss))
-        #loss = tf.reduce_mean(tower_losses)                  
-        #summaries.append(tf.scalar_summary('mean_loss', loss))
-        summaries.extend(tt.board.gradients_histogram_summary(grads))
-        summaries.extend(tt.board.variables_histogram_summary())
-
-        # Track the moving averages of all trainable variables
-        variable_averages = tf.train.ExponentialMovingAverage(0.9999, self._global_step)
-        variables_averages_op = variable_averages.apply(tf.trainable_variables())
-
-        # Group all updates to into a single train op.
-        train_op = tf.group(apply_gradient_op, variables_averages_op, name="train_op")
-        return train_op, total_loss, loss, summaries
+        return grads, summaries, total_loss, loss
         
     @tt.utils.attr.override
     def train(self, batch_size, steps=-1, epochs=-1, display_step=10,
