@@ -1,4 +1,5 @@
 import os
+import sys
 import time
 import collections
 from datetime import datetime
@@ -7,14 +8,6 @@ from abc import ABCMeta, abstractmethod
 import numpy as np
 import tensorflow as tf
 import tensortools as tt
-
-
-FIXED_NUM_STEPS_PER_DECAY = 10000
-NUM_EPOCHS_PER_DECAY = 75.0 # used if FIXED_NUM_STEPS_PER_DECAY is None <-- UNUSED; Due to batch_size refactoring
-
-INITIAL_LEARNING_RATE = 0.0001
-LEARNING_RATE_DECAY_FACTOR = 0.5
-
 
 
 LATEST_CHECKPOINT = 'LATEST'
@@ -73,7 +66,8 @@ class AbstractRuntime(object):
     def register_model(self, model):
         self._model = model
         
-    def build(self, is_autoencoder=False, checkpoint_file=None):
+    def build(self, initial_lr, lr_decay_step_interval=sys.maxint, lr_decay_factor=1.0, lr_decay_staircase=True,
+              is_autoencoder=False, checkpoint_file=None):
         """ checkpoint_file: file-name in TRAIN_DIR, or 'latest' """
         with self.graph.as_default():
             self._ph.inputs = tf.placeholder(tf.float32, [None] + self._datasets.train.input_shape, "X")
@@ -107,7 +101,14 @@ class AbstractRuntime(object):
                                                                           self._ph.batch_size: bs,
                                                                           self._ph.is_training: is_train}
 
-            train_op, total_loss, loss, summaries = self._build_internal(x, y)
+            # Decay the learning rate exponentially based on the number of steps
+            lr = tf.train.exponential_decay(initial_lr,
+                                            self._global_step,
+                                            lr_decay_step_interval,
+                                            lr_decay_factor,
+                                            staircase=lr_decay_staircase)
+                
+            train_op, total_loss, loss, summaries = self._build_internal(x, y, lr)
 
             self._train_op = train_op
             self._total_loss = total_loss
@@ -149,15 +150,6 @@ class AbstractRuntime(object):
 
             if epochs > 0:
                 steps = batches_per_epoch * epochs
-
-            # TODO: this is only required for inpute Queue!!!
-            # Start input enqueue threads
-            #coord = tf.train.Coordinator()
-
-            #if self.datasets.train.uses_queue:
-            #    threads = tf.train.start_queue_runners(sess=self.session, coord=coord)
-            #else:
-            #    threads = None
 
             self.datasets.train.reset()
 
@@ -242,17 +234,9 @@ class AbstractRuntime(object):
 
             except tf.errors.OutOfRangeError:
                 print("Done training -- epoch limit reached")
-            #finally:
-                # When done, ask the threads to stop
-                #self._coord.request_stop()
-                #print("Coordinator stopped.")
-
-            # Wait for threads to finish
-            #if self._threads is not None:
-                #self._coord.join(self._threads)
 
     @abstractmethod
-    def _build_internal(self, x, y):
+    def _build_internal(self, x, y, lr):
         pass
     
     def predict(self, inputs): 
@@ -372,23 +356,7 @@ class DefaultRuntime(AbstractRuntime):
                                              gpu_allow_growth, gpu_memory_fraction)
         
     @tt.utils.attr.override
-    def _build_internal(self, x, y):
-        # Variables that affect learning rate
-        #batch_size = self.datasets.train.batch_size
-        #num_batches_per_epoch = self.datasets.train.size / batch_size
-        #decay_steps = num_batches_per_epoch * NUM_EPOCHS_PER_DECAY
-
-        if FIXED_NUM_STEPS_PER_DECAY is not None:
-            decay_steps = FIXED_NUM_STEPS_PER_DECAY
-
-        # Decay the learning rate exponentially based on the number of steps
-        lr = tf.train.exponential_decay(INITIAL_LEARNING_RATE,
-                                        self._global_step,
-                                        decay_steps,
-                                        LEARNING_RATE_DECAY_FACTOR,
-                                        staircase=True)
-        tf.scalar_summary('learning_rate', lr)
-        
+    def _build_internal(self, x, y, lr):
         # Build inference Graph.This function constructs 
         # the entire model but shares the variables across all towers.
         inference = self._model.inference(x, y,
@@ -412,9 +380,9 @@ class DefaultRuntime(AbstractRuntime):
         # Apply gradients
         apply_gradient_op = opt.apply_gradients(grads, global_step=self._global_step)
 
+        # Add summaries
+        tf.scalar_summary('learning_rate', lr)        
         tt.board.variables_histogram_summary()
-
-        # Add histograms for gradients
         tt.board.gradients_histogram_summary(grads)
 
         # Track the moving averages of all trainable variables
@@ -444,23 +412,7 @@ class MultiGpuRuntime(AbstractRuntime):
                                               gpu_allow_growth, gpu_memory_fraction)
         
     @tt.utils.attr.override
-    def _build_internal(self, x, y):
-        # Variables that affect learning rate
-        #batch_size = self.datasets.train.batch_size
-        #num_batches_per_epoch = self.datasets.train.size / batch_size
-        #decay_steps = num_batches_per_epoch * NUM_EPOCHS_PER_DECAY
-
-        if FIXED_NUM_STEPS_PER_DECAY is not None:
-            decay_steps = FIXED_NUM_STEPS_PER_DECAY
-
-        # Decay the learning rate exponentially based on the number of steps
-        lr = tf.train.exponential_decay(INITIAL_LEARNING_RATE,
-                                        self._global_step,
-                                        decay_steps,
-                                        LEARNING_RATE_DECAY_FACTOR,
-                                        staircase=True)
-        tf.scalar_summary('learning_rate', lr)
-
+    def _build_internal(self, x, y, lr):
         # Compute gradients
         opt = tf.train.AdamOptimizer(lr) # TODO: make optimizer parameterizable? or spcify in model?
         # Calculate the gradients for each model tower.
@@ -514,22 +466,17 @@ class MultiGpuRuntime(AbstractRuntime):
         # We must calculate the mean of each gradient.
         # This is also the synchronization point across all towers.
         grads = tt.training.average_gradients(tower_grads)
-
-        total_loss = tf.reduce_mean(tower_total_losses)                  
-        summaries.append(tf.scalar_summary('mean_total_loss', total_loss)) # TODO: really needed?
-
-        loss = tf.reduce_mean(tower_losses)                  
-        summaries.append(tf.scalar_summary('mean_loss', loss)) # TODO: really needed?
-
-        # Add a summary to track the learning rate.
-        summaries.append(tf.scalar_summary('learning_rate', lr))
-
-        # Add histograms for gradients
-        summaries.extend(tt.board.gradients_histogram_summary(grads))
-
+        
         # Apply the gradients to adjust the shared variables and increment the step counter
         apply_gradient_op = opt.apply_gradients(grads, global_step=self._global_step)
-
+        
+        # Add summaries
+        summaries.append(tf.scalar_summary('learning_rate', lr))
+        total_loss = tf.reduce_mean(tower_total_losses)                  
+        summaries.append(tf.scalar_summary('mean_total_loss', total_loss)) # TODO: really needed?
+        loss = tf.reduce_mean(tower_losses)                  
+        summaries.append(tf.scalar_summary('mean_loss', loss)) # TODO: really needed?
+        summaries.extend(tt.board.gradients_histogram_summary(grads))
         summaries.extend(tt.board.variables_histogram_summary())
 
         # Track the moving averages of all trainable variables
