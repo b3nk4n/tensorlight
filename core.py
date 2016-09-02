@@ -140,8 +140,7 @@ class AbstractRuntime(object):
 
             with tf.name_scope("feed_or_queue"):
                 x = tf.cond(self._ph.input_from_queue, lambda: inputs, lambda: self._ph.inputs)
-                y = tf.cond(self._ph.input_from_queue, lambda: targets, lambda: self._ph.inputs)
-
+                y = tf.cond(self._ph.input_from_queue, lambda: targets, lambda: self._ph.targets)
 
                 if is_autoencoder:
                     self._feed_func = lambda inputs, targets, bs, is_train: {self._ph.inputs: inputs,
