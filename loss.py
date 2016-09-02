@@ -3,6 +3,25 @@ import tensorflow as tf
 import tensortools as tt
 
 
+def sse(outputs, targets):
+    """Sum of squared error (SSE) between images.
+    Parameters
+    ----------
+    outputs: Tensor [batch_size, ...] of type float32
+        The first tensor.
+    targets: Tensor [batch_size, ...] of type float32
+        The second tensor.
+    Returns
+    ----------
+    Returns the calculated error.
+    """
+    with tf.name_scope('SSE_loss'):
+        inputs_rank = outputs.get_shape().ndims
+        sum_indices = tuple(range(1, inputs_rank))
+        return tf.reduce_mean(
+            tf.reduce_sum(tf.square(outputs - targets), sum_indices))
+
+    
 def mse(outputs, targets):
     """Mean squared error (MSE) between images.
     Parameters
@@ -16,12 +35,29 @@ def mse(outputs, targets):
     Returns the calculated error.
     """
     with tf.name_scope('MSE_loss'):
+        return tf.reduce_mean(tf.square(outputs - targets))
+
+
+def rsse(outputs, targets):
+    """Rooted sum of squared error (RSSE) between images.
+    Parameters
+    ----------
+    outputs: Tensor [batch_size, ...] of type float32
+        The first tensor.
+    targets: Tensor [batch_size, ...] of type float32
+        The second tensor.
+    Returns
+    ----------
+    Returns the calculated error.
+    """
+    with tf.name_scope('RSSE_loss'):
         inputs_rank = outputs.get_shape().ndims
         sum_indices = tuple(range(1, inputs_rank))
         return tf.reduce_mean(
-            tf.reduce_sum(tf.square(outputs - targets), sum_indices))
+            tf.sqrt(
+                tf.reduce_sum(tf.square(outputs - targets), sum_indices)))
 
-
+    
 def rmse(outputs, targets):
     """Rooted mean squared error (RMSE) between images.
     Parameters
@@ -36,12 +72,31 @@ def rmse(outputs, targets):
     """
     with tf.name_scope('RMSE_loss'):
         inputs_rank = outputs.get_shape().ndims
-        sum_indices = tuple(range(1, inputs_rank))
+        reduction_indices = tuple(range(1, inputs_rank))
         return tf.reduce_mean(
             tf.sqrt(
-                tf.reduce_sum(tf.square(outputs - targets), sum_indices)))
+                tf.reduce_mean(tf.square(outputs - targets), reduction_indices)))
 
 
+def sae(outputs, targets):
+    """Sum of aboslute error (SAE) between images.
+    Parameters
+    ----------
+    outputs: Tensor [batch_size, ...] of type float32
+        The first tensor.
+    targets: Tensor [batch_size, ...] of type float32
+        The second tensor.
+    Returns
+    ----------
+    Returns the calculated error.
+    """
+    with tf.name_scope('SAE_loss'):
+        inputs_rank = outputs.get_shape().ndims
+        sum_indices = tuple(range(1, inputs_rank))
+        return tf.reduce_mean(
+            tf.reduce_sum(tf.abs(outputs - targets), sum_indices))
+    
+    
 def mae(outputs, targets):
     """Mean aboslute error (MAE) between images.
     Parameters
@@ -55,12 +110,29 @@ def mae(outputs, targets):
     Returns the calculated error.
     """
     with tf.name_scope('MAE_loss'):
+        return tf.reduce_mean(tf.abs(outputs - targets))
+
+
+def rsae(outputs, targets):
+    """Rooted sum of absolute error (RSAE) between images.
+    Parameters
+    ----------
+    outputs: Tensor [batch_size, ...] of type float32
+        The first tensor.
+    targets: Tensor [batch_size, ...] of type float32
+        The second tensor.
+    Returns
+    ----------
+    Returns the calculated error.
+    """
+    with tf.name_scope('RSAE_loss'):
         inputs_rank = outputs.get_shape().ndims
         sum_indices = tuple(range(1, inputs_rank))
         return tf.reduce_mean(
-            tf.reduce_sum(tf.abs(outputs - targets), sum_indices))
-
-
+            tf.sqrt(
+                tf.reduce_sum(tf.abs(outputs - targets), sum_indices)))
+    
+    
 def rmae(outputs, targets):
     """Rooted mean absolute error (RMAE) between images.
     Parameters
@@ -75,10 +147,10 @@ def rmae(outputs, targets):
     """
     with tf.name_scope('RMAE_loss'):
         inputs_rank = outputs.get_shape().ndims
-        sum_indices = tuple(range(1, inputs_rank))
+        reduction_indices = tuple(range(1, inputs_rank))
         return tf.reduce_mean(
             tf.sqrt(
-                tf.reduce_sum(tf.abs(outputs - targets), sum_indices)))
+                tf.reduce_mean(tf.abs(outputs - targets), reduction_indices)))
     
     
 def bce(output_probs, targets, from_logits=False):
