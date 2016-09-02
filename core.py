@@ -16,11 +16,28 @@ INTERMEDIATE_LOSSES = 'intermediate_losses'
 
 
 class AbstractRuntime(object):
+    """Abstract runtime."""
     __metaclass__ = ABCMeta
     
     def __init__(self, train_dir='train', max_checkpoints_to_keep=5,
                  gpu_allow_growth=True, gpu_memory_fraction=1.0):
-        """ max_checkpoints_to_keep 0/None == keep all! """
+        """Creates a base runtime.
+        Parameters
+        ----------
+        train_dir: str, optional
+            The training directory for checkpoints and summary files.
+        max_checkpoints_to_keep: int, optional
+            The number of last checkpoints to keep. Defaults to 5.
+            Use 0 or None to keep all checkpoints.
+        gpu_allow_growth: Boolean, optional
+            Whether the GPUS is allowed to allocate memory dynamically.
+            Has the advantage to only use that much memory as it really needs,
+            but the downside of memory fragmentation and probably lower performance.
+        gpu_memory_fraction: float in range (0, 1], optional
+            The fraction of the (currently available) memory it is allows to reserve.
+        """
+        assert gpu_memory_fraction > 0 and gpu_memory_fraction <= 1, "GPU memory fraction has to be in range (0,1]."
+        
         self._graph = tf.Graph()
         self._session = None
         self._datasets = collections.namedtuple("datasets", ("train", "valid", "test"))
@@ -61,16 +78,49 @@ class AbstractRuntime(object):
         self._gpu.memory_fraction = gpu_memory_fraction
            
     def register_datasets(self, train_ds, valid_ds=None, test_ds=None):
+        """Registers the datasets.
+        Parameters
+        ----------
+        train_ds: AbstractDataset
+            The training dataset.
+        valid_ds: AbstractDataset, optional
+            The validation dataset.
+        test_ds: AbstractDataset, optional
+            The test dataset.
+        """
         self._datasets.train = train_ds
         self._datasets.valid = valid_ds
         self._datasets.test = test_ds
         
     def register_model(self, model):
+        """Registers the model.
+        Parameters
+        ----------
+        model: AbstractModel
+            The model to register.
+        """
         self._model = model
         
     def build(self, initial_lr, lr_decay_step_interval=sys.maxint, lr_decay_factor=1.0, lr_decay_staircase=True,
               is_autoencoder=False, checkpoint_file=None):
-        """ checkpoint_file: file-name in TRAIN_DIR, or 'latest' """
+        """ Builds the model. This must be calles before training, validation, testing or prediction.
+        Parameters
+        ----------
+        initial_lr: float
+            The initial learning rate, that will use exponential decay.
+        lr_decay_step_interval: int, optional
+            The step rate when to perform learning rate decay.
+            Defaults to sys.maxint, equivalent to no decay.
+        lr_decay_factor: float, optional
+            The learning rate decay factor.
+        lr_decay_staircase: Boolean, optional
+            Whether we use smooth decay or staircase decay (default).
+        is_autoencoder: Boolean, optional
+            Whether we build an autoencoder, where the inputs equals the targets.
+        checkpoint_file: str, optional
+            The filename of the checkpoint file withing 'train_dir' to restore.
+            Use 'LATEST' or 'tt.core.LATEST_CHECKPOINT' to restore the lastest file.
+        """
         with self.graph.as_default():
             self._ph.inputs = tf.placeholder(tf.float32, [None] + self._datasets.train.input_shape, "X")
             if is_autoencoder:
@@ -162,6 +212,37 @@ class AbstractRuntime(object):
               display_step=10, summary_steps=100, checkpoint_steps=1000,
               validation_steps=1000, early_validation_at_step=100,
               do_checkpoints=True, do_summary=True):
+        """Train the model.
+           Note that either 'steps' or 'epochs' has to be defined as a param.
+        Parameters
+        ----------
+        batch_size: int
+            The batch size to use.
+        steps: int, partly-required
+            The number of steps to train the model.
+        epochs: int, partly-required
+            The number of epochs to train the model.
+        display_step: int, optional
+            In which interval a averaged print-out of the current loss
+            shoud be performed. Required for logging/testing only.
+        summary_steps: int, optional
+            In which interval we write a summary to TensorBoard.
+        checkpoint_steps: int, optional
+            In which interval we create a checkpoint.
+        validation_steps: int, optional
+            In which interval we perform a validation,
+            which is also written to TensorBoard
+        early_validation_at_step: int, optional
+            On which (global) step we perform an early validation, basically that
+            we get an early feedback of the losses, as well as if there is an error
+            in doing a validation.
+        do_checkpoints: Boolean, optioanl
+            Whether we create checkpoints or not. Deactivate this for example programs
+            where you do not want to fill up your disk.
+        do_summary: Boolean, optional
+            Whether we create summaries or not. Deactivate this for example programs
+            where you do not want to fill up your disk.
+        """
         assert not(steps <= 0 and epochs <= 0), "Either set 'steps' or 'epochs' parameter"
         assert not(steps > 0 and epochs > 0), "Not allowed to set both, 'steps' and 'epochs' parameter"
         
@@ -265,23 +346,73 @@ class AbstractRuntime(object):
 
     @abstractmethod
     def _build_computation_graph(self, x, y, opt):
+        """Builds the (device or runtime specific) computation graph.
+        Parameters
+        ----------
+        x: n-D Tensor
+            The inputs tensor.
+        y: m-D Tensor
+            The targets tensor.
+        opt: Optimizer
+            The TensorFlow optimizer instance.
+        Returns
+        ----------
+        A tuple of (grads, summaries, total_loss, loss)
+        """
         pass
     
-    def predict(self, inputs): 
+    def predict(self, inputs):
+        """Performs a prediction using the trained model.
+        Parameters
+        ----------
+        inputs: numpy n-D array
+            The inputs to the model to do the inference.
+        Returns
+        ---------
+        The predictions of the model as an numpy n-D array.
+        """
         with self.graph.as_default():
             feed = self._feed_func(inputs, None, inputs.shape[0], False)
             feed.update({self._ph.input_from_queue: False})
             return self.session.run(self._inferences[0], feed_dict=feed)
         
     def validate(self, batch_size):
+        """Performs a validation on the trained model using the validation
+           dataset that was registered to the runtime.
+        Parameters
+        ----------
+        batch_size: int
+            The batch-size to use.
+        """
         with self.graph.as_default():
             self._test_internal(batch_size, self.datasets.valid, "validation", False)
              
     def test(self, batch_size):
+        """Performs a test on the trained model using the test
+           dataset that was registered to the runtime.
+        Parameters
+        ----------
+        batch_size: int
+            The batch-size to use.
+        """
         with self.graph.as_default():
             self._test_internal(batch_size, self.datasets.test, "test", False)
            
     def _test_internal(self, batch_size, dataset, title, do_summary):
+        """Actually performs the validation/testing of the given dataset.
+        Parameters
+        ----------
+        batch_size: int
+            The batch size to use.
+        dataset: AbstractDataset
+            The dataset to use, typically either the validation or test set.
+        title: str
+            The title to use for the print-outs, basically just to see if we use
+            the test or validation set.
+        do_summary: Boolean
+            Whether the validation results should be written to summary.
+            Basically should be set to True while training only.
+        """
         if dataset is None:
             print("No {} dataset registered. Skipping.".format(title))
             return
@@ -319,12 +450,14 @@ class AbstractRuntime(object):
             self.summary_writer.flush()
     
     def _create_session(self):
+        """Creates the TensorFlow session."""
         gpu_options = tf.GPUOptions(
             per_process_gpu_memory_fraction=self._gpu.memory_fraction,
             allow_growth=self._gpu.allow_growth)
         return tf.Session(config=tf.ConfigProto(gpu_options=gpu_options))
         
     def close(self):
+        """Closes the runtime and releases the all threads."""
         self._coord.request_stop()
         print("Coordinator stopped.")
 
@@ -337,42 +470,68 @@ class AbstractRuntime(object):
         
     @property
     def graph(self):
+        """Gets the graph."""
         return self._graph
 
     @property
     def session(self):
+        """Gets or creates the session."""
         if self._session is None:
             self._session = self._create_session()
         return self._session
     
     @property
     def datasets(self):
+        """Gets the datasets as a named tuple.
+           Use the members ds.train, ds.valid or ds.test
+           of the returned tuple."""
         return self._datasets
     
     @property
     def placeholders(self):
+        """Gets the placeholders as a named tuple."""
         return self._ph
 
     @property
     def summary_writer(self):
+        """Gets or creates the summary writer."""
         if self._summary_writer is None:
             self._summary_writer = tf.train.SummaryWriter(self.train_dir, self.session.graph)
         return self._summary_writer
     
     @property
     def train_dir(self):
+        """Gets the training directory."""
         return self._train_dir
     
     @property
     def max_checkpoints_to_keep(self):
+        """Gets the number of max. checkpoints to keep."""
         return self._max_checkpoints_to_keep
     
     
     
 class DefaultRuntime(AbstractRuntime):
+    """The default runtime, where TensorFlow itself
+       descides where to assign the ops to."""
     
     def __init__(self, train_dir='train', max_checkpoints_to_keep=5,
                  gpu_allow_growth=True, gpu_memory_fraction=1.0):
+        """Creates the default runtime instance.
+        Parameters
+        ----------
+        train_dir: str, optional
+            The training directory for checkpoints and summary files.
+        max_checkpoints_to_keep: int, optional
+            The number of last checkpoints to keep. Defaults to 5.
+            Use 0 or None to keep all checkpoints.
+        gpu_allow_growth: Boolean, optional
+            Whether the GPUS is allowed to allocate memory dynamically.
+            Has the advantage to only use that much memory as it really needs,
+            but the downside of memory fragmentation and probably lower performance.
+        gpu_memory_fraction: float in range (0, 1], optional
+            The fraction of the (currently available) memory it is allows to reserve.
+        """
         print("Launing default runtime...")
         
         device_list = tt.hardware.get_cuda_devices()
@@ -416,9 +575,29 @@ class DefaultRuntime(AbstractRuntime):
 
 
 class MultiGpuRuntime(AbstractRuntime):
+    """Advanced runtime that supports the use of multiple GPUs.
+       All variables (have to be) stored on the CPU, and each batch
+       is split according to the number of GPUs."""
     
     def __init__(self, num_gpus=2, train_dir='train', max_checkpoints_to_keep=5,
                  gpu_allow_growth=True, gpu_memory_fraction=1.0):
+        """Creates a base runtime.
+        Parameters
+        ----------
+        num_gpus: int, optioanl
+            The number of GPUs to use.
+        train_dir: str, optional
+            The training directory for checkpoints and summary files.
+        max_checkpoints_to_keep: int, optional
+            The number of last checkpoints to keep. Defaults to 5.
+            Use 0 or None to keep all checkpoints.
+        gpu_allow_growth: Boolean, optional
+            Whether the GPUS is allowed to allocate memory dynamically.
+            Has the advantage to only use that much memory as it really needs,
+            but the downside of memory fragmentation and probably lower performance.
+        gpu_memory_fraction: float in range (0, 1], optional
+            The fraction of the (currently available) memory it is allows to reserve.
+        """
         print("Launing Multi-GPU runtime...")
         
         device_list = tt.hardware.get_cuda_devices()
@@ -511,6 +690,7 @@ class MultiGpuRuntime(AbstractRuntime):
         
     @property
     def num_gpus(self):
+        """Gets the number of used GPUs."""
         return self._num_gpus
 
     
