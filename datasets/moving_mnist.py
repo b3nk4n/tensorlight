@@ -223,7 +223,9 @@ class MovingMNISTTestDataset(base.AbstractDataset):
         
         try:
             filepath = tt.utils.data.download(MNIST_TEST_URL, 'tmp')
-            data = np.float32(np.load(filepath))
+            print("Loading MNIST test set from numpy-array. This might take a while...")
+            data = np.load(filepath)
+            data = np.float32(data)
         except:
             print 'Please set the correct path to the dataset. Might be caused by a download error.'
             sys.exit()
@@ -231,22 +233,21 @@ class MovingMNISTTestDataset(base.AbstractDataset):
         # introduce channel dimension
         data = np.expand_dims(data, axis=4)
         # use value scale [0,1]
-        data = data / 255.0  
+        self._data = data / 255.0 
         dataset_size = data.shape[0]
-        
         self._row = 0
         
-        super(MovingMNISTTestDataset, self).__init__(data, dataset_size, input_shape=[input_seq_length, 64, 64, 1],
+        super(MovingMNISTTestDataset, self).__init__(dataset_size, input_shape=[input_seq_length, 64, 64, 1],
                                                      target_shape=[target_seq_length, 64, 64, 1])
     @tt.utils.attr.override
     def get_batch(self, batch_size):
-        if self._row >= self._data.shape[0]:
+        if self._row >= self.size:
             self.reset()
-        
+
         batch_inputs = self._data[self._row:self._row+batch_size,
-                                  0:self.input_seq_length,:,:,:]
+                                  0:self.input_shape[0],:,:,:]
         batch_targets = self._data[self._row:self._row+batch_size,
-                                   self.input_seq_length:self.input_seq_length+self.target_seq_length,:,:,:]
+                                   self.input_shape[0]:self.input_shape[0]+self.target_shape[0],:,:,:]
         self._row = self._row + batch_size
         return batch_inputs, batch_targets
     
