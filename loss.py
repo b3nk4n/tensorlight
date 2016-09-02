@@ -155,6 +155,9 @@ def rmae(outputs, targets):
     
 def bce(output_probs, targets, from_logits=False):
     """Binary cross-entropy (BCE) between an output and a target tensor.
+       Remarks: In case of images, this loss gives great results for image
+                like MNIST or MovingMNIST, but does NOT work for natural images
+                with color or gray-scaled, as it can lead to negative loss.
        References:
            Taken from Keras implementation (TensorFlow backend).
     Parameters
