@@ -150,7 +150,7 @@ class AbstractRuntime(object):
                                                                              self._ph.is_training: is_train}
                 else:
                     self._feed_func = lambda inputs, targets, bs, is_train : {self._ph.inputs: inputs,
-                                                                              self._ph_targets: targets,
+                                                                              self._ph.targets: targets,
                                                                               self._ph.batch_size: bs,
                                                                               self._ph.is_training: is_train}
 
@@ -372,7 +372,9 @@ class AbstractRuntime(object):
         The predictions of the model as an numpy n-D array.
         """
         with self.graph.as_default():
-            feed = self._feed_func(inputs, None, inputs.shape[0], False)
+            batch_size = inputs.shape[0]
+            y_dummy = np.zeros([batch_size] + self._ph.targets.get_shape().as_list()[1:])
+            feed = self._feed_func(inputs, y_dummy, batch_size, False)
             feed.update({self._ph.input_from_queue: False})
             return self.session.run(self._inferences[0], feed_dict=feed)
         
