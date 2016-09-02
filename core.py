@@ -687,7 +687,17 @@ class MultiGpuRuntime(AbstractRuntime):
     @tt.utils.attr.override
     def test(self, batch_size):
         assert batch_size % float(self.num_gpus) == 0, "Batch-size has to be multiples of 'num_gpus'."
-        return super(MultiGpuRuntime, self).test(batch_size)
+        
+    
+    @tt.utils.attr.override
+    def predict(self, inputs):
+        # Workaround: Let each tower do the same stuff, but only use the result of the
+        #             first tower. Required to support e.g. batch-size 1 or odd batches.
+        inputs_concat = inputs
+        for i in xrange(self.num_gpus - 1):
+            inputs_concat = np.concatenate((inputs_concat, inputs))
+        
+        return super(MultiGpuRuntime, self).predict(inputs_concat)
         
     @property
     def num_gpus(self):
