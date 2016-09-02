@@ -551,7 +551,12 @@ class DefaultRuntime(AbstractRuntime):
         with tf.name_scope("inference"):
             inference = self._model.inference(x, y,
                                               is_training=self._ph.is_training)
-        self._inferences.append(inference)
+            
+            # ensure the inference shape is fully defined and equal to target shape
+            inference = tf.reshape(inference, [-1] + y.get_shape().as_list()[1:],
+                                   name="ensure_shape")
+            
+            self._inferences.append(inference)
         
         with tf.name_scope("loss"):
             loss = self._model.loss(inference, y)
@@ -633,6 +638,11 @@ class MultiGpuRuntime(AbstractRuntime):
                                                           is_training=self._ph.is_training,
                                                           device_scope=scope,
                                                           memory_device='/cpu:0')
+                        
+                        # ensure the inference shape is fully defined and equal to target shape
+                        inference = tf.reshape(inference, [-1] + this_targets.get_shape().as_list()[1:],
+                                               name="ensure_shape")
+                        
                         self._inferences.append(inference)
                     
                     with tf.name_scope("loss"):
