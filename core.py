@@ -48,6 +48,7 @@ class AbstractRuntime(object):
         self._threads = None
 
         self._feed_func = None
+        self._model_feeds = None
 
         self._saver = None
         self._summary_writer = None
@@ -152,6 +153,7 @@ class AbstractRuntime(object):
                                                                               self._ph.targets: targets,
                                                                               self._ph.batch_size: bs,
                                                                               self._ph.is_training: is_train}
+                self._model_feeds = self._model.fetch_feeds();
 
             # Decay the learning rate exponentially based on the number of steps
             lr = tf.train.exponential_decay(initial_lr,
@@ -207,7 +209,7 @@ class AbstractRuntime(object):
             params_count = tt.core.trainable_parameters_count()
             print("Total model-params: {}".format(params_count))
         
-    def train(self, batch_size, steps=-1, epochs=-1,
+    def train(self, batch_size, steps=-1, epochs=-1, train_feeds={}, valid_feeds={},
               display_step=10, summary_steps=100, checkpoint_steps=1000,
               validation_steps=1000, early_validation_at_step=100,
               do_checkpoints=True, do_summary=True):
@@ -221,6 +223,12 @@ class AbstractRuntime(object):
             The number of steps to train the model.
         epochs: int, partly-required
             The number of epochs to train the model.
+        train_feeds: dict(str, tf.placeholder), optional
+            The model specific feeds for training, that have been
+            defined in AbstractModel.fetch_feeds().
+        valid_feeds: dict(str, tf.placeholder), optional
+            The model specific feeds for validation, that have been
+            defined in AbstractModel.fetch_feeds().
         display_step: int, optional
             In which interval a averaged print-out of the current loss
             shoud be performed. Required for logging/testing only.
@@ -285,7 +293,9 @@ class AbstractRuntime(object):
                     feed = self._feed_func(batch_x, batch_y, batch_size, True)
                     feed.update({self._ph.input_from_queue: True \
                                  if isinstance(self.datasets.train, tt.datasets.base.AbstractQueueDataset) else False})
-
+                    for key, value in train_feeds.iteritems():
+                        feed.update({self._model_feeds[key]: value})
+                    
                     if this_step == 1 and isinstance(self.datasets.train, tt.datasets.base.AbstractQueueDataset):
                         print("Filling queue with {} examples...".format(self.datasets.train.min_examples_in_queue))
 
@@ -325,7 +335,7 @@ class AbstractRuntime(object):
                         epochs > 0 and this_step % batches_per_epoch == 0:
                         # validate
                         print
-                        self._test_internal(batch_size, self.datasets.valid, "validation", do_summary)
+                        self._test_internal(batch_size, self.datasets.valid, "validation", valid_feeds, do_summary)
                         print
 
                     if do_checkpoints:
@@ -360,12 +370,15 @@ class AbstractRuntime(object):
         """
         pass
     
-    def predict(self, inputs):
+    def predict(self, inputs, feeds={}):
         """Performs a prediction using the trained model.
         Parameters
         ----------
         inputs: numpy n-D array
             The inputs to the model to do the inference.
+        feeds: dict(str, tf.placeholder), optional
+            The model specific feeds, that have been
+            defined in AbstractModel.fetch_feeds().
         Returns
         ---------
         The predictions of the model as an numpy n-D array.
@@ -375,31 +388,40 @@ class AbstractRuntime(object):
             y_dummy = np.zeros([batch_size] + self._ph.targets.get_shape().as_list()[1:])
             feed = self._feed_func(inputs, y_dummy, batch_size, False)
             feed.update({self._ph.input_from_queue: False})
+            for key, value in feeds.iteritems():
+                feed.update({self._model_feeds[key]: value})
+            
             return self.session.run(self._inferences[0], feed_dict=feed)
         
-    def validate(self, batch_size):
+    def validate(self, batch_size, feeds={}):
         """Performs a validation on the trained model using the validation
            dataset that was registered to the runtime.
         Parameters
         ----------
         batch_size: int
             The batch-size to use.
+        feeds: dict(str, tf.placeholder), optional
+            The model specific feeds, that have been
+            defined in AbstractModel.fetch_feeds().
         """
         with self.graph.as_default():
-            self._test_internal(batch_size, self.datasets.valid, "validation", False)
+            self._test_internal(batch_size, self.datasets.valid, "validation", feeds, False)
              
-    def test(self, batch_size):
+    def test(self, batch_size, feeds={}):
         """Performs a test on the trained model using the test
            dataset that was registered to the runtime.
         Parameters
         ----------
         batch_size: int
             The batch-size to use.
+        feeds: dict(str, tf.placeholder), optional
+            The model specific feeds, that have been
+            defined in AbstractModel.fetch_feeds().
         """
         with self.graph.as_default():
-            self._test_internal(batch_size, self.datasets.test, "test", False)
+            self._test_internal(batch_size, self.datasets.test, "test", feeds, False)
            
-    def _test_internal(self, batch_size, dataset, title, do_summary):
+    def _test_internal(self, batch_size, dataset, title, feeds, do_summary):
         """Actually performs the validation/testing of the given dataset.
         Parameters
         ----------
@@ -410,6 +432,9 @@ class AbstractRuntime(object):
         title: str
             The title to use for the print-outs, basically just to see if we use
             the test or validation set.
+        feeds: dict(str, tf.placeholder), optional
+            The model specific feeds, that have been
+            defined in AbstractModel.fetch_feeds().
         do_summary: Boolean
             Whether the validation results should be written to summary.
             Basically should be set to True while training only.
@@ -438,6 +463,8 @@ class AbstractRuntime(object):
             feed = self._feed_func(batch_x, batch_y, batch_size, False)
             feed.update({self._ph.input_from_queue: True \
                          if isinstance(dataset, tt.datasets.base.AbstractQueueDataset) else False})
+            for key, value in feeds.iteritems():
+                feed.update({self._model_feeds[key]: value})
 
             this_loss = self.session.run(self._loss, feed_dict=feed)
             loss_sum += this_loss
@@ -550,7 +577,9 @@ class DefaultRuntime(AbstractRuntime):
         # the entire model but shares the variables across all towers.
         with tf.name_scope("inference"):
             inference = self._model.inference(x, y,
-                                              is_training=self._ph.is_training)
+                                              feeds=self._model_feeds,
+                                              is_training=self._ph.is_training,
+                                              device_scope=None, memory_device=None)
             
             # ensure the inference shape is fully defined and equal to target shape
             inference = tf.reshape(inference, [-1] + y.get_shape().as_list()[1:],
@@ -559,10 +588,10 @@ class DefaultRuntime(AbstractRuntime):
             self._inferences.append(inference)
         
         with tf.name_scope("loss"):
-            loss = self._model.loss(inference, y)
+            loss = self._model.loss(inference, y, device_scope=None)
             
         with tf.name_scope("total_loss"):
-            total_loss = self._model.total_loss(loss, inference, y)
+            total_loss = self._model.total_loss(loss, inference, y, device_scope=None)
 
         # Generate moving averages of all losses and associated summaries
         loss_averages_op = tt.board.loss_summary([total_loss, loss] + \
@@ -635,6 +664,7 @@ class MultiGpuRuntime(AbstractRuntime):
                     # the entire model but shares the variables across all towers.
                     with tf.name_scope("inference"):
                         inference = self._model.inference(this_inputs, this_targets,
+                                                          feeds=self._model_feeds,
                                                           is_training=self._ph.is_training,
                                                           device_scope=scope,
                                                           memory_device='/cpu:0')
@@ -646,10 +676,10 @@ class MultiGpuRuntime(AbstractRuntime):
                         self._inferences.append(inference)
                     
                     with tf.name_scope("loss"):
-                        loss = self._model.loss(inference, this_targets)
+                        loss = self._model.loss(inference, this_targets, device_scope=scope)
                     
                     with tf.name_scope("total_loss"):
-                        total_loss = self._model.total_loss(loss, inference, this_targets)
+                        total_loss = self._model.total_loss(loss, inference, this_targets, device_scope=scope)
 
                     # Calculate the moving averages of the loss for one tower of the model
                     loss_averages_op = tt.board.loss_summary([total_loss, loss] + \
@@ -683,31 +713,33 @@ class MultiGpuRuntime(AbstractRuntime):
         return grads, summaries, total_loss, loss
         
     @tt.utils.attr.override
-    def train(self, batch_size, steps=-1, epochs=-1, display_step=10,
-              do_checkpoints=True, do_summary=True):
+    def train(self, batch_size, steps=-1, epochs=-1, feeds={},
+              display_step=10, do_checkpoints=True, do_summary=True):
         assert batch_size % float(self.num_gpus) == 0, "Batch-size has to be multiples of 'num_gpus'."
         with tf.device('/cpu:0'):
-            return super(MultiGpuRuntime, self).train(batch_size, steps, epochs, display_step)              
+            return super(MultiGpuRuntime, self).train(batch_size, steps, epochs, feeds, display_step,
+                                                      do_checkpoints, do_summary)              
     
     @tt.utils.attr.override
-    def validate(self, batch_size):
+    def validate(self, batch_size, feeds={}):
         assert batch_size % float(self.num_gpus) == 0, "Batch-size has to be multiples of 'num_gpus'."
-        return super(MultiGpuRuntime, self).validate(batch_size)
+        return super(MultiGpuRuntime, self).validate(batch_size, feeds)
     
     @tt.utils.attr.override
-    def test(self, batch_size):
+    def test(self, batch_size, feeds={}):
         assert batch_size % float(self.num_gpus) == 0, "Batch-size has to be multiples of 'num_gpus'."
+        return super(MultiGpuRuntime, self).test(batch_size, feeds)
         
     
     @tt.utils.attr.override
-    def predict(self, inputs):
+    def predict(self, inputs, feeds={}):
         # Workaround: Let each tower do the same stuff, but only use the result of the
         #             first tower. Required to support e.g. batch-size 1 or odd batches.
         inputs_concat = inputs
         for i in xrange(self.num_gpus - 1):
             inputs_concat = np.concatenate((inputs_concat, inputs))
         
-        return super(MultiGpuRuntime, self).predict(inputs_concat)
+        return super(MultiGpuRuntime, self).predict(inputs_concat, feeds)
         
     @property
     def num_gpus(self):
