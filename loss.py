@@ -16,8 +16,8 @@ def sse(outputs, targets):
     Returns the calculated error.
     """
     with tf.name_scope('SSE_loss'):
-        inputs_rank = outputs.get_shape().ndims
-        sum_indices = tuple(range(1, inputs_rank))
+        outputs_rank = outputs.get_shape().ndims
+        sum_indices = tuple(range(1, outputs_rank))
         return tf.reduce_mean(
             tf.reduce_sum(tf.square(outputs - targets), sum_indices))
 
@@ -51,8 +51,8 @@ def rsse(outputs, targets):
     Returns the calculated error.
     """
     with tf.name_scope('RSSE_loss'):
-        inputs_rank = outputs.get_shape().ndims
-        sum_indices = tuple(range(1, inputs_rank))
+        outputs_rank = outputs.get_shape().ndims
+        sum_indices = tuple(range(1, outputs_rank))
         return tf.reduce_mean(
             tf.sqrt(
                 tf.reduce_sum(tf.square(outputs - targets), sum_indices)))
@@ -71,8 +71,8 @@ def rmse(outputs, targets):
     Returns the calculated error.
     """
     with tf.name_scope('RMSE_loss'):
-        inputs_rank = outputs.get_shape().ndims
-        reduction_indices = tuple(range(1, inputs_rank))
+        outputs_rank = outputs.get_shape().ndims
+        reduction_indices = tuple(range(1, outputs_rank))
         return tf.reduce_mean(
             tf.sqrt(
                 tf.reduce_mean(tf.square(outputs - targets), reduction_indices)))
@@ -91,8 +91,8 @@ def sae(outputs, targets):
     Returns the calculated error.
     """
     with tf.name_scope('SAE_loss'):
-        inputs_rank = outputs.get_shape().ndims
-        sum_indices = tuple(range(1, inputs_rank))
+        outputs_rank = outputs.get_shape().ndims
+        sum_indices = tuple(range(1, outputs_rank))
         return tf.reduce_mean(
             tf.reduce_sum(tf.abs(outputs - targets), sum_indices))
     
@@ -126,8 +126,8 @@ def rsae(outputs, targets):
     Returns the calculated error.
     """
     with tf.name_scope('RSAE_loss'):
-        inputs_rank = outputs.get_shape().ndims
-        sum_indices = tuple(range(1, inputs_rank))
+        outputs_rank = outputs.get_shape().ndims
+        sum_indices = tuple(range(1, outputs_rank))
         return tf.reduce_mean(
             tf.sqrt(
                 tf.reduce_sum(tf.abs(outputs - targets), sum_indices)))
@@ -146,8 +146,8 @@ def rmae(outputs, targets):
     Returns the calculated error.
     """
     with tf.name_scope('RMAE_loss'):
-        inputs_rank = outputs.get_shape().ndims
-        reduction_indices = tuple(range(1, inputs_rank))
+        outputs_rank = outputs.get_shape().ndims
+        reduction_indices = tuple(range(1, outputs_rank))
         return tf.reduce_mean(
             tf.sqrt(
                 tf.reduce_mean(tf.abs(outputs - targets), reduction_indices)))
@@ -185,6 +185,24 @@ def bce(output_probs, targets, from_logits=False):
         bce_values = tf.nn.sigmoid_cross_entropy_with_logits(output_probs_flat, targets_flat)
         return tf.reduce_mean(bce_values)
 
+    
+def ce(outputs, targets):
+    """Cross entropy error (CE).
+    Parameters
+    ----------
+    outputs: Tensor [batch_size, ...] of type float32
+        The first tensor.
+    targets: Tensor [batch_size, ...] of type float32
+        The second tensor.
+    Returns
+    ----------
+    Returns the calculated error.
+    """
+    with tf.name_scope('CE_loss'):
+        outputs_rank = outputs.get_shape().ndims
+        sum_indices = tuple(range(1, outputs_rank))
+        return -tf.reduce_mean(tf.reduce_sum(targets * tf.log(outputs), sum_indices))
+    
 
 def ssim(img1, img2, patch_size=11, sigma=1.5, L=255, K1=0.01, K2=0.03):
     """Calculates the Structural Similarity loss
