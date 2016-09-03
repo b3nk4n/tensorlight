@@ -157,9 +157,10 @@ def write_gif(filepath, images, fps=24):
     fps: int, optional
         The frame rate.
     """
+    # to list
     if not isinstance(images, list):
-        if (images.shape[0] > 1):
-            images = np.split(images, 1)
+        splitted = np.split(images, images.shape[0])
+        images = [np.squeeze(s, axis=(0,)) for s in splitted]
       
     # ensure directory exists
     if not os.path.exists(filepath):
@@ -167,3 +168,45 @@ def write_gif(filepath, images, fps=24):
     
     clip = mpy.ImageSequenceClip(images, fps=fps)
     clip.write_gif(filepath, verbose=False)
+
+    
+def write_multiclip_gif(filepath, images_list, fps=24, pad_value=255, pad_width=2):
+    """Saves multiple sequences of images as a single animated GIF.
+       The single clips will be padded and combined in a row.
+    Parameters
+    ----------
+    filepath: str
+        The filepath ending with *.gif where to save the file.
+    images_list: list(list(3-D array)) or list(4-D array)
+        A list of list(images) or a list(4-D array) where the first dimension
+        represents the time axis. The internal lists have to have equal length.
+    fps: int, optional
+        The frame rate.
+    pad_value: int, optional
+        The value of the image padding in range [0, 255].
+    pad_width: int, optional
+        The width of the padding.
+    """
+    for i in xrange(len(images_list)):
+        # to list of list
+        if not isinstance(images_list[i], list):  
+            splitted = np.split(images_list[i], images_list[i].shape[0])
+            images_list[i] = [np.squeeze(s, axis=(0,)) for s in splitted]
+            
+    for i in xrange(1, len(images_list)):
+        assert len(images_list[i-1]) == len(images_list[i]), "All images-lists have to have equal length."
+    
+    # pad images
+    for i in xrange(len(images_list)):
+        for j in xrange(len(images_list[i])):
+            images_list[i][j] = np.pad(images_list[i][j],
+                                       ((pad_width, pad_width), (pad_width, pad_width), (0,0)),
+                                       mode="constant", constant_values=pad_value)
+        
+    # concatenate
+    concat_list = []
+    for frame_idx in xrange(len(images_list[0])):
+        single_frame_of_each_seq = [row[frame_idx] for row in images_list]
+        concat_list.append(np.concatenate(single_frame_of_each_seq, axis=1))
+    
+    write_gif(filepath, concat_list, fps)    
