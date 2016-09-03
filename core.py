@@ -210,7 +210,7 @@ class AbstractRuntime(object):
             print("Total model-params: {}".format(params_count))
         
     def train(self, batch_size, steps=-1, epochs=-1, train_feeds={}, valid_feeds={},
-              display_step=10, summary_steps=100, checkpoint_steps=1000,
+              on_validate=None, display_step=10, summary_steps=100, checkpoint_steps=1000,
               validation_steps=1000, early_validation_at_step=100,
               do_checkpoints=True, do_summary=True):
         """Train the model.
@@ -229,6 +229,9 @@ class AbstractRuntime(object):
         valid_feeds: dict(str, tf.placeholder), optional
             The model specific feeds for validation, that have been
             defined in AbstractModel.fetch_feeds().
+        on_validate: function or None, optional,
+            A function with signature on_validate(runtime, gstep) that can
+            be executed after each evaluation step.
         display_step: int, optional
             In which interval a averaged print-out of the current loss
             shoud be performed. Required for logging/testing only.
@@ -337,6 +340,10 @@ class AbstractRuntime(object):
                         print
                         self._test_internal(batch_size, self.datasets.valid, "validation", valid_feeds, do_summary)
                         print
+                        
+                        if on_validate is not None:
+                            on_validate(self, gstep)
+                            print
 
                     if do_checkpoints:
                         if gstep % checkpoint_steps == 0 or this_step == steps:
@@ -713,7 +720,7 @@ class MultiGpuRuntime(AbstractRuntime):
         return grads, summaries, total_loss, loss
         
     @tt.utils.attr.override
-    def train(self, batch_size, steps=-1, epochs=-1, feeds={},
+    def train(self, batch_size, steps=-1, epochs=-1, feeds={}, on_validate=None,
               display_step=10, do_checkpoints=True, do_summary=True):
         assert batch_size % float(self.num_gpus) == 0, "Batch-size has to be multiples of 'num_gpus'."
         with tf.device('/cpu:0'):
