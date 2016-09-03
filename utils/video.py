@@ -1,7 +1,11 @@
+import os
 import cv2
 import math
 import numpy as np
 import tensortools as tt
+
+import numpy as np
+import moviepy.editor as mpy
 
 
 class VideoReader():
@@ -138,3 +142,28 @@ class VideoWriter():
     def release(self):
         """Releases the video file resources."""
         self.vidwriter.release()
+
+
+
+def write_gif(filepath, images, fps=24):
+    """Saves a sequence of images as an animated GIF.
+    Parameters
+    ----------
+    filepath: str
+        The filepath ending with *.gif where to save the file.
+    images: list(3-D array) or 4-D array
+        A list of images or a 4-D array where the first dimension
+        represents the time axis.
+    fps: int, optional
+        The frame rate.
+    """
+    if not isinstance(images, list):
+        if (images.shape[0] > 1):
+            images = np.split(images, 1)
+      
+    # ensure directory exists
+    if not os.path.exists(filepath):
+        os.makedirs(filepath)
+    
+    clip = mpy.ImageSequenceClip(images, fps=fps)
+    clip.write_gif(filepath, verbose=False)
