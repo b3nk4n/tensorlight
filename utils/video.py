@@ -187,26 +187,32 @@ def write_multi_gif(filepath, images_list, fps=24, pad_value=255, pad_width=2):
     pad_width: int, optional
         The width of the padding.
     """
+    max_length = 0
     for i in xrange(len(images_list)):
         # to list of list
         if not isinstance(images_list[i], list):  
             splitted = np.split(images_list[i], images_list[i].shape[0])
             images_list[i] = [np.squeeze(s, axis=(0,)) for s in splitted]
-            
-    for i in xrange(1, len(images_list)):
-        assert len(images_list[i-1]) == len(images_list[i]), "All images-lists have to have equal length."
+        max_length = max(max_length, len(images_list[i]))
     
     # pad images
+    padded_seq_list = []
     for i in xrange(len(images_list)):
-        for j in xrange(len(images_list[i])):
-            images_list[i][j] = np.pad(images_list[i][j],
+        seq_list = []
+        for j in xrange(max_length):
+            if j < len(images_list[i]):
+                seq_list.append(np.pad(images_list[i][j],
                                        ((pad_width, pad_width), (pad_width, pad_width), (0,0)),
-                                       mode="constant", constant_values=pad_value)
+                                       mode="constant", constant_values=pad_value))
+            else:
+                shape = images_list[0][0].shape
+                seq_list.append(np.ones((shape[0] + 2*pad_width, shape[1] + 2*pad_width, shape[2])) * pad_value)
+        padded_seq_list.append(seq_list)
         
     # concatenate
     concat_list = []
-    for frame_idx in xrange(len(images_list[0])):
-        single_frame_of_each_seq = [row[frame_idx] for row in images_list]
+    for frame_idx in xrange(len(padded_seq_list[0])):
+        single_frame_of_each_seq = [row[frame_idx] for row in padded_seq_list]
         concat_list.append(np.concatenate(single_frame_of_each_seq, axis=1))
     
     write_gif(filepath, concat_list, fps)
