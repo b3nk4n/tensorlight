@@ -212,20 +212,25 @@ def write_multi_gif(filepath, images_list, fps=24, pad_value=255, pad_width=2):
     write_gif(filepath, concat_list, fps)
 
     
-def _to_single_sequence(images, pad_value, pad_width):
+def _to_single_sequence(images, pad_value, pad_width, seq_length):
     # to list
     if not isinstance(images, list):
         splitted = np.split(images, images.shape[0])
         images = [np.squeeze(s, axis=(0,)) for s in splitted]
       
     # pad images
-    for i in xrange(len(images)):
-        images[i] = np.pad(images[i],
-                           ((pad_width, pad_width), (pad_width, pad_width), (0,0)),
-                           mode="constant", constant_values=pad_value)
-        
+    padded_list = []
+    for i in xrange(seq_length):
+        if i < len(images):
+            padded_list.append(np.pad(images[i],
+                                      ((pad_width, pad_width), (pad_width, pad_width), (0,0)),
+                                      mode="constant", constant_values=pad_value))
+        else:
+            shape = images[0].shape
+            padded_list.append(np.ones((shape[0] + 2*pad_width, shape[1] + 2*pad_width, shape[2])) * pad_value)
+            
     # concatenate
-    return np.concatenate(images, axis=1)
+    return np.concatenate(padded_list, axis=1)
     
 def write_image_sequence(filepath, images, pad_value=255, pad_width=2):
     """Saves a sequence of images as a single image file.
@@ -241,7 +246,7 @@ def write_image_sequence(filepath, images, pad_value=255, pad_width=2):
     pad_width: int, optional
         The width of the padding.
     """
-    concat_image = _to_single_sequence(images, pad_value, pad_width)
+    concat_image = _to_single_sequence(images, pad_value, pad_width, len(images))
     tt.utils.image.write(filepath, concat_image)
     
 
@@ -251,17 +256,24 @@ def write_multi_image_sequence(filepath, images_list, pad_value=255, pad_width=2
     ----------
     filepath: str
         The filepath ending with *.gif where to save the file.
-    images: list(3-D array) or 4-D array
-        A list of images or a 4-D array where the first dimension
-        represents the time axis.
+    images_list: list(list(3-D array)) or list(4-D array)
+        A list of list(images) or a list(4-D array) where the first dimension
+        represents the time axis. The internal lists have to have equal length.
     pad_value: int, optional
         The value of the image padding in range [0, 255].
     pad_width: int, optional
         The width of the padding.
     """
+    max_length = 0
+    for seq in images_list:
+        if not isinstance(seq, list):
+            max_length = max(max_length, seq.shape[0])
+        else:
+            max_length = max(max_length, len(seq))
+    
     seq_list = []
     for i in xrange(len(images_list)):
-        seq_list.append(_to_single_sequence(images_list[i], pad_value, pad_width))
+        seq_list.append(_to_single_sequence(images_list[i], pad_value, pad_width, max_length))
         
     # concatenate
     concat_image = np.concatenate(seq_list, axis=0)
