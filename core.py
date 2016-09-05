@@ -452,8 +452,12 @@ class AbstractRuntime(object):
         
         batches_per_epoch = dataset.size // batch_size
         num_batches = batches_per_epoch
+        
+        # get current gstep from session
+        gstep = self.gstep
+        
         print("@{:6d}: Starting {} (batch-size: {}, dataset-size: {}):" \
-              .format(self.gstep, title, batch_size, dataset.size))
+              .format(gstep, title, batch_size, dataset.size))
         
         dataset.reset()
         loss_sum = 0
