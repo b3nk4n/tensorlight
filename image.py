@@ -302,8 +302,8 @@ def ss_ssim(img1, img2, patch_size=11, sigma=1.5, L=255, K1=0.01, K2=0.03, level
 
 
 def psnr(img1, img2, max_value=1.0):
-    """Computes the Peak Signal to Noise Ratio (PSNR) error between the generated images and the ground
-       truth images. Although a higher PSNR generally indicates that the reconstruction is of higher quality,
+    """Computes the Peak Signal to Noise Ratio (PSNR) error between two images.
+       Although a higher PSNR generally indicates that the reconstruction is of higher quality,
        in some cases it may not. One has to be extremely careful with the range of validity of this metric;
        it is only conclusively valid when it is used to compare results from the same codec (or codec type)
        and same content.
@@ -316,7 +316,7 @@ def psnr(img1, img2, max_value=1.0):
         in scale [0, 255].
     Returns
     ----------
-    psnr_values: float32 Tensor
+    mean(psnr_values): float32 Tensor
         The mean Peak Signal to Noise Ratio error over each frame in the batch in range [0, 99].
         Typical values for the PSNR in lossy image and video compression are between 30 and 50 dB,
         provided the bit depth is 8 bits, where higher is better. For 16-bit data typical values for
@@ -326,7 +326,6 @@ def psnr(img1, img2, max_value=1.0):
     with tf.name_scope('PSNR'):
         shape = tf.shape(img1)
 
-        # N = number of pixels
         N = tf.to_float(shape[1] * shape[2] * shape[3])
         MSE = tf.reduce_sum(tf.square(img2 - img1), [1, 2, 3])
 
@@ -337,3 +336,48 @@ def psnr(img1, img2, max_value=1.0):
         psnr_values = tf.minimum(99.0, psnr_values)
         
         return tf.reduce_mean(psnr_values)
+    
+def sharp_diff(img1, img2, max_value=1.0):
+    """Computes the Sharpness Difference (Sharp. Diff.) error between between two images.
+    Parameters
+    ----------
+    img1: Tensor [batch_size, h, w, c] of type float32
+        The first image. Expected to have values in scale [0, max_value].
+    img2: Tensor [batch_size, h, w, c] of type float32
+        The second image. Expected to have values in scale [0, max_value].
+    max_value: float, optional
+        The maximum possible values of image intensities. Alternatively, use 255.0 for images
+        in scale [0, 255].
+    Returns
+    ----------
+    mean(sdiff_values): float32 Tensor
+        The mean Sharpness Differences error over each frame in the batch.
+    """
+    with tf.name_scope('SHARP_DIFF'):
+        shape = img1.get_shape().as_list()
+        
+        N = tf.to_float(shape[1] * shape[2] * shape[3])
+
+        # gradient difference
+        # create filters [-1, 1] and [[1],[-1]] for diffing to the left and down respectively.
+        pos = tf.constant(np.identity(shape[3]), dtype=tf.float32)
+        neg = -1 * pos
+        filter_x = tf.expand_dims(tf.pack([neg, pos]), 0)  # [-1, 1]
+        filter_y = tf.pack([tf.expand_dims(pos, 0), tf.expand_dims(neg, 0)])  # [[1],[-1]]
+        
+        img1_dx = tf.abs(tf.nn.conv2d(img1, filter_x, [1, 1, 1, 1], padding='SAME'))
+        img1_dy = tf.abs(tf.nn.conv2d(img1, filter_y, [1, 1, 1, 1], padding='SAME'))
+        img2_dx = tf.abs(tf.nn.conv2d(img2, filter_x, [1, 1, 1, 1], padding='SAME'))
+        img2_dy = tf.abs(tf.nn.conv2d(img2, filter_y, [1, 1, 1, 1], padding='SAME'))
+
+        img1_grad_sum = img1_dx + img1_dy
+        img2_grad_sum = img2_dx + img2_dy
+
+        grad_diff = tf.abs(img2_grad_sum - img1_grad_sum)
+
+        sdiff_values = 10 * tt.math.log10(max_value / ((1 / N) * tf.reduce_sum(grad_diff, [1, 2, 3])))
+        
+        # define 99 as the maximum value, as values can get until infinity, as we do it for PSNR
+        sdiff_values = tf.minimum(99.0, sdiff_values)
+        
+        return tf.reduce_mean(sdiff_values)
