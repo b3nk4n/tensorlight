@@ -9,6 +9,7 @@ import image
 import init
 import inputs
 import loss
+import math
 import model
 import network
 import recurrent
