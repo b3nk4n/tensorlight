@@ -452,9 +452,8 @@ class AbstractRuntime(object):
         
         batches_per_epoch = dataset.size // batch_size
         num_batches = batches_per_epoch
-        gstep = self.session.run(self._global_step)
         print("@{:6d}: Starting {} (batch-size: {}, dataset-size: {}):" \
-              .format(gstep, title, batch_size, dataset.size))
+              .format(self.gstep, title, batch_size, dataset.size))
         
         dataset.reset()
         loss_sum = 0
@@ -521,6 +520,11 @@ class AbstractRuntime(object):
            Use the members ds.train, ds.valid or ds.test
            of the returned tuple."""
         return self._datasets
+    
+    @property
+    def gstep(self):
+        """Gets the global step value as integer."""
+        return self.session.run(self._global_step)
     
     @property
     def placeholders(self):
