@@ -13,15 +13,77 @@ FRAME_HEIGHT = 240
 FRAME_WIDTH = 320
 FRAME_CHANNELS = 3
 
+
+def _serialize_frame_sequences(dataset_path, image_size, serialized_sequence_length):
+    sequence_files = tt.utils.path.get_filenames(dataset_path, '*.seq')
+    
+    if len(sequence_files) > 0:
+        # Test if image_size has changed
+        example = np.fromfile(sequence_files[0], np.uint8)
+        old_ndim = np.prod(example.shape)
+        new_ndim = np.prod(image_size) * serialized_sequence_length
+        if old_ndim == new_ndim:
+            # Reuse old serialized files
+            dataset_size = len(sequence_files)
+            print("Found {} serialized frame sequences. Skipping serialization.".format(dataset_size))
+            return dataset_size
+        else:
+            print("Change in image properties detected. Deleting previous serialized *.seq files...")
+            # remove old serialized files
+            for sfile in sequence_files:
+                os.remove(sfile)            
+
+    video_filenames = tt.utils.path.get_filenames(dataset_path, '*.mpg')
+    frame_scale_factor = image_size[0] / float(FRAME_HEIGHT)
+    progress = tt.utils.ui.ProgressBar(len(video_filenames))
+    success_counter = 0
+    bounds_counter = 0
+    short_counter = 0
+    print("Serializing frame sequences...")
+    for i, video_filename in enumerate(video_filenames):
+        with tt.utils.video.VideoReader(video_filename) as vr:
+            frames = []
+            for f in xrange(serialized_sequence_length):
+                frame = vr.next_frame(frame_scale_factor)
+                if frame is not None:
+                    # ensure frame is not too large
+                    h, w, c = np.shape(frame)
+                    if h > image_size[0] or w > image_size[1]:
+                        frame = frame[:image_size[0], :image_size[1], :]
+                    if not h < image_size[0] and not w < image_size[1]:
+                        frame = np.reshape(frame, [image_size[0], image_size[1], -1])
+                        if image_size[2] == 1:
+                            frame = tt.utils.image.to_grayscale(frame)
+                        frames.append(frame)
+                    else:
+                        bounds_counter += 1
+                        break
+                else:
+                    short_counter += 1
+                    break
+
+            if len(frames) == serialized_sequence_length:
+                # TODO: seqences from one folder to a single file?
+                seq_filepath = os.path.splitext(video_filename)[0] + '.seq'
+                tt.utils.image.write_as_binary(seq_filepath, np.asarray(frames))
+                success_counter += 1
+        progress.update(i+1)
+    print("Successfully extracted {} frame sequences. Too short: {}, Too small bounds: {}" \
+          .format(success_counter, short_counter, bounds_counter))
+    return success_counter
+
+
 class UCF11TrainDataset(base.AbstractQueueDataset):
     """UCF-11 sports dataset that creates a bunch of binary frame sequences
        and uses a file queue for multi-threaded input reading.
+       
+       References: http://crcv.ucf.edu/data/UCF_YouTube_Action.php
     """
     def __init__(self, input_seq_length=5, target_seq_length=5,
                  image_size=(FRAME_HEIGHT, FRAME_WIDTH, FRAME_CHANNELS),
                  min_examples_in_queue=512, queue_capacitiy=1024, num_threads=8,
                  serialized_sequence_length=30, do_distortion=True):
-        """Creates a dataset instance that uses a queue.
+        """Creates a training dataset instance that uses a queue.
         Parameters
         ----------
         dataset_size: int, optional
@@ -58,71 +120,12 @@ class UCF11TrainDataset(base.AbstractQueueDataset):
             print 'Please set the correct path to UCF11 dataset. Might be caused by a download error.'
             sys.exit()
         
-        dataset_size = UCF11TrainDataset._serialize_frame_sequences(dataset_path,
-                                                                    image_size,
-                                                                    serialized_sequence_length)
+        dataset_size = _serialize_frame_sequences(dataset_path,
+                                                  image_size,
+                                                  serialized_sequence_length)
         super(UCF11TrainDataset, self).__init__(dataset_size, [input_seq_length, image_size[0], image_size[1], image_size[2]],
                                                 [target_seq_length, image_size[0], image_size[1], image_size[2]],
                                                 min_examples_in_queue, queue_capacitiy, num_threads)
-
-    @staticmethod
-    def _serialize_frame_sequences(dataset_path, image_size, serialized_sequence_length):
-        sequence_files = tt.utils.path.get_filenames(dataset_path, '*.seq')
-        
-        if len(sequence_files) > 0:
-            # Test if image_size has changed
-            example = np.fromfile(sequence_files[0], np.uint8)
-            old_ndim = np.prod(example.shape)
-            new_ndim = np.prod(image_size) * serialized_sequence_length
-            if old_ndim == new_ndim:
-                # Reuse old serialized files
-                dataset_size = len(sequence_files)
-                print("Found {} serialized frame sequences. Skipping serialization.".format(dataset_size))
-                return dataset_size
-            else:
-                print("Change in image properties detected. Deleting previous serialized *.seq files...")
-                # remove old serialized files
-                for sfile in sequence_files:
-                    os.remove(sfile)            
-
-        video_filenames = tt.utils.path.get_filenames(dataset_path, '*.mpg')
-        frame_scale_factor = image_size[0] / float(FRAME_HEIGHT)
-        progress = tt.utils.ui.ProgressBar(len(video_filenames))
-        success_counter = 0
-        bounds_counter = 0
-        short_counter = 0
-        print("Serializing frame sequences...")
-        for i, video_filename in enumerate(video_filenames):
-            with tt.utils.video.VideoReader(video_filename) as vr:
-                frames = []
-                for f in xrange(serialized_sequence_length):
-                    frame = vr.next_frame(frame_scale_factor)
-                    if frame is not None:
-                        # ensure frame is not too large
-                        h, w, c = np.shape(frame)
-                        if h > image_size[0] or w > image_size[1]:
-                            frame = frame[:image_size[0], :image_size[1], :]
-                        if not h < image_size[0] and not w < image_size[1]:
-                            frame = np.reshape(frame, [image_size[0], image_size[1], -1])
-                            if image_size[2] == 1:
-                                frame = tt.utils.image.to_grayscale(frame)
-                            frames.append(frame)
-                        else:
-                            bounds_counter += 1
-                            break
-                    else:
-                        short_counter += 1
-                        break
-
-                if len(frames) == serialized_sequence_length:
-                    # TODO: seqences from one folder to a single file?
-                    seq_filepath = os.path.splitext(video_filename)[0] + '.seq'
-                    tt.utils.image.write_as_binary(seq_filepath, np.asarray(frames))
-                    success_counter += 1
-            progress.update(i+1)
-        print("Successfully extracted {} frame sequences. Too short: {}, Too small bounds: {}" \
-              .format(success_counter, short_counter, bounds_counter))
-        return success_counter
     
     def _read_record(self, filename_queue):
         
@@ -173,8 +176,9 @@ class UCF11TrainDataset(base.AbstractQueueDataset):
             filename_queue = tf.train.string_input_producer(seq_filenames)
             seq_record = self._read_record(filename_queue)  
 
+            # convert to float of scale [0.0, 1.0]
             reshaped_seq = tf.cast(seq_record.data, tf.float32)
-            reshaped_seq = (reshaped_seq - 127.5) / 127.5
+            reshaped_seq = reshaped_seq / 255
     
             input_seq_length = self.input_shape[0]
             target_seq_length = self.target_shape[0]
@@ -197,6 +201,105 @@ class UCF11TrainDataset(base.AbstractQueueDataset):
                                         self._min_examples_in_queue, self._queue_capacitiy,
                                         shuffle=True, num_threads=self._num_threads)
 
+    @property
+    def serialized_sequence_length(self):
+        """Gets the serialized sequence length"""
+        return self._serialized_sequence_length
+    
+    @property
+    def do_distortion(self):
+        """Gets whether distorion is activated."""
+        return self._do_distortion
+    
+    
+class UCF11ValidDataset(base.AbstractDataset):    
+    """UCF-11 sports dataset that creates a bunch of binary frame sequences.
+       This is a pretty bad validation set implementation, as it uses the same
+       examples as the training set, with only these differences:
+           - It uses no no random contrast, brightness.
+           - All frames are flipped horizontaly, just to be different from
+             a training set without distortion.
+       
+       References: http://crcv.ucf.edu/data/UCF_YouTube_Action.php
+    """
+    def __init__(self, input_seq_length=5, target_seq_length=5,
+                 image_size=(FRAME_HEIGHT, FRAME_WIDTH, FRAME_CHANNELS),
+                 serialized_sequence_length=30, do_distortion=True):
+        """Creates a validation dataset instance.
+        Parameters
+        ----------
+        dataset_size: int, optional
+            The dataset site.
+        input_seq_length: int, optional
+            The length of the input sequence.
+        target_seq_length: length
+            The length of the target sequence.
+        image_size: list(int) of shape [h, w, c]
+            The image size, how the data with default scale [240, 320, 3]
+            should be scaled to.
+        serialized_sequence_length: int, optional
+            The sequence length of each serialized file.
+        do_distortion: Boolean, optional
+            Whether image distortion should be performed or not.
+            Can have a very bad influence on performance.
+        """
+        self._serialized_sequence_length = serialized_sequence_length
+        self._do_distortion = do_distortion
+        
+        try:
+            rar_path = tt.utils.data.download(UCF11_URL, 'tmp')
+            dataset_path = tt.utils.data.extract(rar_path, 'tmp')
+            self._data_dir = dataset_path
+        except:
+            print 'Please set the correct path to UCF11 dataset. Might be caused by a download error.'
+            sys.exit()
+        
+        dataset_size = _serialize_frame_sequences(dataset_path,
+                                                  image_size,
+                                                  serialized_sequence_length)
+        
+        self._file_name_list = tt.utils.path.get_filenames(self._data_dir, '*.seq')
+        self._indices = range(dataset_size)
+        self._row = 0
+        
+        super(UCF11ValidDataset, self).__init__(dataset_size, [input_seq_length, image_size[0], image_size[1], image_size[2]],
+                                                [target_seq_length, image_size[0], image_size[1], image_size[2]])
+
+    @tt.utils.attr.override
+    def get_batch(self, batch_size):
+        if self._row + batch_size >= self.size:
+            self.reset()
+        start = self._row
+        end = start + batch_size
+        ind_range = self._indices[start:end]
+        self._row += batch_size
+        
+        # get next filenames
+        file_names = [self._file_name_list[i] for i in ind_range]
+        
+        # load serialized sequences
+        seq_input_list = []
+        seq_target_list = []
+        for f in file_names:
+            current = tt.utils.image.read_as_binary(f, dtype=np.uint8)
+            current = np.reshape(current, [self.serialized_sequence_length] + self.input_shape[1:])
+            seq_input_list.append(current[0:self.input_shape[0]])
+            seq_target_list.append(current[self.input_shape[0]:self.input_shape[0]+self.target_shape[0]])
+        
+        input_sequence = np.stack(seq_input_list)
+        target_sequence = np.stack(seq_target_list)
+        
+        # convert to float of scale [0.0, 1.0]
+        inputs = input_sequence.astype(np.float32) / 255
+        targets = target_sequence.astype(np.float32) / 255
+        
+        return inputs, targets
+    
+    @tt.utils.attr.override
+    def reset(self):
+        self._row = 0
+        np.random.shuffle(self._indices)
+        
     @property
     def serialized_sequence_length(self):
         """Gets the serialized sequence length"""

@@ -34,7 +34,7 @@ class MNISTBaseDataset(base.AbstractDataset):
 
     @tt.utils.attr.override
     def get_batch(self, batch_size):
-        if self._row + batch_size >= self._data.shape[0]:
+        if self._row + batch_size >= self.size:
             self.reset()
         start = self._row
         end = start + batch_size

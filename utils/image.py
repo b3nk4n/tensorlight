@@ -62,9 +62,27 @@ def write_as_binary(filepath, image):
     image: ndarray(float/int)
         The image data.
     """
+    # TODO: use ndarray.tofile?
     with open(filepath, "w") as f:
         image_bytes = image.tobytes()
         f.write(image_bytes)
+        
+        
+def read_as_binary(filepath, dtype=np.uint8):
+    """Reads an image as a binary file from the specified path.
+    Parameters
+    ----------
+    filepath: str
+        The path to the file.
+    datatype: type
+        The type/numpy.type of the data. The result is a 1D-array
+        and has to be reshaped.
+    Returns
+    ----------
+    image: ndarray(float/int)
+        The image data.
+    """
+    return np.fromfile(filepath, dtype)
 
 
 def resize(image, scale=None, size=None):
