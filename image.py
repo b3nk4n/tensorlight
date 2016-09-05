@@ -1,5 +1,6 @@
 import numpy as np
 import tensorflow as tf
+import tensortools as tt
 
 
 def random_distortion(image, contrast_lower=0.2, contrast_upper=1.8, brightness_max_delta=0.2, seed=None):
@@ -298,3 +299,41 @@ def ss_ssim(img1, img2, patch_size=11, sigma=1.5, L=255, K1=0.01, K2=0.03, level
 
         ssssim_value = ssim(img1, img2, patch_size, sigma, L, K1, K2)
     return ssssim_value
+
+
+def psnr(img1, img2, max_value=1.0):
+    """Computes the Peak Signal to Noise Ratio (PSNR) error between the generated images and the ground
+       truth images. Although a higher PSNR generally indicates that the reconstruction is of higher quality,
+       in some cases it may not. One has to be extremely careful with the range of validity of this metric;
+       it is only conclusively valid when it is used to compare results from the same codec (or codec type)
+       and same content.
+    img1: Tensor [batch_size, h, w, c] of type float32
+        The first image. Expected to have values in scale [0, max_value].
+    img2: Tensor [batch_size, h, w, c] of type float32
+        The second image. Expected to have values in scale [0, max_value].
+    max_value: float, optional
+        The maximum possible values of image intensities. Alternatively, use 255.0 for images
+        in scale [0, 255].
+    Returns
+    ----------
+    psnr_values: float32 Tensor
+        The mean Peak Signal to Noise Ratio error over each frame in the batch in range [0, 99].
+        Typical values for the PSNR in lossy image and video compression are between 30 and 50 dB,
+        provided the bit depth is 8 bits, where higher is better. For 16-bit data typical values for
+        the PSNR are between 60 and 80 dB. Acceptable values for wireless transmission quality 
+        loss are considered to be about 20 dB to 25 dB.
+    """
+    with tf.name_scope('PSNR'):
+        shape = tf.shape(img1)
+
+        # N = number of pixels
+        N = tf.to_float(shape[1] * shape[2] * shape[3])
+        MSE = tf.reduce_sum(tf.square(img2 - img1), [1, 2, 3])
+
+        psnr_values = 10 * tt.math.log10(tf.square(max_value) / ((1 / N) * MSE))
+        
+        # define 99 as the maximum value, as values can get until infinity, as in:
+        # http://stackoverflow.com/questions/26210055/psnr-of-image-using-matlab
+        psnr_values = tf.minimum(99.0, psnr_values)
+        
+        return tf.reduce_mean(psnr_values)
