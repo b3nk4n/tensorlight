@@ -1,5 +1,6 @@
 import sys
 import os
+import random
 
 import numpy as np
 import tensorflow as tf
@@ -35,17 +36,24 @@ def _serialize_frame_sequences(dataset_path, image_size, serialized_sequence_len
 
     video_filenames = tt.utils.path.get_filenames(dataset_path, '*.mpg')
     frame_scale_factor = image_size[0] / float(FRAME_HEIGHT)
-    progress = tt.utils.ui.ProgressBar(len(video_filenames))
+    
+    print("Serializing frame sequences...")
     success_counter = 0
     bounds_counter = 0
     short_counter = 0
-    print("Serializing frame sequences...")
+    progress = tt.utils.ui.ProgressBar(len(video_filenames))
     for i, video_filename in enumerate(video_filenames):
         with tt.utils.video.VideoReader(video_filename) as vr:
-            frames = []
-            for f in xrange(serialized_sequence_length):
-                frame = vr.next_frame(frame_scale_factor)
-                if frame is not None:
+            # until we reach the end of the video
+            clip_id = 0
+            while True:
+                frames = []
+                for f in xrange(serialized_sequence_length):
+                    frame = vr.next_frame(frame_scale_factor)
+                    
+                    if frame is None:
+                        break
+                        
                     # ensure frame is not too large
                     h, w, c = np.shape(frame)
                     if h > image_size[0] or w > image_size[1]:
@@ -56,17 +64,20 @@ def _serialize_frame_sequences(dataset_path, image_size, serialized_sequence_len
                             frame = tt.utils.image.to_grayscale(frame)
                         frames.append(frame)
                     else:
+                        # clip has wrong bounds
                         bounds_counter += 1
                         break
-                else:
-                    short_counter += 1
-                    break
 
-            if len(frames) == serialized_sequence_length:
-                # TODO: seqences from one folder to a single file?
-                seq_filepath = os.path.splitext(video_filename)[0] + '.seq'
-                tt.utils.image.write_as_binary(seq_filepath, np.asarray(frames))
-                success_counter += 1
+                if len(frames) == serialized_sequence_length:
+                    seq_filepath = "{}-{}.seq".format(os.path.splitext(video_filename)[0], clip_id)
+                    tt.utils.image.write_as_binary(seq_filepath, np.asarray(frames))
+                    success_counter += 1
+                    clip_id += 1
+                else:
+                    if clip_id == 0:
+                        # clip end reached in first run (video was not used at all!)
+                        short_counter += 1
+                    break
         progress.update(i+1)
     print("Successfully extracted {} frame sequences. Too short: {}, Too small bounds: {}" \
           .format(success_counter, short_counter, bounds_counter))
@@ -277,12 +288,23 @@ class UCF11ValidDataset(base.AbstractDataset):
         # get next filenames
         file_names = [self._file_name_list[i] for i in ind_range]
         
+        # evaluate if we to random flip
+        do_flip = False
+        if self.do_distortion:
+            if random.random() > 0.5:
+                do_flip = True
+        
         # load serialized sequences
         seq_input_list = []
         seq_target_list = []
         for f in file_names:
             current = tt.utils.image.read_as_binary(f, dtype=np.uint8)
             current = np.reshape(current, [self.serialized_sequence_length] + self.input_shape[1:])
+            
+            if do_flip:
+                #current = np.flip(current, axis=-2) # only available in numpy 1.1.12 dev0
+                current = current[:,:,::-1,:] # horizontal flip
+            
             seq_input_list.append(current[0:self.input_shape[0]])
             seq_target_list.append(current[self.input_shape[0]:self.input_shape[0]+self.target_shape[0]])
         
