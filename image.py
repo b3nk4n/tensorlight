@@ -329,7 +329,7 @@ def psnr(img1, img2, max_value=1.0):
         N = tf.to_float(shape[1] * shape[2] * shape[3])
         MSE = tf.reduce_sum(tf.square(img2 - img1), [1, 2, 3])
 
-        psnr_values = 10 * tt.math.log10(tf.square(max_value) / ((1 / N) * MSE))
+        psnr_values = 10 * tt.tfmath.log10(tf.square(max_value) / ((1 / N) * MSE))
         
         # define 99 as the maximum value, as values can get until infinity, as in:
         # http://stackoverflow.com/questions/26210055/psnr-of-image-using-matlab
@@ -375,7 +375,7 @@ def sharp_diff(img1, img2, max_value=1.0):
 
         grad_diff = tf.abs(img2_grad_sum - img1_grad_sum)
 
-        sdiff_values = 10 * tt.math.log10(max_value / ((1 / N) * tf.reduce_sum(grad_diff, [1, 2, 3])))
+        sdiff_values = 10 * tt.tfmath.log10(max_value / ((1 / N) * tf.reduce_sum(grad_diff, [1, 2, 3])))
         
         # define 99 as the maximum value, as values can get until infinity, as we do it for PSNR
         sdiff_values = tf.minimum(99.0, sdiff_values)
