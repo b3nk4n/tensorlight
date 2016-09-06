@@ -93,7 +93,7 @@ class UCF11TrainDataset(base.AbstractQueueDataset):
     def __init__(self, input_seq_length=5, target_seq_length=5,
                  image_size=(FRAME_HEIGHT, FRAME_WIDTH, FRAME_CHANNELS),
                  min_examples_in_queue=512, queue_capacitiy=1024, num_threads=8,
-                 serialized_sequence_length=30, do_distortion=True):
+                 serialized_sequence_length=30, do_distortion=True, crop_size=None):
         """Creates a training dataset instance that uses a queue.
         Parameters
         ----------
@@ -118,9 +118,16 @@ class UCF11TrainDataset(base.AbstractQueueDataset):
         do_distortion: Boolean, optional
             Whether image distortion should be performed or not.
             Can have a very bad influence on performance.
+        crop_size: tuple(int) or None, optional
+            The size (height, width) to randomly crop the images.
         """
+        if crop_size is not None:
+            assert image_size[0] > crop_size[0] and image_size[1] > crop_size[1], \
+                "Image size has to be larger than the crop size."
+        
         self._serialized_sequence_length = serialized_sequence_length
         self._do_distortion = do_distortion
+        self._crop_size = crop_size
         
         try:
             rar_path = tt.utils.data.download(UCF11_URL, 'tmp')
@@ -188,24 +195,33 @@ class UCF11TrainDataset(base.AbstractQueueDataset):
             seq_record = self._read_record(filename_queue)  
 
             # convert to float of scale [0.0, 1.0]
-            reshaped_seq = tf.cast(seq_record.data, tf.float32)
-            reshaped_seq = reshaped_seq / 255
+            seq_data = tf.cast(seq_record.data, tf.float32)
+            seq_data = seq_data / 255
     
             input_seq_length = self.input_shape[0]
             target_seq_length = self.target_shape[0]
             total_seq_length = input_seq_length + target_seq_length
+            
+            if self._crop_size is not None:
+                with tf.name_scope('random_crop'):
+                    seq_data = tf.random_crop(seq_data,
+                                              [total_seq_length,
+                                               self._crop_size[0],
+                                               self._crop_size[1],
+                                               self.input_shape[3]])
+            
             if self._do_distortion:
-                with tf.name_scope('distort_inputs'):
+                with tf.name_scope('distortion'):
                     images_to_distort = []
                     for i in xrange(total_seq_length):
-                        images_to_distort.append(reshaped_seq[i,:,:,:])
+                        images_to_distort.append(seq_data[i,:,:,:])
 
                     distorted_images = tt.image.equal_random_distortion(images_to_distort)
                     sequence_inputs = tf.pack(distorted_images[0:input_seq_length], axis=0)
                     sequence_targets = tf.pack(distorted_images[input_seq_length:], axis=0)
             else:
-                sequence_inputs = reshaped_seq[0:input_seq_length,:,:,:]
-                sequence_targets = reshaped_seq[input_seq_length:,:,:,:]
+                sequence_inputs = seq_data[0:input_seq_length,:,:,:]
+                sequence_targets = seq_data[input_seq_length:,:,:,:]
 
         return tt.inputs.generate_batch(sequence_inputs, sequence_targets,
                                         batch_size,
