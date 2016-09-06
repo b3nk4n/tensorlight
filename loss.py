@@ -318,3 +318,75 @@ def ss_ssim(img1, img2, patch_size=11, sigma=1.5, L=255, K1=0.01, K2=0.03, level
     """
     with tf.name_scope('SSSSIM_loss'):
         return 1 - tt.image.ss_ssim(img1, img2, patch_size, sigma, L, K1, K2, level)
+
+    
+def _gradient_differences(img1, img2):
+    """Computs the gradient differences between two images.
+       Based on: https://arxiv.org/abs/1511.05440 which is optimized and simplified
+       for efficiency.        
+    """
+    shape = img1.get_shape().as_list()
+        
+    # gradient difference
+    # create filters [-1, 1] and [[1],[-1]] for diffing to the left and down respectively.
+    pos = tf.constant(np.identity(shape[3]), dtype=tf.float32)
+    neg = -1 * pos
+    filter_x = tf.expand_dims(tf.pack([neg, pos]), 0)  # [-1, 1]
+    filter_y = tf.pack([tf.expand_dims(pos, 0), tf.expand_dims(neg, 0)])  # [[1],[-1]]
+
+    img1_dx = tf.abs(tf.nn.conv2d(img1, filter_x, [1, 1, 1, 1], padding='SAME'))
+    img1_dy = tf.abs(tf.nn.conv2d(img1, filter_y, [1, 1, 1, 1], padding='SAME'))
+    img2_dx = tf.abs(tf.nn.conv2d(img2, filter_x, [1, 1, 1, 1], padding='SAME'))
+    img2_dy = tf.abs(tf.nn.conv2d(img2, filter_y, [1, 1, 1, 1], padding='SAME'))
+
+    grad_diff_x = tf.abs(img2_dx - img1_dx)
+    grad_diff_y = tf.abs(img2_dy - img1_dy)
+    return grad_diff_x, grad_diff_y 
+
+    
+def gdl(img1, img2, alpha=1.0):
+    """Computes the (summed) Gradient Differences Loss (GDL) between two images on
+       the same scale, as defined in: https://arxiv.org/abs/1511.05440
+    Parameters
+    ----------
+    img1: Tensor [batch_size, h, w, c] of type float32
+        The first image. Expected to have values in scale [0, max_value].
+    img2: Tensor [batch_size, h, w, c] of type float32
+        The second image. Expected to have values in scale [0, max_value].
+    alpha: float, optional
+        Value that is in range [1, ...).
+    Returns
+    ----------
+    mean(gdl_values): float32 Tensor
+        The mean Gradient Differences error over each frame in the batch.
+        Attention: The value can get very large for non-similar images (>100k)
+    """
+    with tf.name_scope('GDL_loss'):
+        grad_diff_x, grad_diff_y = _gradient_differences(img1, img2)
+        gdl_values = tf.reduce_sum(grad_diff_x ** alpha + grad_diff_y ** alpha, [1, 2, 3])
+        return tf.reduce_mean(gdl_values)
+
+    
+def mgdl(img1, img2, alpha=1.0):
+    """Computes the Mean / per-pixel Gradient Differences Loss (GDL) between
+       two images on the same scale. This version takes the mean, that values
+       do not explode on large images and have a similar scale like other loss
+       functions.
+    Parameters
+    ----------
+    img1: Tensor [batch_size, h, w, c] of type float32
+        The first image. Expected to have values in scale [0, max_value].
+    img2: Tensor [batch_size, h, w, c] of type float32
+        The second image. Expected to have values in scale [0, max_value].
+    alpha: float, optional
+        Value that is in range [1, ...).
+    Returns
+    ----------
+    mean(gdl_values): float32 Tensor
+        The mean Gradient Differences error over each frame in the batch.
+        Attention: The value can get very large for non-similar images (>100k)
+    """
+    with tf.name_scope('mGDL_loss'):
+        grad_diff_x, grad_diff_y = _gradient_differences(img1, img2)
+        gdl_value = tf.reduce_mean(grad_diff_x ** alpha + grad_diff_y ** alpha)
+        return gdl_value
