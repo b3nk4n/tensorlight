@@ -157,6 +157,7 @@ class UCF101TrainDataset(base.AbstractQueueDataset):
         self._serialized_sequence_length = serialized_sequence_length
         self._do_distortion = do_distortion
         self._crop_size = crop_size
+        self._data_img_size = image_size
         
         rar_path = tt.utils.data.download(UCF101_URL, 'tmp')
 
@@ -187,9 +188,9 @@ class UCF101TrainDataset(base.AbstractQueueDataset):
             pass
         
         record = FrameSeqRecord()
-        record.height = self.input_shape[1]
-        record.width = self.input_shape[2]
-        record.depth = self.input_shape[3]
+        record.height = self._data_img_size = image_size[0]
+        record.width = self._data_img_size = image_size[1]
+        record.depth = self._data_img_size = image_size[2]
         
         input_seq_length = self.input_shape[0]
         target_seq_length = self.target_shape[0]

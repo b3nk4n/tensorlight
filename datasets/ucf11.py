@@ -128,6 +128,7 @@ class UCF11TrainDataset(base.AbstractQueueDataset):
         self._serialized_sequence_length = serialized_sequence_length
         self._do_distortion = do_distortion
         self._crop_size = crop_size
+        self._data_img_size = image_size
         
         try:
             rar_path = tt.utils.data.download(UCF11_URL, 'tmp')
@@ -141,8 +142,15 @@ class UCF11TrainDataset(base.AbstractQueueDataset):
         dataset_size = _serialize_frame_sequences(dataset_path,
                                                   image_size,
                                                   serialized_sequence_length)
-        super(UCF11TrainDataset, self).__init__(dataset_size, [input_seq_length, image_size[0], image_size[1], image_size[2]],
-                                                [target_seq_length, image_size[0], image_size[1], image_size[2]],
+        
+        if crop_size is None:
+            input_shape = [input_seq_length, image_size[0], image_size[1], image_size[2]]
+            target_shape = [target_seq_length, image_size[0], image_size[1], image_size[2]]
+        else:
+            input_shape = [input_seq_length, crop_size[0], crop_size[1], image_size[2]]
+            target_shape = [target_seq_length, crop_size[0], crop_size[1], image_size[2]]
+        
+        super(UCF11TrainDataset, self).__init__(dataset_size, input_shape, target_shape,
                                                 min_examples_in_queue, queue_capacitiy, num_threads)
     
     def _read_record(self, filename_queue):
@@ -151,9 +159,9 @@ class UCF11TrainDataset(base.AbstractQueueDataset):
             pass
         
         record = FrameSeqRecord()
-        record.height = self.input_shape[1]
-        record.width = self.input_shape[2]
-        record.depth = self.input_shape[3]
+        record.height = self._data_img_size[0]
+        record.width = self._data_img_size[1]
+        record.depth = self._data_img_size[2]
         
         input_seq_length = self.input_shape[0]
         target_seq_length = self.target_shape[0]
@@ -251,7 +259,7 @@ class UCF11ValidDataset(base.AbstractDataset):
     """
     def __init__(self, input_seq_length=5, target_seq_length=5,
                  image_size=(FRAME_HEIGHT, FRAME_WIDTH, FRAME_CHANNELS),
-                 serialized_sequence_length=30, do_distortion=True):
+                 serialized_sequence_length=30, do_distortion=True, crop_size=None):
         """Creates a validation dataset instance.
         Parameters
         ----------
@@ -269,9 +277,17 @@ class UCF11ValidDataset(base.AbstractDataset):
         do_distortion: Boolean, optional
             Whether image distortion should be performed or not.
             Can have a very bad influence on performance.
+        crop_size: tuple(int) or None, optional
+            The size (height, width) to randomly crop the images.
         """
+        if crop_size is not None:
+            assert image_size[0] > crop_size[0] and image_size[1] > crop_size[1], \
+                "Image size has to be larger than the crop size."
+        
         self._serialized_sequence_length = serialized_sequence_length
         self._do_distortion = do_distortion
+        self._crop_size = crop_size
+        self._data_img_size = image_size
         
         try:
             rar_path = tt.utils.data.download(UCF11_URL, 'tmp')
@@ -289,8 +305,14 @@ class UCF11ValidDataset(base.AbstractDataset):
         self._indices = range(dataset_size)
         self._row = 0
         
-        super(UCF11ValidDataset, self).__init__(dataset_size, [input_seq_length, image_size[0], image_size[1], image_size[2]],
-                                                [target_seq_length, image_size[0], image_size[1], image_size[2]])
+        if crop_size is None:
+            input_shape = [input_seq_length, image_size[0], image_size[1], image_size[2]]
+            target_shape = [target_seq_length, image_size[0], image_size[1], image_size[2]]
+        else:
+            input_shape = [input_seq_length, crop_size[0], crop_size[1], image_size[2]]
+            target_shape = [target_seq_length, crop_size[0], crop_size[1], image_size[2]]
+        
+        super(UCF11ValidDataset, self).__init__(dataset_size, input_shape, target_shape)
 
     @tt.utils.attr.override
     def get_batch(self, batch_size):
@@ -304,7 +326,12 @@ class UCF11ValidDataset(base.AbstractDataset):
         # get next filenames
         file_names = [self._file_name_list[i] for i in ind_range]
         
-        # evaluate if we to random flip
+        # do equal random crop?
+        if self._crop_size is not None:
+            offset_x = random.randint(0, self._data_img_size[1] - self._crop_size[1])
+            offset_y = random.randint(0, self._data_img_size[0] - self._crop_size[0])
+        
+        # do equal random flip?
         do_flip = False
         if self.do_distortion:
             if random.random() > 0.5:
@@ -315,7 +342,11 @@ class UCF11ValidDataset(base.AbstractDataset):
         seq_target_list = []
         for f in file_names:
             current = tt.utils.image.read_as_binary(f, dtype=np.uint8)
-            current = np.reshape(current, [self.serialized_sequence_length] + self.input_shape[1:])
+            current = np.reshape(current, [self.serialized_sequence_length] + list(self._data_img_size))
+            
+            if self._crop_size is not None:
+                current = current[:, offset_y:(offset_y+self._crop_size[0]),
+                                  offset_x:(offset_x+self._crop_size[1]),:]
             
             if do_flip:
                 #current = np.flip(current, axis=-2) # only available in numpy 1.1.12 dev0
