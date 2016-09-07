@@ -241,7 +241,7 @@ class MovingMNISTTestDataset(base.AbstractDataset):
                                                      target_shape=[target_seq_length, 64, 64, 1])
     @tt.utils.attr.override
     def get_batch(self, batch_size):
-        if self._row >= self.size:
+        if self._row + batch_size >= self.size:
             self.reset()
 
         batch_inputs = self._data[self._row:self._row+batch_size,
