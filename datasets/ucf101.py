@@ -46,21 +46,29 @@ def _read_test_splits(dir_path):
 
 
 def _serialize_frame_sequences(dataset_path, file_list, image_size, serialized_sequence_length):
-    if len(file_list) > 0:
-        # Test if image_size has changed
-        example = np.fromfile(file_list[0], np.uint8)
+    seq_file_list = []
+    for f in file_list:
+        # change extension to *.seq
+        seq_file_list.append("{}.seq".format(os.path.splitext(f)[0]))
+    
+    # Test if image_size has changed
+    first_seq_file = os.path.join(dataset_path, seq_file_list[0])
+    if os.path.isfile(first_seq_file):
+        example = np.fromfile(first_seq_file, np.uint8)
+        print("dims", old_ndim, new_ndim)
         old_ndim = np.prod(example.shape)
         new_ndim = np.prod(image_size) * serialized_sequence_length
         if old_ndim == new_ndim:
             # Reuse old serialized files
-            dataset_size = len(file_list)
+            dataset_size = len(seq_file_list)
             print("Found {} serialized frame sequences. Skipping serialization.".format(dataset_size))
             return dataset_size
         else:
             print("Change in image properties detected. Deleting previous serialized *.seq files...")
             # remove old serialized files
-            for sfile in sequfile_listence_files:
-                os.remove(sfile)            
+            for sfile in seq_file_list:
+                file_to_delete = os.path.join(dataset_path, sfile)
+                os.remove(file_to_delete)            
 
     frame_scale_factor = image_size[0] / float(FRAME_HEIGHT)
     
@@ -188,9 +196,9 @@ class UCF101TrainDataset(base.AbstractQueueDataset):
             pass
         
         record = FrameSeqRecord()
-        record.height = self._data_img_size = image_size[0]
-        record.width = self._data_img_size = image_size[1]
-        record.depth = self._data_img_size = image_size[2]
+        record.height = self._data_img_size[0]
+        record.width = self._data_img_size[1]
+        record.depth = self._data_img_size[2]
         
         input_seq_length = self.input_shape[0]
         target_seq_length = self.target_shape[0]
