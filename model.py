@@ -96,7 +96,7 @@ class AbstractModel(object):
         else:
             # we have to wrap this with identity, because in in other case it
             # would rise a summary-writer error that this loss was already added
-            return tf.identity(loss, name="loss_with_reg*")
+            return tf.identity(loss, name="loss_with_reg")
 
     @property
     def batch_size(self):
