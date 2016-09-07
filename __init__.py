@@ -9,7 +9,7 @@ import image
 import init
 import inputs
 import loss
-import tfmath
+import mathex
 import model
 import network
 import recurrent
