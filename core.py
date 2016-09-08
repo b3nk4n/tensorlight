@@ -103,7 +103,7 @@ class AbstractRuntime(object):
         self._model = model
         
     def build(self, initial_lr, lr_decay_step_interval=sys.maxint, lr_decay_factor=1.0, lr_decay_staircase=True,
-              is_autoencoder=False, checkpoint_file=None):
+              is_autoencoder=False, checkpoint_file=None, verbose=False):
         """ Builds the model. This must be calles before training, validation, testing or prediction.
         Parameters
         ----------
@@ -121,6 +121,8 @@ class AbstractRuntime(object):
         checkpoint_file: str, optional
             The filename of the checkpoint file withing 'train_dir' to restore.
             Use 'LATEST' or 'tt.core.LATEST_CHECKPOINT' to restore the lastest file.
+        verbose: Boolean, optional
+            Set to True to show additional construction/variable information.
         """
         with self.graph.as_default():
             self._ph.inputs = tf.placeholder(tf.float32, [None] + self._datasets.train.input_shape, "X")
@@ -206,8 +208,9 @@ class AbstractRuntime(object):
             if isinstance(self.datasets.train, tt.datasets.base.AbstractQueueDataset):
                 self._threads = tf.train.start_queue_runners(sess=self.session, coord=self._coord)
                 
-            params_count = tt.core.trainable_parameters_count()
-            print("Total model-params: {}".format(params_count))
+            # Model information
+            tt.core.show_trainable_parameters(verbose)
+            
         
     def train(self, batch_size, steps=-1, epochs=-1, train_feeds={}, valid_feeds={},
               on_validate=None, display_step=10, summary_steps=100, checkpoint_steps=1000,
@@ -763,12 +766,8 @@ class MultiGpuRuntime(AbstractRuntime):
 
     
     
-def trainable_parameters_count():
-    """Gets the number of trainable parameters in this graph.
-    Returns
-    ----------
-    The number of trainable variables (= model parameters).
-    """
+def show_trainable_parameters(verbose=False):
+    """Shows the number of trainable parameters in this graph."""
     total_parameters = 0
     for variable in tf.trainable_variables():
         # shape is an array of tf.Dimension
@@ -776,5 +775,9 @@ def trainable_parameters_count():
         variable_parametes = 1
         for dim in shape:
             variable_parametes *= dim.value
+        if verbose:
+            print("{}: {}".format(variable.name, variable_parametes))
         total_parameters += variable_parametes
-    return total_parameters
+    if verbose:
+        print("----------------------------------------")
+    print("Total model-params: {}".format(total_parameters))
