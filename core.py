@@ -8,6 +8,7 @@ from abc import ABCMeta, abstractmethod
 
 import numpy as np
 import tensorflow as tf
+from tensorflow.python import control_flow_ops
 import tensortools as tt
 
 
@@ -182,6 +183,14 @@ class AbstractRuntime(object):
             variables_averages_op = variable_averages.apply(tf.trainable_variables())
 
             train_op = tf.group(apply_gradient_op, variables_averages_op, name="train_op")
+            
+            # fetch update ops, that is required e.g. for tf.contrib.layers.batch_norm
+            update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
+            if update_ops:
+                if verbose:
+                    print("Found {} update ops.".format(len(update_ops)))
+                updates = tf.tuple(update_ops)
+                total_loss = control_flow_ops.with_dependencies(updates, total_loss)
 
             self._train_op = train_op
             self._summaries = summaries
@@ -211,6 +220,22 @@ class AbstractRuntime(object):
             # Model information
             tt.core.show_trainable_parameters(verbose)
             
+    @abstractmethod
+    def _build_computation_graph(self, x, y, opt):
+        """Builds the (device or runtime specific) computation graph.
+        Parameters
+        ----------
+        x: n-D Tensor
+            The inputs tensor.
+        y: m-D Tensor
+            The targets tensor.
+        opt: Optimizer
+            The TensorFlow optimizer instance.
+        Returns
+        ----------
+        A tuple of (grads, summaries, total_loss, loss)
+        """
+        pass
         
     def train(self, batch_size, steps=-1, epochs=-1, train_feeds={}, valid_feeds={},
               on_validate=None, display_step=10, summary_steps=100, checkpoint_steps=1000,
@@ -362,23 +387,6 @@ class AbstractRuntime(object):
 
             except tf.errors.OutOfRangeError:
                 print("Done training -- epoch limit reached")
-
-    @abstractmethod
-    def _build_computation_graph(self, x, y, opt):
-        """Builds the (device or runtime specific) computation graph.
-        Parameters
-        ----------
-        x: n-D Tensor
-            The inputs tensor.
-        y: m-D Tensor
-            The targets tensor.
-        opt: Optimizer
-            The TensorFlow optimizer instance.
-        Returns
-        ----------
-        A tuple of (grads, summaries, total_loss, loss)
-        """
-        pass
     
     def predict(self, inputs, feeds={}):
         """Performs a prediction using the trained model.
