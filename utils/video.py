@@ -1,11 +1,11 @@
 import os
-import cv2
 import math
+
+import cv2
 import numpy as np
 import tensortools as tt
 
-import numpy as np
-import moviepy.editor as mpy
+from moviepy.video.io import ImageSequenceClip
 
 
 class VideoReader():
@@ -166,7 +166,7 @@ def write_gif(filepath, images, fps=24):
     if not os.path.exists(filepath):
         os.makedirs(filepath)
     
-    clip = mpy.ImageSequenceClip(images, fps=fps)
+    clip = ImageSequenceClip(images, fps=fps)
     clip.write_gif(filepath, verbose=False)
 
     
