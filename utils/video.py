@@ -10,18 +10,20 @@ from moviepy.video.io import ImageSequenceClip
 
 class VideoReader():
     """Video file reader class using OpenCV."""
-    def __init__(self, filename, from_time=0):
+    def __init__(self, filename, start_frame=0):
         """Creates a VideoReader instance.
         Parameters
         ----------
         filename: str
             The file path to the video.
-        from_time: int, optional
-            The time where to start the video from in milliseconds.
+        start_frame: int, optional
+            The frame where to start the video.
         """
-        self.vidcap = cv2.VideoCapture(filename)
-        if from_time != 0:
-            self.vidcap.set(cv2.CAP_PROP_POS_MSEC, from_time)
+        if not os.path.isfile(filename):
+            print("Video file {} not found.".format(filename))
+        
+        self._vidcap = cv2.VideoCapture(filename)
+        self.goto_frame(start_frame)
         
     def __enter__(self):
         """Enters the context manager."""
@@ -42,7 +44,8 @@ class VideoReader():
         image: ndarray(uint8)
             Returns an ndarray of the image or None in case of an error.
         """
-        success, image = self.vidcap.read()
+        self._current_frame_id += 1
+        success, image = self._vidcap.read()
         if success:
             image = tt.utils.image.resize(image, scale)
             return image
@@ -56,14 +59,31 @@ class VideoReader():
         count: int, optional
             The number of frames to skip.
         """
-        for i in xrange(count):
-            success, _ = self.vidcap.read()
-            if not success:
-                break
+        self.goto_frame(self.current_frame_id + count)
+                
+    def goto_frame(self, frame_id):
+        """Go to a specific frame."""
+        self._current_frame_id = frame_id
+        self._vidcap.set(cv2.cv.CV_CAP_PROP_POS_FRAMES, frame_id)
         
     def release(self):
         """Releases the video file resources."""
-        self.vidcap.release()
+        self._vidcap.release()
+    
+    @property
+    def frames_length(self):
+        """Returns the total frames length of the video."""
+        return int(self._vidcap.get(cv2.cv.CV_CAP_PROP_FRAME_COUNT))
+    
+    @property
+    def current_frame_id(self):
+        """Returns the total frames length of the video."""
+        return self._vidcap.get(cv2.cv.CV_CAP_PROP_POS_FRAMES)
+    
+    @property
+    def frames_left(self):
+        """Returns the number of frames that are left."""
+        return self.frames_length - self.current_frame_id
 
 
 class VideoWriter():
