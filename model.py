@@ -97,6 +97,13 @@ class AbstractModel(object):
             # we have to wrap this with identity, because in in other case it
             # would rise a summary-writer error that this loss was already added
             return tf.identity(loss, name="loss_with_reg")
+        
+    def evaluation(self, predictions, targets, device_scope=None):
+        """Returns a dict of {title: scalar-Tensor} that are evaluated during validation and
+           training.
+           It is prefered to use lower-case as convention. All names must be a valid filename.
+        """
+        return {}
 
     @property
     def batch_size(self):

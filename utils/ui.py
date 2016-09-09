@@ -10,7 +10,7 @@ class ProgressBar(object):
     References:
         Taken from: Keras
     """
-    def __init__(self, max_value, width=32):
+    def __init__(self, max_value, width=20):
         """Creates a progress indicator instance.
         Parameters
         ----------

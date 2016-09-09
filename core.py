@@ -59,6 +59,7 @@ class AbstractRuntime(object):
         
         self._total_loss = None
         self._loss = None
+        self._eval_dict = {}
             
         with self.graph.as_default():
             self._global_step = tf.Variable(0, trainable=False)
@@ -168,7 +169,7 @@ class AbstractRuntime(object):
             opt = tf.train.AdamOptimizer(lr)
               
             # build (multi-)device specific computation graph for inference
-            grads, summaries, total_loss, loss = self._build_computation_graph(x, y, opt)
+            grads, summaries, total_loss, loss, eval_dict = self._build_computation_graph(x, y, opt)
             
             # Apply gradients
             apply_gradient_op = opt.apply_gradients(grads, global_step=self._global_step)
@@ -196,6 +197,7 @@ class AbstractRuntime(object):
             self._summaries = summaries
             self._total_loss = total_loss
             self._loss = loss
+            self._eval_dict = eval_dict
                 
             # Create a saver to store checkpoints of the model
             self._saver = tf.train.Saver(max_to_keep=self.max_checkpoints_to_keep)
@@ -316,6 +318,7 @@ class AbstractRuntime(object):
 
                     start_time = time.time()
 
+                    # prepare feeding
                     if isinstance(self.datasets.train, tt.datasets.base.AbstractQueueDataset):
                         batch_x = x_dummy
                         batch_y = y_dummy
@@ -351,7 +354,7 @@ class AbstractRuntime(object):
                         avg_loss = loss_sum / display_step
                         total_loss_sum = 0
                         loss_sum = 0
-                        print("@{:6d}: loss: {:9.3f}, total-loss: {:9.3f} ({:7.1f} examples/sec, {:5.2f} sec/batch)" \
+                        print("@{:5d}: loss: {:7.3f}, t-loss: {:7.3f} ({:7.1f} examples/sec, {:5.2f} sec/batch)" \
                               .format(gstep, avg_loss, avg_total_loss, examples_per_sec, sec_per_batch))
 
                     if gstep % summary_steps == 0 or this_step == steps:
@@ -403,6 +406,8 @@ class AbstractRuntime(object):
         """
         with self.graph.as_default():
             batch_size = inputs.shape[0]
+            
+            # prepare feeding
             y_dummy = np.zeros([batch_size] + self._ph.targets.get_shape().as_list()[1:])
             feed = self._feed_func(inputs, y_dummy, batch_size, False)
             feed.update({self._ph.input_from_queue: False})
@@ -467,15 +472,23 @@ class AbstractRuntime(object):
         # get current gstep from session
         gstep = self.gstep
         
+        # ops to execute on validation
+        eval_names = ["loss"]
+        eval_ops = [self._loss]
+        for name, eval_op in self._eval_dict.iteritems():
+            eval_names.append(name) 
+            eval_ops.append(eval_op)
+        
         print("@{:6d}: Starting {} (batch-size: {}, dataset-size: {}):" \
               .format(gstep, title, batch_size, dataset.size))
         
         dataset.reset()
-        loss_sum = 0
+        eval_sums = np.zeros(len(eval_ops))
         x_dummy = np.zeros([batch_size] + dataset.input_shape)
         y_dummy = np.zeros([batch_size] + dataset.target_shape)
         progress = tt.utils.ui.ProgressBar(num_batches * batch_size)
         for b in xrange(num_batches):
+            # prepare feeding
             if isinstance(dataset, tt.datasets.base.AbstractQueueDataset):
                 batch_x = x_dummy
                 batch_y = y_dummy
@@ -487,15 +500,30 @@ class AbstractRuntime(object):
             for key, value in feeds.iteritems():
                 feed.update({self._model_feeds[key]: value})
 
-            this_loss = self.session.run(self._loss, feed_dict=feed)
-            loss_sum += this_loss
-            progress.update((b+1) * batch_size, [('loss', this_loss)])
+            # run evaluation for all ops
+            this_evals_tuple = self.session.run(eval_ops, feed_dict=feed)
+            this_evals = np.array(this_evals_tuple)
+            eval_sums += this_evals
+            
+            # create status list for progress bar
+            status_list = []
+            for i, name in enumerate(eval_names):
+                status_list.append((name, this_evals[i]))
+            
+            progress.update((b+1) * batch_size, status_list)
             
         if do_summary:
-            avg_loss = loss_sum / num_batches
-            loss_summary = tf.scalar_summary("{}_loss".format(title), avg_loss)
-            summary_str = self.session.run(loss_summary)
-            self.summary_writer.add_summary(summary_str, gstep)
+            avg_evals = eval_sums / num_batches
+            
+            # execute all summaries in a single run
+            eval_summaries = []
+            for i, name in enumerate(eval_names):
+                eval_summaries.append(tf.scalar_summary("{}_{}".format(title, name), avg_evals[i]))
+            summary_strings = self.session.run(eval_summaries)
+            
+            # add to summary writer
+            for sum_str in summary_strings:
+                self.summary_writer.add_summary(sum_str, gstep)
             self.summary_writer.flush()
     
     def _create_session(self):
@@ -618,6 +646,9 @@ class DefaultRuntime(AbstractRuntime):
             
         with tf.name_scope("total_loss"):
             total_loss = self._model.total_loss(loss, inference, y, device_scope=None)
+            
+        with tf.name_scope("evaluation"):
+            eval_dict = self._model.evaluation(inference, y, device_scope=None)
 
         # Generate moving averages of all losses and associated summaries
         loss_averages_op = tt.board.loss_summary([total_loss, loss] + \
@@ -631,7 +662,7 @@ class DefaultRuntime(AbstractRuntime):
 
         summaries = tf.get_collection(tf.GraphKeys.SUMMARIES)    
 
-        return grads, summaries, total_loss, loss
+        return grads, summaries, total_loss, loss, eval_dict
         
 
 
