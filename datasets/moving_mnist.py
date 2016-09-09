@@ -1,11 +1,11 @@
 import sys
+from abc import ABCMeta
 
 import h5py
 import numpy as np
+
 import tensortools as tt
 import base
-
-from abc import ABCMeta
 
 
 # we use the same MNIST dataset as University of Toronto in its 'Unsupervised Learning with LSTMS'
@@ -22,13 +22,15 @@ class MovingMNISTBaseGeneratedDataset(base.AbstractDataset):
     __metaclass__ = ABCMeta
     
     """Moving MNIST dataset that creates data on the fly."""
-    def __init__(self, dataset_key, dataset_size, input_shape=[10, 64, 64, 1],
+    def __init__(self, dataset_key, data_dir, dataset_size, input_shape=[10, 64, 64, 1],
                  target_shape=[10, 64, 64, 1], as_binary=False, num_digits=2, step_length=0.1):
         """Creates a base MovingMNIST dataset instance.
         Parameters
         ----------
         dataset_key: str
             The dataset dictionary key.
+        data_dir: str
+            The path where the data will be stored.
         dataset_size: int
             The dataset size.
         input_shape: list(int) of shape [t, h, w, c]
@@ -52,7 +54,7 @@ class MovingMNISTBaseGeneratedDataset(base.AbstractDataset):
         self._digit_size = 28
         
         try:
-            filepath = tt.utils.data.download(MNIST_URL, 'tmp')
+            filepath = tt.utils.data.download(MNIST_URL, data_dir)
             f = h5py.File(filepath)
             data = f[dataset_key].value
         except:
@@ -71,7 +73,7 @@ class MovingMNISTBaseGeneratedDataset(base.AbstractDataset):
         self._indices = np.arange(self._data.shape[0])
         self._row = 0
         
-        super(MovingMNISTBaseGeneratedDataset, self).__init__(dataset_size, input_shape, target_shape)
+        super(MovingMNISTBaseGeneratedDataset, self).__init__(data_dir, dataset_size, input_shape, target_shape)
     
     @tt.utils.attr.override
     def get_batch(self, batch_size):
@@ -173,11 +175,13 @@ class MovingMNISTBaseGeneratedDataset(base.AbstractDataset):
 
 class MovingMNISTTrainDataset(MovingMNISTBaseGeneratedDataset):
     """Moving MNIST train dataset that creates data on the fly."""
-    def __init__(self, input_shape=[10, 64, 64, 1], target_shape=[10, 64, 64, 1],
+    def __init__(self, data_dir, input_shape=[10, 64, 64, 1], target_shape=[10, 64, 64, 1],
                  as_binary=False, num_digits=2, step_length=0.1):
         """Creates a traning MovingMNIST dataset instance.
         Parameters
         ----------
+        data_dir: str
+            The path where the data will be stored.
         input_shape: list(int) of shape [t, h, w, c]
             The input image sequence shape.
         target_shape: list(int) of shape [t, h, w, c]
@@ -192,7 +196,7 @@ class MovingMNISTTrainDataset(MovingMNISTBaseGeneratedDataset):
             The step length of movement per frame.
         """
         dataset_size = sys.maxint
-        super(MovingMNISTTrainDataset, self).__init__('train', dataset_size,
+        super(MovingMNISTTrainDataset, self).__init__('train', data_dir, dataset_size,
                                                       input_shape, target_shape,
                                                       as_binary, num_digits, step_length)
     
@@ -200,11 +204,13 @@ class MovingMNISTTrainDataset(MovingMNISTBaseGeneratedDataset):
     
 class MovingMNISTValidDataset(MovingMNISTBaseGeneratedDataset):
     """Moving MNIST validation dataset that creates data on the fly."""
-    def __init__(self, input_shape=[10, 64, 64, 1], target_shape=[10, 64, 64, 1],
+    def __init__(self, data_dir, input_shape=[10, 64, 64, 1], target_shape=[10, 64, 64, 1],
                  as_binary=False, num_digits=2, step_length=0.1):
         """Creates a validation MovingMNIST dataset instance.
         Parameters
         ----------
+        data_dir: str
+            The path where the data will be stored.
         input_shape: list(int) of shape [t, h, w, c]
             The input image sequence shape.
         target_shape: list(int) of shape [t, h, w, c]
@@ -219,7 +225,7 @@ class MovingMNISTValidDataset(MovingMNISTBaseGeneratedDataset):
             The step length of movement per frame.
         """
         dataset_size = 10000
-        super(MovingMNISTValidDataset, self).__init__('validation', dataset_size,
+        super(MovingMNISTValidDataset, self).__init__('validation', data_dir, dataset_size,
                                                       input_shape, target_shape,
                                                       as_binary, num_digits, step_length)
 
@@ -227,10 +233,12 @@ class MovingMNISTValidDataset(MovingMNISTBaseGeneratedDataset):
     
 class MovingMNISTTestDataset(base.AbstractDataset):
     """Moving MNIST test dataset that that uses the same data as in other papers."""
-    def __init__(self, input_seq_length=10, target_seq_length=10, as_binary=False):
+    def __init__(self, data_dir, input_seq_length=10, target_seq_length=10, as_binary=False):
         """Creates a test MovingMNIST dataset instance.
         Parameters
         ----------
+        data_dir: str
+            The path where the data will be stored.
         input_seq_length: int, optional
             The input sequence length
         target_seq_length: int, optional
@@ -243,7 +251,7 @@ class MovingMNISTTestDataset(base.AbstractDataset):
         assert input_seq_length + target_seq_length <= 20, "The maximum total test sequence length is 20."
         
         try:
-            filepath = tt.utils.data.download(MNIST_TEST_URL, 'tmp')
+            filepath = tt.utils.data.download(MNIST_TEST_URL, data_dir)
             print("Loading MNIST test set from numpy-array. This might take a while...")
             data = np.load(filepath)
             data = np.float32(data)
@@ -265,7 +273,7 @@ class MovingMNISTTestDataset(base.AbstractDataset):
         dataset_size = data.shape[0]
         self._row = 0
         
-        super(MovingMNISTTestDataset, self).__init__(dataset_size, input_shape=[input_seq_length, 64, 64, 1],
+        super(MovingMNISTTestDataset, self).__init__(data_dir, dataset_size, input_shape=[input_seq_length, 64, 64, 1],
                                                      target_shape=[target_seq_length, 64, 64, 1])
     @tt.utils.attr.override
     def get_batch(self, batch_size):

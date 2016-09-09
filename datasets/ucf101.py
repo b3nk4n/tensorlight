@@ -13,6 +13,10 @@ UCF101_SPLITS_URL = 'http://crcv.ucf.edu/data/UCF101/UCF101TrainTestSplits-Recog
 UCF101_TRAINLIST = "trainlist03.txt"
 UCF101_TESTLIST = "testlist03.txt"
 
+SUBDIR_TRAIN = '_train'
+SUBDIR_VALID = '_valid'
+SUBDIR_TEST = '_test'
+
 FRAME_HEIGHT = 240
 FRAME_WIDTH = 320
 FRAME_CHANNELS = 3
@@ -30,7 +34,10 @@ def _read_train_splits(dir_path):
 
 
 def _read_test_splits(dir_path):
-    """Reads the filepaths of the valid/test splits."""
+    """Reads the filepaths of the valid/test splits.
+       Alternated throught the file list, 1/3 is considered
+       as validation and 2/3 as test data.
+    """
     test_files = []
     valid_files = []
     
@@ -45,17 +52,14 @@ def _read_test_splits(dir_path):
     return valid_files, test_files
 
 
-def _serialize_frame_sequences(dataset_path, file_list, image_size, serialized_sequence_length):
-    seq_file_list = []
-    for f in file_list:
-        # change extension to *.seq
-        seq_file_list.append("{}.seq".format(os.path.splitext(f)[0]))
+def _serialize_frame_sequences(dataset_path, subdir, file_list, image_size, serialized_sequence_length):
+    full_path = os.path.join(dataset_path, subdir)
+    seq_file_list = tt.utils.path.get_filenames(full_path, '*.seq')
     
     # Test if image_size has changed
-    first_seq_file = os.path.join(dataset_path, seq_file_list[0])
-    if os.path.isfile(first_seq_file):
+    if len(seq_file_list) > 0:
+        first_seq_file = seq_file_list[0]
         example = np.fromfile(first_seq_file, np.uint8)
-        print("dims", old_ndim, new_ndim)
         old_ndim = np.prod(example.shape)
         new_ndim = np.prod(image_size) * serialized_sequence_length
         if old_ndim == new_ndim:
@@ -69,7 +73,11 @@ def _serialize_frame_sequences(dataset_path, file_list, image_size, serialized_s
             for sfile in seq_file_list:
                 file_to_delete = os.path.join(dataset_path, sfile)
                 os.remove(file_to_delete)            
-
+                
+    # create subdir folder that will contain the .seq files
+    if not os.path.exists(full_path):
+        os.mkdir(full_path)            
+                
     frame_scale_factor = image_size[0] / float(FRAME_HEIGHT)
     
     print("Serializing frame sequences...")
@@ -84,29 +92,32 @@ def _serialize_frame_sequences(dataset_path, file_list, image_size, serialized_s
             clip_id = 0
             while True:
                 frames = []
-                for f in xrange(serialized_sequence_length):
-                    frame = vr.next_frame(frame_scale_factor)
-                    
-                    if frame is None:
-                        break
-                        
-                    # ensure frame is not too large
-                    h, w, c = np.shape(frame)
-                    if h > image_size[0] or w > image_size[1]:
-                        frame = frame[:image_size[0], :image_size[1], :]
-                    if not h < image_size[0] and not w < image_size[1]:
-                        frame = np.reshape(frame, [image_size[0], image_size[1], -1])
-                        if image_size[2] == 1:
-                            frame = tt.utils.image.to_grayscale(frame)
-                        frames.append(frame)
-                    else:
-                        # clip has wrong bounds
-                        bounds_counter += 1
-                        break
+                if vr.frames_left >= serialized_sequence_length:
+                    for f in xrange(serialized_sequence_length):
+                        frame = vr.next_frame(frame_scale_factor)
+
+                        if frame is None:
+                            break
+
+                        # ensure frame is not too large
+                        h, w, c = np.shape(frame)
+                        if h > image_size[0] or w > image_size[1]:
+                            frame = frame[:image_size[0], :image_size[1], :]
+                        if not h < image_size[0] and not w < image_size[1]:
+                            frame = np.reshape(frame, [image_size[0], image_size[1], -1])
+                            if image_size[2] == 1:
+                                frame = tt.utils.image.to_grayscale(frame)
+                            frames.append(frame)
+                        else:
+                            # clip has wrong bounds
+                            bounds_counter += 1
+                            break
 
                 if len(frames) == serialized_sequence_length:
-                    seq_filepath = "{}-{}.seq".format(os.path.splitext(video_filename)[0], clip_id)
-                    tt.utils.image.write_as_binary(seq_filepath, np.asarray(frames))
+                    filename = os.path.basename(video_filename)
+                    filename_seq = "{}-{}.seq".format(os.path.splitext(filename)[0], clip_id)
+                    filepath_seq = os.path.join(dataset_path, subdir, filename_seq)
+                    tt.utils.image.write_as_binary(filepath_seq, np.asarray(frames))
                     success_counter += 1
                     clip_id += 1
                 else:
@@ -115,7 +126,7 @@ def _serialize_frame_sequences(dataset_path, file_list, image_size, serialized_s
                         short_counter += 1
                     break
         progress.update(i+1)
-    print("Successfully extracted {} frame sequences. Too short: {}, Too small bounds: {}" \
+    print("Successfully generated {} frame sequences. Too short: {}, Too small bounds: {}" \
           .format(success_counter, short_counter, bounds_counter))
     return success_counter
 
@@ -126,7 +137,7 @@ class UCF101TrainDataset(base.AbstractQueueDataset):
        
        References: http://crcv.ucf.edu/data/UCF101.php
     """
-    def __init__(self, input_seq_length=5, target_seq_length=5,
+    def __init__(self, data_dir, input_seq_length=5, target_seq_length=5,
                  image_size=(FRAME_HEIGHT, FRAME_WIDTH, FRAME_CHANNELS),
                  min_examples_in_queue=1024, queue_capacitiy=2048, num_threads=8,
                  serialized_sequence_length=30, do_distortion=True, crop_size=None):
@@ -167,17 +178,18 @@ class UCF101TrainDataset(base.AbstractQueueDataset):
         self._crop_size = crop_size
         self._data_img_size = image_size
         
-        rar_path = tt.utils.data.download(UCF101_URL, 'tmp')
+        rar_path = tt.utils.data.download(UCF101_URL, data_dir)
 
-        dataset_path = tt.utils.data.extract(rar_path, 'tmp', unpacked_name='UCF-101')
+        dataset_path = tt.utils.data.extract(rar_path, data_dir, unpacked_name='UCF-101')
         self._data_dir = dataset_path
             
-        zip_path = tt.utils.data.download(UCF101_SPLITS_URL, 'tmp')
-        splits_path = tt.utils.data.extract(zip_path, 'tmp', unpacked_name='ucfTrainTestlist')
+        zip_path = tt.utils.data.download(UCF101_SPLITS_URL, data_dir)
+        splits_path = tt.utils.data.extract(zip_path, data_dir, unpacked_name='ucfTrainTestlist')
             
+        # generate frame sequences
         train_files = _read_train_splits(splits_path)
-        dataset_size = _serialize_frame_sequences(dataset_path, train_files,
-                                                  image_size,
+        dataset_size = _serialize_frame_sequences(dataset_path, SUBDIR_TRAIN,
+                                                  train_files, image_size,
                                                   serialized_sequence_length)
         
         if crop_size is None:
@@ -187,7 +199,7 @@ class UCF101TrainDataset(base.AbstractQueueDataset):
             input_shape = [input_seq_length, crop_size[0], crop_size[1], image_size[2]]
             target_shape = [target_seq_length, crop_size[0], crop_size[1], image_size[2]]
         
-        super(UCF101TrainDataset, self).__init__(dataset_size, input_shape, target_shape,
+        super(UCF101TrainDataset, self).__init__(data_dir, dataset_size, input_shape, target_shape,
                                                 min_examples_in_queue, queue_capacitiy, num_threads)
     
     def _read_record(self, filename_queue):

@@ -4,6 +4,7 @@ import random
 
 import numpy as np
 import tensorflow as tf
+
 import tensortools as tt
 import base
 
@@ -48,25 +49,26 @@ def _serialize_frame_sequences(dataset_path, image_size, serialized_sequence_len
             clip_id = 0
             while True:
                 frames = []
-                for f in xrange(serialized_sequence_length):
-                    frame = vr.next_frame(frame_scale_factor)
-                    
-                    if frame is None:
-                        break
-                        
-                    # ensure frame is not too large
-                    h, w, c = np.shape(frame)
-                    if h > image_size[0] or w > image_size[1]:
-                        frame = frame[:image_size[0], :image_size[1], :]
-                    if not h < image_size[0] and not w < image_size[1]:
-                        frame = np.reshape(frame, [image_size[0], image_size[1], -1])
-                        if image_size[2] == 1:
-                            frame = tt.utils.image.to_grayscale(frame)
-                        frames.append(frame)
-                    else:
-                        # clip has wrong bounds
-                        bounds_counter += 1
-                        break
+                if vr.frames_left >= serialized_sequence_length:
+                    for f in xrange(serialized_sequence_length):
+                        frame = vr.next_frame(frame_scale_factor)
+
+                        if frame is None:
+                            break
+
+                        # ensure frame is not too large
+                        h, w, c = np.shape(frame)
+                        if h > image_size[0] or w > image_size[1]:
+                            frame = frame[:image_size[0], :image_size[1], :]
+                        if not h < image_size[0] and not w < image_size[1]:
+                            frame = np.reshape(frame, [image_size[0], image_size[1], -1])
+                            if image_size[2] == 1:
+                                frame = tt.utils.image.to_grayscale(frame)
+                            frames.append(frame)
+                        else:
+                            # clip has wrong bounds
+                            bounds_counter += 1
+                            break
 
                 if len(frames) == serialized_sequence_length:
                     seq_filepath = "{}-{}.seq".format(os.path.splitext(video_filename)[0], clip_id)
@@ -90,13 +92,15 @@ class UCF11TrainDataset(base.AbstractQueueDataset):
        
        References: http://crcv.ucf.edu/data/UCF_YouTube_Action.php
     """
-    def __init__(self, input_seq_length=5, target_seq_length=5,
+    def __init__(self, data_dir, input_seq_length=5, target_seq_length=5,
                  image_size=(FRAME_HEIGHT, FRAME_WIDTH, FRAME_CHANNELS),
                  min_examples_in_queue=512, queue_capacitiy=1024, num_threads=8,
                  serialized_sequence_length=30, do_distortion=True, crop_size=None):
         """Creates a training dataset instance that uses a queue.
         Parameters
         ----------
+        data_dir: str
+            The path where the data will be stored.
         dataset_size: int, optional
             The dataset site.
         input_seq_length: int, optional
@@ -131,8 +135,8 @@ class UCF11TrainDataset(base.AbstractQueueDataset):
         self._data_img_size = image_size
         
         try:
-            rar_path = tt.utils.data.download(UCF11_URL, 'tmp')
-            dataset_path = tt.utils.data.extract(rar_path, 'tmp')
+            rar_path = tt.utils.data.download(UCF11_URL, data_dir)
+            dataset_path = tt.utils.data.extract(rar_path, data_dir)
             self._data_dir = dataset_path
            
         except:
@@ -150,7 +154,7 @@ class UCF11TrainDataset(base.AbstractQueueDataset):
             input_shape = [input_seq_length, crop_size[0], crop_size[1], image_size[2]]
             target_shape = [target_seq_length, crop_size[0], crop_size[1], image_size[2]]
         
-        super(UCF11TrainDataset, self).__init__(dataset_size, input_shape, target_shape,
+        super(UCF11TrainDataset, self).__init__(data_dir, dataset_size, input_shape, target_shape,
                                                 min_examples_in_queue, queue_capacitiy, num_threads)
     
     def _read_record(self, filename_queue):
@@ -257,12 +261,14 @@ class UCF11ValidDataset(base.AbstractDataset):
        
        References: http://crcv.ucf.edu/data/UCF_YouTube_Action.php
     """
-    def __init__(self, input_seq_length=5, target_seq_length=5,
+    def __init__(self, data_dir, input_seq_length=5, target_seq_length=5,
                  image_size=(FRAME_HEIGHT, FRAME_WIDTH, FRAME_CHANNELS),
                  serialized_sequence_length=30, do_distortion=True, crop_size=None):
         """Creates a validation dataset instance.
         Parameters
         ----------
+        data_dir: str
+            The path where the data will be stored.
         dataset_size: int, optional
             The dataset site.
         input_seq_length: int, optional
@@ -290,8 +296,8 @@ class UCF11ValidDataset(base.AbstractDataset):
         self._data_img_size = image_size
         
         try:
-            rar_path = tt.utils.data.download(UCF11_URL, 'tmp')
-            dataset_path = tt.utils.data.extract(rar_path, 'tmp')
+            rar_path = tt.utils.data.download(UCF11_URL, data_dir)
+            dataset_path = tt.utils.data.extract(rar_path, data_dir)
             self._data_dir = dataset_path
         except:
             print 'Please set the correct path to UCF11 dataset. Might be caused by a download error.'
@@ -312,7 +318,7 @@ class UCF11ValidDataset(base.AbstractDataset):
             input_shape = [input_seq_length, crop_size[0], crop_size[1], image_size[2]]
             target_shape = [target_seq_length, crop_size[0], crop_size[1], image_size[2]]
         
-        super(UCF11ValidDataset, self).__init__(dataset_size, input_shape, target_shape)
+        super(UCF11ValidDataset, self).__init__(data_dir, dataset_size, input_shape, target_shape)
 
     @tt.utils.attr.override
     def get_batch(self, batch_size):

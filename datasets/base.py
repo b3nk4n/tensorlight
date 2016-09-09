@@ -8,10 +8,12 @@ class AbstractDataset(object):
     """Dataset base class, mainly used for datasets with feeding."""
     __metaclass__ = ABCMeta
 
-    def __init__(self, dataset_size, input_shape, target_shape):
+    def __init__(self, data_dir, dataset_size, input_shape, target_shape):
         """Creates a dataset instance.
         Parameters
         ----------
+        data_dir: str
+            The data directory where the data will be stored.
         dataset_size: int
             The dataset site.
         input_shape: list(int)
@@ -19,6 +21,7 @@ class AbstractDataset(object):
         target_shape: list(int)
             The shape of the targets.
         """
+        self._data_dir = data_dir
         self._dataset_size = dataset_size
         self._input_shape = input_shape
         self._target_shape = target_shape
@@ -42,6 +45,11 @@ class AbstractDataset(object):
         'input_shape' and 'target_shape'.
         """
         pass
+    
+    @property
+    def data_dir(self):
+        """Gets the data directory."""
+        return self._data_dir
 
     @property
     def size(self):
@@ -74,11 +82,13 @@ class AbstractQueueDataset(AbstractDataset):
     """Dataset base class, used for datasets with input queue."""
     __metaclass__ = ABCMeta
 
-    def __init__(self, dataset_size, input_shape, target_shape,
+    def __init__(self, data_dir, dataset_size, input_shape, target_shape,
                  min_examples_in_queue=512, queue_capacitiy=1024, num_threads=8):
         """Creates a dataset instance that uses a queue.
         Parameters
         ----------
+        data_dir: str
+            The data directory where the data will be stored.
         dataset_size: int
             The dataset site.
         input_shape: list(int)
@@ -96,10 +106,11 @@ class AbstractQueueDataset(AbstractDataset):
         self._min_examples_in_queue = min_examples_in_queue
         self._queue_capacitiy = queue_capacitiy
         self._num_threads = num_threads
-        super(AbstractQueueDataset, self).__init__(dataset_size, input_shape, target_shape)
+        super(AbstractQueueDataset, self).__init__(data_dir, dataset_size, input_shape, target_shape)
             
     @tt.utils.attr.override
     def reset(self):
+        # Usually No-Op, because re-shuffling is performed by the queue itself.
         return
     
     @property
