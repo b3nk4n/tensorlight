@@ -13,7 +13,7 @@ import tensortools as tt
 
 
 LATEST_CHECKPOINT = 'LATEST'
-INTERMEDIATE_LOSSES = 'intermediate_losses'
+LOG_LOSSES = 'log_losses'
 
 
 class AbstractRuntime(object):
@@ -622,7 +622,7 @@ class DefaultRuntime(AbstractRuntime):
         # Generate moving averages of all losses and associated summaries
         loss_averages_op = tt.board.loss_summary([total_loss, loss] + \
                                                  tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES) + \
-                                                 tf.get_collection(INTERMEDIATE_LOSSES),
+                                                 tf.get_collection(LOG_LOSSES),
                                                  decay=0.9)
 
         # Compute gradients
@@ -710,7 +710,7 @@ class MultiGpuRuntime(AbstractRuntime):
                     # Calculate the moving averages of the loss for one tower of the model
                     loss_averages_op = tt.board.loss_summary([total_loss, loss] + \
                                                              tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES) + \
-                                                             tf.get_collection(INTERMEDIATE_LOSSES, scope),
+                                                             tf.get_collection(LOG_LOSSES, scope),
                                                              decay=0.9)
 
                     with tf.control_dependencies([loss_averages_op]):
