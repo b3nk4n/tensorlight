@@ -11,13 +11,19 @@ import base
 
 UCF11_URL = 'http://crcv.ucf.edu/data/UCF11_updated_mpg.rar'
 
+SUBDIR_TRAIN = '_train'
+SUBDIR_VALID = '_valid'
+
 FRAME_HEIGHT = 240
 FRAME_WIDTH = 320
 FRAME_CHANNELS = 3
 
 
-def _serialize_frame_sequences(dataset_path, image_size, serialized_sequence_length):
-    sequence_files = tt.utils.path.get_filenames(dataset_path, '*.seq')
+def _serialize_frame_sequences(dataset_path, subdir, image_size, serialized_sequence_length):
+    full_path = os.path.join(dataset_path, subdir)
+    sequence_files = tt.utils.path.get_filenames(full_path, '*.seq')
+    
+    print("full", full_path)
     
     if len(sequence_files) > 0:
         # Test if image_size has changed
@@ -36,6 +42,11 @@ def _serialize_frame_sequences(dataset_path, image_size, serialized_sequence_len
                 os.remove(sfile)            
 
     video_filenames = tt.utils.path.get_filenames(dataset_path, '*.mpg')
+    
+    # create subdir folder that will contain the .seq files
+    if not os.path.exists(full_path):
+        os.mkdir(full_path)  
+    
     frame_scale_factor = image_size[0] / float(FRAME_HEIGHT)
     
     print("Serializing frame sequences...")
@@ -71,8 +82,10 @@ def _serialize_frame_sequences(dataset_path, image_size, serialized_sequence_len
                             break
 
                 if len(frames) == serialized_sequence_length:
-                    seq_filepath = "{}-{}.seq".format(os.path.splitext(video_filename)[0], clip_id)
-                    tt.utils.image.write_as_binary(seq_filepath, np.asarray(frames))
+                    filename = os.path.basename(video_filename)
+                    filename_seq = "{}-{}.seq".format(os.path.splitext(filename)[0], clip_id)
+                    filepath_seq = os.path.join(full_path, filename_seq)
+                    tt.utils.image.write_as_binary(filepath_seq, np.asarray(frames))
                     success_counter += 1
                     clip_id += 1
                 else:
@@ -81,7 +94,7 @@ def _serialize_frame_sequences(dataset_path, image_size, serialized_sequence_len
                         short_counter += 1
                     break
         progress.update(i+1)
-    print("Successfully extracted {} frame sequences. Too short: {}, Too small bounds: {}" \
+    print("Successfully generated {} frame sequences. Too short: {}, Too small bounds: {}" \
           .format(success_counter, short_counter, bounds_counter))
     return success_counter
 
@@ -143,9 +156,9 @@ class UCF11TrainDataset(base.AbstractQueueDataset):
             print 'Please set the correct path to UCF11 dataset. Might be caused by a download error.'
             sys.exit()
         
-        dataset_size = _serialize_frame_sequences(dataset_path,
-                                                  image_size,
-                                                  serialized_sequence_length)
+        # generate frame sequences.
+        dataset_size = _serialize_frame_sequences(dataset_path, SUBDIR_TRAIN,
+                                                  image_size, serialized_sequence_length)
         
         if crop_size is None:
             input_shape = [input_seq_length, image_size[0], image_size[1], image_size[2]]
@@ -303,9 +316,9 @@ class UCF11ValidDataset(base.AbstractDataset):
             print 'Please set the correct path to UCF11 dataset. Might be caused by a download error.'
             sys.exit()
         
-        dataset_size = _serialize_frame_sequences(dataset_path,
-                                                  image_size,
-                                                  serialized_sequence_length)
+        # generate frame sequences
+        dataset_size = _serialize_frame_sequences(dataset_path, SUBDIR_VALID,
+                                                  image_size, serialized_sequence_length)
         
         self._file_name_list = tt.utils.path.get_filenames(self._data_dir, '*.seq')
         self._indices = range(dataset_size)

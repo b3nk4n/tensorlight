@@ -71,8 +71,7 @@ def _serialize_frame_sequences(dataset_path, subdir, file_list, image_size, seri
             print("Change in image properties detected. Deleting previous serialized *.seq files...")
             # remove old serialized files
             for sfile in seq_file_list:
-                file_to_delete = os.path.join(dataset_path, sfile)
-                os.remove(file_to_delete)            
+                os.remove(sfile)            
                 
     # create subdir folder that will contain the .seq files
     if not os.path.exists(full_path):
@@ -116,7 +115,7 @@ def _serialize_frame_sequences(dataset_path, subdir, file_list, image_size, seri
                 if len(frames) == serialized_sequence_length:
                     filename = os.path.basename(video_filename)
                     filename_seq = "{}-{}.seq".format(os.path.splitext(filename)[0], clip_id)
-                    filepath_seq = os.path.join(dataset_path, subdir, filename_seq)
+                    filepath_seq = os.path.join(full_path, filename_seq)
                     tt.utils.image.write_as_binary(filepath_seq, np.asarray(frames))
                     success_counter += 1
                     clip_id += 1
