@@ -23,7 +23,7 @@ class MovingMNISTBaseGeneratedDataset(base.AbstractDataset):
     
     """Moving MNIST dataset that creates data on the fly."""
     def __init__(self, dataset_key, dataset_size, input_shape=[10, 64, 64, 1],
-                 target_shape=[10, 64, 64, 1], num_digits=2, step_length=0.1):
+                 target_shape=[10, 64, 64, 1], as_binary=False, num_digits=2, step_length=0.1):
         """Creates a base MovingMNIST dataset instance.
         Parameters
         ----------
@@ -35,6 +35,10 @@ class MovingMNISTBaseGeneratedDataset(base.AbstractDataset):
             The input image sequence shape.
         target_shape: list(int) of shape [t, h, w, c]
             The taget image sequence shape.
+        as_binary: Boolean, optional
+            Whether the data should be returned as float (default) in range
+            [0.0, 1.0], or as pseudo-binary with values {0.0, 1.0}, were the
+            original data.
         num_digits: int, optional
             The number of flying MNIST digits.
         step_length: float, optional
@@ -56,7 +60,12 @@ class MovingMNISTBaseGeneratedDataset(base.AbstractDataset):
             sys.exit()
         f.close()
         
-        self._data = data.reshape(-1, self._digit_size, self._digit_size)
+        data = data.reshape(-1, self._digit_size, self._digit_size)
+        
+        if as_binary:
+            self._data = tt.utils.data.as_binary(data)
+        else:
+            self._data = data
         
         # here: the indices/rows are used for the internal MNIST data 
         self._indices = np.arange(self._data.shape[0])
@@ -165,7 +174,7 @@ class MovingMNISTBaseGeneratedDataset(base.AbstractDataset):
 class MovingMNISTTrainDataset(MovingMNISTBaseGeneratedDataset):
     """Moving MNIST train dataset that creates data on the fly."""
     def __init__(self, input_shape=[10, 64, 64, 1], target_shape=[10, 64, 64, 1],
-                 num_digits=2, step_length=0.1):
+                 as_binary=False, num_digits=2, step_length=0.1):
         """Creates a traning MovingMNIST dataset instance.
         Parameters
         ----------
@@ -173,6 +182,10 @@ class MovingMNISTTrainDataset(MovingMNISTBaseGeneratedDataset):
             The input image sequence shape.
         target_shape: list(int) of shape [t, h, w, c]
             The taget image sequence shape.
+        as_binary: Boolean, optional
+            Whether the data should be returned as float (default) in range
+            [0.0, 1.0], or as pseudo-binary with values {0.0, 1.0}, were the
+            original data.
         num_digits: int, optional
             The number of flying MNIST digits.
         step_length: float, optional
@@ -181,14 +194,14 @@ class MovingMNISTTrainDataset(MovingMNISTBaseGeneratedDataset):
         dataset_size = sys.maxint
         super(MovingMNISTTrainDataset, self).__init__('train', dataset_size,
                                                       input_shape, target_shape,
-                                                      num_digits, step_length)
+                                                      as_binary, num_digits, step_length)
     
     
     
 class MovingMNISTValidDataset(MovingMNISTBaseGeneratedDataset):
     """Moving MNIST validation dataset that creates data on the fly."""
     def __init__(self, input_shape=[10, 64, 64, 1], target_shape=[10, 64, 64, 1],
-                 num_digits=2, step_length=0.1):
+                 as_binary=False, num_digits=2, step_length=0.1):
         """Creates a validation MovingMNIST dataset instance.
         Parameters
         ----------
@@ -196,6 +209,10 @@ class MovingMNISTValidDataset(MovingMNISTBaseGeneratedDataset):
             The input image sequence shape.
         target_shape: list(int) of shape [t, h, w, c]
             The taget image sequence shape.
+        as_binary: Boolean, optional
+            Whether the data should be returned as float (default) in range
+            [0.0, 1.0], or as pseudo-binary with values {0.0, 1.0}, were the
+            original data.
         num_digits: int, optional
             The number of flying MNIST digits.
         step_length: float, optional
@@ -204,13 +221,13 @@ class MovingMNISTValidDataset(MovingMNISTBaseGeneratedDataset):
         dataset_size = 10000
         super(MovingMNISTValidDataset, self).__init__('validation', dataset_size,
                                                       input_shape, target_shape,
-                                                      num_digits, step_length)
+                                                      as_binary, num_digits, step_length)
 
     
     
 class MovingMNISTTestDataset(base.AbstractDataset):
     """Moving MNIST test dataset that that uses the same data as in other papers."""
-    def __init__(self, input_seq_length=10, target_seq_length=10):
+    def __init__(self, input_seq_length=10, target_seq_length=10, as_binary=False):
         """Creates a test MovingMNIST dataset instance.
         Parameters
         ----------
@@ -218,6 +235,10 @@ class MovingMNISTTestDataset(base.AbstractDataset):
             The input sequence length
         target_seq_length: int, optional
             The target sequence length
+        as_binary: Boolean, optional
+            Whether the data should be returned as float (default) in range
+            [0.0, 1.0], or as pseudo-binary with values {0.0, 1.0}, were the
+            original data.
         """
         assert input_seq_length + target_seq_length <= 20, "The maximum total test sequence length is 20."
         
@@ -232,8 +253,15 @@ class MovingMNISTTestDataset(base.AbstractDataset):
 
         # introduce channel dimension
         data = np.expand_dims(data, axis=4)
+        
         # use value scale [0,1]
-        self._data = data / 255.0 
+        data = data / 255.0 
+        
+        if as_binary:
+            self._data = tt.utils.data.as_binary(data)
+        else:
+            self._data = data
+        
         dataset_size = data.shape[0]
         self._row = 0
         
