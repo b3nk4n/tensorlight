@@ -88,3 +88,20 @@ def extract(filepath, target_dir, unpacked_name=None):
         print('File {} has already been extracted.'.format(filename))
     
     return unzipped_dirpath
+
+
+def as_binary(array):
+    """Creates a copy of an array, where the data is binary but of the same type.
+       All values >= 0.5 are considered to be 1.0, else 0.0
+    Parameters
+    ----------
+    array: numpy array
+        The numpy array in a float-range of [0.0, 1.0].
+    Returns
+    ----------
+    The converted array as float only containing values of {0.0, 1.0}
+    """
+    a = array.copy()
+    a[a >= 0.5] = 1.0
+    a[a < 0.5] = 0.0
+    return d
