@@ -101,7 +101,4 @@ def as_binary(array):
     ----------
     The converted array as float only containing values of {0.0, 1.0}
     """
-    a = array.copy()
-    a[a >= 0.5] = 1.0
-    a[a < 0.5] = 0.0
-    return d
+    return np.around(array)

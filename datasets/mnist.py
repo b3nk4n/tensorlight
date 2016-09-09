@@ -16,14 +16,23 @@ class MNISTBaseDataset(base.AbstractDataset):
     _mnist = None
     
     """MNIST base dataset wrapping the functions provided by tensorflow."""
-    def __init__(self, dataset):
+    def __init__(self, dataset, as_binary):
         """Creates a dataset instance.
         Parameters
         ----------
         dataset: Dataset
             The TensorFlow MNIST dataset to use.
+        as_binary: Boolean
+            Whether the data should be returned as float (default) in range
+            [0.0, 1.0], or as pseudo-binary with values {0.0, 1.0}, were the
+            original data.
         """
-        self._data = dataset.images.reshape((-1, 28, 28, 1))
+        data = dataset.images.reshape((-1, 28, 28, 1))
+        if as_binary:
+            self._data = tt.utils.data.as_binary(data)
+        else:
+            self_data = data
+        
         self._targets = dataset.labels
         dataset_size = dataset.num_examples
         
@@ -58,21 +67,42 @@ class MNISTBaseDataset(base.AbstractDataset):
 
 
 class MNISTTrainDataset(MNISTBaseDataset):
-    """MNIST training dataset wrapping the functions provided by tensorflow."""
-    def __init__(self):
+    """MNIST training dataset wrapping the functions provided by tensorflow.
+    Parameters
+    ----------
+    as_binary: Boolean
+            Whether the data should be returned as float (default) in range
+            [0.0, 1.0], or as pseudo-binary with values {0.0, 1.0}, were the
+            original data.
+    """
+    def __init__(self, as_binary=False):
         mnist = MNISTBaseDataset.mnist()
-        super(MNISTTrainDataset, self).__init__(mnist.train)
+        super(MNISTTrainDataset, self).__init__(mnist.train, as_binary)
         
         
 class MNISTValidDataset(MNISTBaseDataset):
-    """MNIST validation dataset wrapping the functions provided by tensorflow."""
-    def __init__(self):
+    """MNIST validation dataset wrapping the functions provided by tensorflow.
+    Parameters
+    ----------
+    as_binary: Boolean
+            Whether the data should be returned as float (default) in range
+            [0.0, 1.0], or as pseudo-binary with values {0.0, 1.0}, were the
+            original data.
+    """
+    def __init__(self, as_binary=False):
         mnist = MNISTBaseDataset.mnist()
-        super(MNISTValidDataset, self).__init__(mnist.validation)
+        super(MNISTValidDataset, self).__init__(mnist.validation, as_binary)
 
     
 class MNISTTestDataset(MNISTBaseDataset):
-    """MNIST test dataset wrapping the functions provided by tensorflow."""
-    def __init__(self):
+    """MNIST test dataset wrapping the functions provided by tensorflow.
+    Parameters
+    ----------
+    as_binary: Boolean
+            Whether the data should be returned as float (default) in range
+            [0.0, 1.0], or as pseudo-binary with values {0.0, 1.0}, were the
+            original data.
+    """
+    def __init__(self, as_binary=False):
         mnist = MNISTBaseDataset.mnist()
-        super(MNISTTestDataset, self).__init__(mnist.test)
+        super(MNISTTestDataset, self).__init__(mnist.test, as_binary)
