@@ -150,6 +150,9 @@ def display_image(image):
     image : IPython.display.Image
         The image to display.
     """
+    if image is None:
+        return
+    
     display(image)
 
 
@@ -174,6 +177,9 @@ def display_batch(img_array_batch, nrows=2, ncols=2, title='',
     max_value: int/float, optional
         The maximum value of the image data.
     """
+    if img_array_batch is None:
+        return
+    
     # create figure with random id
     fig = plt.figure(random.randint(1, sys.maxint))
     fig.suptitle(title, fontsize=12, fontweight='semibold')
@@ -202,5 +208,8 @@ def display_array(img_array, format='png'):
     format : str, optional
         The image format.
     """
+    if img_array is None:
+        return
+    
     image = image_from_array(img_array, format)
     display(image)
