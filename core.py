@@ -476,7 +476,7 @@ class AbstractRuntime(object):
         eval_names = ["loss"]
         eval_ops = [self._loss]
         for name, eval_op in self._eval_dict.iteritems():
-            eval_names.append(name) 
+            eval_names.append(name.lower()) 
             eval_ops.append(eval_op)
         
         print("@{:6d}: Starting {} (batch-size: {}, dataset-size: {}):" \

@@ -99,9 +99,19 @@ class AbstractModel(object):
             return tf.identity(loss, name="loss_with_reg")
         
     def evaluation(self, predictions, targets, device_scope=None):
-        """Returns a dict of {title: scalar-Tensor} that are evaluated during validation and
-           training.
-           It is prefered to use lower-case as convention. All names must be a valid filename.
+        """Returns a dict of {title: scalar-Tensor, ...} that are evaluated during 
+           validation and training.
+           Note:
+               All names must be a valid filename, as they are used in TensorBoard. 
+        predictions: n-D Tensor
+            The predictions of the model.
+        targets: n-D Tensor
+            The targets/labels.
+        device_scope: str or None, optional
+            The tower name in case of multi-GPU runs.
+        Returns
+        ----------
+        A dict of {title: scalar-Tensor, ...} to be executed in validation and testing.
         """
         return {}
 
