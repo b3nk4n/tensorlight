@@ -239,7 +239,7 @@ class AbstractRuntime(object):
         """
         pass
         
-    def train(self, batch_size, steps=-1, epochs=-1, train_feeds={}, valid_feeds={},
+    def train(self, batch_size, valid_batch_size=None, steps=-1, epochs=-1, train_feeds={}, valid_feeds={},
               on_validate=None, display_step=10, summary_steps=100, checkpoint_steps=1000,
               validation_steps=1000, early_validation_at_step=100,
               do_checkpoints=True, do_summary=True):
@@ -248,7 +248,12 @@ class AbstractRuntime(object):
         Parameters
         ----------
         batch_size: int
-            The batch size to use.
+            The batch size to use for training (and for validation, in case
+            'valid_batch_size') is not defined.
+        valid_batch_size: int or None, optional
+            The batch size to use for validation, or None to use the same as for training.
+            You might want to use a different batch_size for validation, to make sure that
+            every example is actually evaluated.
         steps: int, partly-required
             The number of steps to train the model.
         epochs: int, partly-required
@@ -369,7 +374,7 @@ class AbstractRuntime(object):
                         epochs > 0 and this_step % batches_per_epoch == 0:
                         # validate
                         print
-                        self._test_internal(batch_size, self.datasets.valid, "validation", valid_feeds, do_summary)
+                        self._test_internal(valid_batch_size, self.datasets.valid, "validation", valid_feeds, do_summary)
                         print
                         
                         if on_validate is not None:
