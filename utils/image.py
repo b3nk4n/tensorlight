@@ -157,3 +157,55 @@ def to_rgb(image):
         if img_channels != 3:
             image = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
     return image
+
+
+def pad_or_crop(image, desired_shape, pad_value=0,
+                ensure_copy=True):
+    """Pads or crops an image to the desired size. The padding and
+       cropping is performed relative to the center.
+    Parameters
+    ----------
+    image: ndarray
+        The image to pad or crop.
+    desired_shape: list or tuple of shape [h, w] or [h, w, c]
+        The desired target shape. In case a shape of dimension [h, w, c]
+        is passed, the channel-dim will be ignored. Is is only accepted that
+        an image-shape array does not have cropped when using this function.
+    pad_value: int or float, optional
+        The value of the image padding, usually in range [0, 255] or [0.0, 1.0].
+    ensure_copy: Boolean, optional
+        If True (default) a new copy is created for the cropped image. Modifications
+        on the the padded/cropped image do not influence the original. You may deactivate
+        this behaviour to improve performance.
+    Returns
+    ----------
+    The padded or cropped image.
+    """
+    h, w, c = image.shape
+    desired_h = desired_shape[0]
+    desired_w = desired_shape[1]
+    
+    do_pad = True if (desired_h > h or desired_w > w) else False
+    do_crop = True if (desired_h < h or desired_w < w) else False
+    
+    if do_pad:
+        pad_top = (desired_h - h) // 2
+        pad_bottom = desired_h - h - pad_top
+        pad_left = (desired_w - w) // 2
+        pad_right = desired_w - w - pad_left
+        # np.pad always creates a copy of the original
+        image = np.pad(image,
+                       ((pad_top, pad_bottom),
+                        (pad_left, pad_right),
+                        (0, 0)),
+                       mode='constant',
+                       constant_values=pad_value)
+    if do_crop:
+        left = (w - desired_w) // 2
+        top = (w - desired_h) // 2
+        if ensure_copy:
+            # create a copy before returning the array-view
+            image = image.copy()
+        image = image[top:(top + desired_h), left:(left + desired_w), :]
+        
+    return image
