@@ -5,10 +5,17 @@ import tarfile
 import zipfile
 from six.moves import urllib
 
+import numpy as np
+import tensortools as tt
+
 
 EXT_RAR = ".rar"
 EXT_TAR_GZ = ".tar.gz"
 EXT_ZIP = ".zip"
+
+SUBDIR_TRAIN = '_train'
+SUBDIR_VALID = '_valid'
+SUBDIR_TEST = '_test'
 
 
 def download(url, target_dir):
@@ -102,3 +109,97 @@ def as_binary(array):
     The converted array as float only containing values of {0.0, 1.0}
     """
     return np.around(array)
+
+
+def preprocess_videos(dataset_path, subdir, file_list, image_size, serialized_sequence_length,
+                      gray_scale=False, scale_factor=1.0):
+    """Serializes frame sequences from a given list of videos to the specified directories,
+       or retrieves the list of existing files if these already exist.
+    Parameters
+    ----------
+    dataset_path: str
+        The root folder of the video data.
+    subdir: str
+        The subdir, basically to seperate training, validation and test data.
+        It is recommended to use the constants, e.g tt.utils.data.SUBDIR_TRAIN.
+    image_size: int list or tuple of shape [h, w, c]
+        The image shape of the video data. All videos will be cropped or padded relative
+        to this value.
+    serialized_sequence_length: int
+        The frame length of each serialized bundle. Each video leads to multiple bundles.
+        The serialized bundles are non-overlapping and an incomplete frame-bundle will be
+        dismissed.
+    scale_factor: float in range (0.0, 1.0]
+        The scale factor of the video. Take care to use a factor that resizes the video evenly.
+    Returns
+    ----------
+    (dataset_size, seq_file_list): as type (int, list(str)).
+        The dataset size and a list with the path to the serialized sequence bundles.
+    """
+    assert scale_factor > 0 and scale_factor <= 1, "Scale factor has to be in range (0.0, 1.0]."
+    
+    target_size = [int(image_size[0] * scale_factor),
+                   int(image_size[1] * scale_factor),
+                   1 if gray_scale else image_size[2]]
+    
+    # create additional subdir for the image size that a
+    # previous preprocessing does not have to be deleted
+    image_prop_dir = "{}_{}_{}".format(target_size[0], target_size[1], target_size[2])
+    full_path = os.path.join(dataset_path, subdir, image_prop_dir)
+    seq_file_list = tt.utils.path.get_filenames(full_path, '*.seq')
+    
+    # Reuse previous preprocessing if possible
+    files_count = len(seq_file_list)
+    if files_count > 0:
+        print("Found {} serialized frame sequences. Skipping serialization.".format(files_count))
+        return files_count, seq_file_list          
+                
+    # create subdir folder that will contain the .seq files
+    if not os.path.exists(full_path):
+        os.makedirs(full_path)            
+    
+    print("Serializing frame sequences to '{}'...".format(full_path))
+    success_counter = 0
+    short_counter = 0
+    progress = tt.utils.ui.ProgressBar(len(file_list))
+    for i, filename in enumerate(file_list):
+        video_filename = os.path.join(dataset_path, filename)
+        with tt.utils.video.VideoReader(video_filename) as vr:
+            # until we reach the end of the video
+            clip_id = 0
+            while True:
+                frames = []
+                if vr.frames_left >= serialized_sequence_length:
+                    for f in xrange(serialized_sequence_length):
+                        frame = vr.next_frame(scale_factor)
+
+                        if frame is None:
+                            break
+                        
+                        # ensure bounds
+                        tt.utils.image.pad_or_crop(frame, target_size, pad_value=0.0)
+                        
+                        # convert to gray if requried
+                        if gray_scale == 1:
+                            frame = tt.utils.image.to_grayscale(frame)
+                            
+                        frames.append(frame)
+
+                if len(frames) == serialized_sequence_length:
+                    filename = os.path.basename(video_filename)
+                    filename_seq = "{}-{}.seq".format(os.path.splitext(filename)[0], clip_id)
+                    filepath_seq = os.path.join(full_path, filename_seq)
+                    tt.utils.image.write_as_binary(filepath_seq, np.asarray(frames))
+                    success_counter += 1
+                    clip_id += 1
+                else:
+                    if clip_id == 0:
+                        # clip end reached in first run (video was not used at all!)
+                        short_counter += 1
+                    break
+        progress.update(i+1)
+    print("Successfully generated {} frame sequences. Too short: {}" \
+          .format(success_counter, short_counter))
+    
+    seq_file_list = tt.utils.path.get_filenames(full_path, '*.seq')
+    return success_counter, seq_file_list
