@@ -114,8 +114,6 @@ class UCF11TrainDataset(base.AbstractQueueDataset):
         ----------
         data_dir: str
             The path where the data will be stored.
-        dataset_size: int, optional
-            The dataset site.
         input_seq_length: int, optional
             The length of the input sequence.
         target_seq_length: length
@@ -282,8 +280,6 @@ class UCF11ValidDataset(base.AbstractDataset):
         ----------
         data_dir: str
             The path where the data will be stored.
-        dataset_size: int, optional
-            The dataset site.
         input_seq_length: int, optional
             The length of the input sequence.
         target_seq_length: length
@@ -363,6 +359,13 @@ class UCF11ValidDataset(base.AbstractDataset):
             current = tt.utils.image.read_as_binary(f, dtype=np.uint8)
             current = np.reshape(current, [self.serialized_sequence_length] + list(self._data_img_size))
             
+            # select random part of the sequence with length of inputs+targets
+            inputs_length = self.input_shape[0]
+            targets_length = self.target_shape[0]
+            total_length = inputs_length + targets_length
+            start_t = random.randint(0, self.serialized_sequence_length - total_length)
+            current = current[start_t:(start_t + total_length)]
+            
             if self._crop_size is not None:
                 current = current[:, offset_y:(offset_y+self._crop_size[0]),
                                   offset_x:(offset_x+self._crop_size[1]),:]
@@ -371,8 +374,8 @@ class UCF11ValidDataset(base.AbstractDataset):
                 #current = np.flip(current, axis=-2) # only available in numpy 1.1.12 dev0
                 current = current[:,:,::-1,:] # horizontal flip
             
-            seq_input_list.append(current[0:self.input_shape[0]])
-            seq_target_list.append(current[self.input_shape[0]:self.input_shape[0]+self.target_shape[0]])
+            seq_input_list.append(current[0:inputs_length])
+            seq_target_list.append(current[inputs_length:(inputs_length + total_length)])
         
         input_sequence = np.stack(seq_input_list)
         target_sequence = np.stack(seq_target_list)
