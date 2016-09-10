@@ -20,26 +20,17 @@ FRAME_CHANNELS = 3
 
 
 def _serialize_frame_sequences(dataset_path, subdir, image_size, serialized_sequence_length):
-    full_path = os.path.join(dataset_path, subdir)
+    # create additional subdir for the image size that a
+    # previous preprocessing does not have to be deleted
+    image_prop_dir = "{}_{}_{}".format(image_size[0], image_size[1], image_size[2])
+    full_path = os.path.join(dataset_path, subdir, image_prop_dir)
     sequence_files = tt.utils.path.get_filenames(full_path, '*.seq')
     
-    print("full", full_path)
-    
-    if len(sequence_files) > 0:
-        # Test if image_size has changed
-        example = np.fromfile(sequence_files[0], np.uint8)
-        old_ndim = np.prod(example.shape)
-        new_ndim = np.prod(image_size) * serialized_sequence_length
-        if old_ndim == new_ndim:
-            # Reuse old serialized files
-            dataset_size = len(sequence_files)
-            print("Found {} serialized frame sequences. Skipping serialization.".format(dataset_size))
-            return dataset_size
-        else:
-            print("Change in image properties detected. Deleting previous serialized *.seq files...")
-            # remove old serialized files
-            for sfile in sequence_files:
-                os.remove(sfile)            
+    # Reuse previous preprocessing if possible
+    files_count = len(seq_file_list)
+    if files_count > 0:
+        print("Found {} serialized frame sequences. Skipping serialization.".format(files_count))
+        return files_count         
 
     video_filenames = tt.utils.path.get_filenames(dataset_path, '*.mpg')
     
