@@ -22,36 +22,6 @@ FRAME_WIDTH = 320
 FRAME_CHANNELS = 3
 
 
-def _read_train_splits(dir_path):
-    """Reads the filepaths of the train split."""
-    train_files = []
-    
-    filepath = os.path.join(dir_path, UCF101_TRAINLIST)
-    with open(filepath) as f:
-        for line in f:
-            train_files.append(line.split()[0])
-    return train_files
-
-
-def _read_eval_splits(dir_path):
-    """Reads the filepaths of the valid/test splits.
-       Alternated throught the file list, 1/3 is considered
-       as validation and 2/3 as test data.
-    """
-    test_files = []
-    valid_files = []
-    
-    filepath = os.path.join(dir_path, UCF101_TESTLIST)
-    with open(filepath) as f:
-        for i, line in enumerate(f):
-            if i % 3 == 0:
-                valid_files.append(line.split()[0])
-            else:    
-                test_files.append(line.split()[0])
-            
-    return valid_files, test_files
-
-
 def _serialize_frame_sequences(dataset_path, subdir, file_list, image_size, serialized_sequence_length):
     full_path = os.path.join(dataset_path, subdir)
     seq_file_list = tt.utils.path.get_filenames(full_path, '*.seq')
@@ -186,7 +156,7 @@ class UCF101TrainDataset(base.AbstractQueueDataset):
         splits_path = tt.utils.data.extract(zip_path, data_dir, unpacked_name='ucfTrainTestlist')
             
         # generate frame sequences
-        train_files = _read_train_splits(splits_path)
+        train_files = UCF101TrainDataset._read_train_splits(splits_path)
         dataset_size = _serialize_frame_sequences(dataset_path, SUBDIR_TRAIN,
                                                   train_files, image_size,
                                                   serialized_sequence_length)
@@ -200,6 +170,17 @@ class UCF101TrainDataset(base.AbstractQueueDataset):
         
         super(UCF101TrainDataset, self).__init__(data_dir, dataset_size, input_shape, target_shape,
                                                 min_examples_in_queue, queue_capacitiy, num_threads)
+    
+    @staticmethod
+    def _read_train_splits(dir_path):
+        """Reads the filepaths of the train split."""
+        train_files = []
+
+        filepath = os.path.join(dir_path, UCF101_TRAINLIST)
+        with open(filepath) as f:
+            for line in f:
+                train_files.append(line.split()[0])
+        return train_files
     
     def _read_record(self, filename_queue):
         
@@ -292,8 +273,9 @@ class UCF101TrainDataset(base.AbstractQueueDataset):
         return self._do_distortion
     
     
-class UCF101ValidDataset(base.AbstractDataset):    
-    """UCF-101 dataset that creates a bunch of binary frame sequences.
+class UCF101BaseEvaluationDataset(base.AbstractDataset):    
+    """UCF-101 dataset base class for evaluation, which creates a bunch of
+       binary frame sequences.
        The data is not qualitatively-augmented with contrast, brightness,
        to allow better comparability between single validations.
        But it allows to use allows to use random cropping, as well as
@@ -302,15 +284,17 @@ class UCF101ValidDataset(base.AbstractDataset):
        
        References: http://crcv.ucf.edu/data/UCF101.php
     """
-    def __init__(self, data_dir, input_seq_length=5, target_seq_length=5,
+    def __init__(self, data_dir, subdir, input_seq_length=5, target_seq_length=5,
                  image_size=(FRAME_HEIGHT, FRAME_WIDTH, FRAME_CHANNELS),
                  serialized_sequence_length=30, double_with_flipped=False,
                  crop_size=None):
-        """Creates a validation dataset instance.
+        """Creates a dataset instance.
         Parameters
         ----------
         data_dir: str
             The path where the data will be stored.
+        subdir: str
+            The subdirectory where the serialized data will be stored.
         input_seq_length: int, optional
             The length of the input sequence.
         target_seq_length: length
@@ -343,14 +327,15 @@ class UCF101ValidDataset(base.AbstractDataset):
             
         zip_path = tt.utils.data.download(UCF101_SPLITS_URL, data_dir)
         splits_path = tt.utils.data.extract(zip_path, data_dir, unpacked_name='ucfTrainTestlist')
-            
+
         # generate frame sequences
-        valid_files, _ = _read_eval_splits(splits_path)
-        dataset_size = _serialize_frame_sequences(dataset_path, SUBDIR_VALID,
-                                                  valid_files, image_size,
+        (eval_files) = UCF101BaseEvaluationDataset._read_eval_splits(splits_path)
+        eval_index = 0 if subdir == SUBDIR_VALID else 1
+        dataset_size = _serialize_frame_sequences(dataset_path, subdir,
+                                                  eval_files[eval_index], image_size,
                                                   serialized_sequence_length)
         
-        validation_path = os.path.join(dataset_path, SUBDIR_VALID)
+        validation_path = os.path.join(dataset_path, subdir)
         self._file_name_list = tt.utils.path.get_filenames(validation_path, '*.seq')
         
         # even if the dataset size is doubled, use the original
@@ -370,8 +355,27 @@ class UCF101ValidDataset(base.AbstractDataset):
             input_shape = [input_seq_length, crop_size[0], crop_size[1], image_size[2]]
             target_shape = [target_seq_length, crop_size[0], crop_size[1], image_size[2]]
         
-        super(UCF101ValidDataset, self).__init__(data_dir, dataset_size, input_shape, target_shape)
+        super(UCF101BaseEvaluationDataset, self).__init__(data_dir, dataset_size, input_shape, target_shape)
 
+    @staticmethod
+    def _read_eval_splits(dir_path):
+        """Reads the filepaths of the valid/test splits.
+           Alternated throught the file list, 1/3 is considered
+           as validation and 2/3 as test data.
+        """
+        test_files = []
+        valid_files = []
+
+        filepath = os.path.join(dir_path, UCF101_TESTLIST)
+        with open(filepath) as f:
+            for i, line in enumerate(f):
+                if i % 3 == 0:
+                    valid_files.append(line.split()[0])
+                else:    
+                    test_files.append(line.split()[0])
+
+        return valid_files, test_files
+        
     @tt.utils.attr.override
     def get_batch(self, batch_size):
         fake_size = self.size
@@ -457,3 +461,85 @@ class UCF101ValidDataset(base.AbstractDataset):
            images as well is activated.
         """
         return self._double_with_flipped
+    
+    
+class UCF101ValidDataset(UCF101BaseEvaluationDataset):    
+    """UCF-101 validation dataset that creates a bunch of binary frame sequences.
+       The data is not qualitatively-augmented with contrast, brightness,
+       to allow better comparability between single validations.
+       But it allows to use allows to use random cropping, as well as
+       doubling the data quantitatively by using both, flipped and unflipped
+       images.
+       
+       References: http://crcv.ucf.edu/data/UCF101.php
+    """
+    def __init__(self, data_dir, input_seq_length=5, target_seq_length=5,
+                 image_size=(FRAME_HEIGHT, FRAME_WIDTH, FRAME_CHANNELS),
+                 serialized_sequence_length=30, double_with_flipped=False,
+                 crop_size=None):
+        """Creates a validation dataset instance.
+        Parameters
+        ----------
+        data_dir: str
+            The path where the data will be stored.
+        input_seq_length: int, optional
+            The length of the input sequence.
+        target_seq_length: length
+            The length of the target sequence.
+        image_size: list(int) of shape [h, w, c]
+            The image size, how the data with default scale [240, 320, 3]
+            should be scaled to.
+        serialized_sequence_length: int, optional
+            The sequence length of each serialized file.
+        double_with_flipped: Boolean, optional
+            Whether quantitative augmentation should be performed or not.
+            It doubles the dataset_size by including the horizontal flipped
+            images as well.
+        crop_size: tuple(int) or None, optional
+            The size (height, width) to randomly crop the images.
+        """
+        super(UCF101ValidDataset, self).__init__(data_dir, SUBDIR_VALID,
+                                                 input_seq_length, target_seq_length,
+                                                 image_size, serialized_sequence_length,
+                                                 double_with_flipped, crop_size)
+        
+        
+class UCF101TestDataset(UCF101BaseEvaluationDataset):    
+    """UCF-101 test dataset that creates a bunch of binary frame sequences.
+       The data is not qualitatively-augmented with contrast, brightness,
+       to allow better comparability between single validations.
+       But it allows to use allows to use random cropping, as well as
+       doubling the data quantitatively by using both, flipped and unflipped
+       images.
+       
+       References: http://crcv.ucf.edu/data/UCF101.php
+    """
+    def __init__(self, data_dir, input_seq_length=5, target_seq_length=5,
+                 image_size=(FRAME_HEIGHT, FRAME_WIDTH, FRAME_CHANNELS),
+                 serialized_sequence_length=30, double_with_flipped=False,
+                 crop_size=None):
+        """Creates a validation dataset instance.
+        Parameters
+        ----------
+        data_dir: str
+            The path where the data will be stored.
+        input_seq_length: int, optional
+            The length of the input sequence.
+        target_seq_length: length
+            The length of the target sequence.
+        image_size: list(int) of shape [h, w, c]
+            The image size, how the data with default scale [240, 320, 3]
+            should be scaled to.
+        serialized_sequence_length: int, optional
+            The sequence length of each serialized file.
+        double_with_flipped: Boolean, optional
+            Whether quantitative augmentation should be performed or not.
+            It doubles the dataset_size by including the horizontal flipped
+            images as well.
+        crop_size: tuple(int) or None, optional
+            The size (height, width) to randomly crop the images.
+        """
+        super(UCF101TestDataset, self).__init__(data_dir, SUBDIR_TEST,
+                                                input_seq_length, target_seq_length,
+                                                image_size, serialized_sequence_length,
+                                                double_with_flipped, crop_size)
