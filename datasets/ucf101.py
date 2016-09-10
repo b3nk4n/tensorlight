@@ -33,7 +33,7 @@ def _read_train_splits(dir_path):
     return train_files
 
 
-def _read_test_splits(dir_path):
+def _read_eval_splits(dir_path):
     """Reads the filepaths of the valid/test splits.
        Alternated throught the file list, 1/3 is considered
        as validation and 2/3 as test data.
@@ -143,8 +143,8 @@ class UCF101TrainDataset(base.AbstractQueueDataset):
         """Creates a training dataset instance that uses a queue.
         Parameters
         ----------
-        dataset_size: int, optional
-            The dataset site.
+        data_dir: str
+            The dataset root path to store the data.
         input_seq_length: int, optional
             The length of the input sequence.
         target_seq_length: length
@@ -290,3 +290,170 @@ class UCF101TrainDataset(base.AbstractQueueDataset):
     def do_distortion(self):
         """Gets whether distorion is activated."""
         return self._do_distortion
+    
+    
+class UCF101ValidDataset(base.AbstractDataset):    
+    """UCF-101 dataset that creates a bunch of binary frame sequences.
+       The data is not qualitatively-augmented with contrast, brightness,
+       to allow better comparability between single validations.
+       But it allows to use allows to use random cropping, as well as
+       doubling the data quantitatively by using both, flipped and unflipped
+       images.
+       
+       References: http://crcv.ucf.edu/data/UCF101.php
+    """
+    def __init__(self, data_dir, input_seq_length=5, target_seq_length=5,
+                 image_size=(FRAME_HEIGHT, FRAME_WIDTH, FRAME_CHANNELS),
+                 serialized_sequence_length=30, double_with_flipped=False,
+                 crop_size=None):
+        """Creates a validation dataset instance.
+        Parameters
+        ----------
+        data_dir: str
+            The path where the data will be stored.
+        input_seq_length: int, optional
+            The length of the input sequence.
+        target_seq_length: length
+            The length of the target sequence.
+        image_size: list(int) of shape [h, w, c]
+            The image size, how the data with default scale [240, 320, 3]
+            should be scaled to.
+        serialized_sequence_length: int, optional
+            The sequence length of each serialized file.
+        double_with_flipped: Boolean, optional
+            Whether quantitative augmentation should be performed or not.
+            It doubles the dataset_size by including the horizontal flipped
+            images as well.
+        crop_size: tuple(int) or None, optional
+            The size (height, width) to randomly crop the images.
+        """
+        if crop_size is not None:
+            assert image_size[0] > crop_size[0] and image_size[1] > crop_size[1], \
+                "Image size has to be larger than the crop size."
+        
+        self._serialized_sequence_length = serialized_sequence_length
+        self._double_with_flipped = double_with_flipped
+        self._crop_size = crop_size
+        self._data_img_size = image_size
+        
+        rar_path = tt.utils.data.download(UCF101_URL, data_dir)
+
+        dataset_path = tt.utils.data.extract(rar_path, data_dir, unpacked_name='UCF-101')
+        self._data_dir = dataset_path
+            
+        zip_path = tt.utils.data.download(UCF101_SPLITS_URL, data_dir)
+        splits_path = tt.utils.data.extract(zip_path, data_dir, unpacked_name='ucfTrainTestlist')
+            
+        # generate frame sequences
+        valid_files, _ = _read_eval_splits(splits_path)
+        dataset_size = _serialize_frame_sequences(dataset_path, SUBDIR_VALID,
+                                                  valid_files, image_size,
+                                                  serialized_sequence_length)
+        
+        validation_path = os.path.join(dataset_path, SUBDIR_VALID)
+        self._file_name_list = tt.utils.path.get_filenames(validation_path, '*.seq')
+        
+        # even if the dataset size is doubled, use the original
+        # size for the indices list to reduce its size...
+        self._indices = range(dataset_size)
+        self._row = 0  # Note: if 'double_with_flipped' is active,
+                       #       the row-index overflows the (internal) dataset size
+        
+        # ...but for the outside, fake to have to doubled size.
+        if double_with_flipped:
+            dataset_size *= 2
+        
+        if crop_size is None:
+            input_shape = [input_seq_length, image_size[0], image_size[1], image_size[2]]
+            target_shape = [target_seq_length, image_size[0], image_size[1], image_size[2]]
+        else:
+            input_shape = [input_seq_length, crop_size[0], crop_size[1], image_size[2]]
+            target_shape = [target_seq_length, crop_size[0], crop_size[1], image_size[2]]
+        
+        super(UCF101ValidDataset, self).__init__(data_dir, dataset_size, input_shape, target_shape)
+
+    @tt.utils.attr.override
+    def get_batch(self, batch_size):
+        fake_size = self.size
+        data_size = self.size // 2 if self.double_with_flipped else self.size
+        
+        if self._row + batch_size >= fake_size:
+            self.reset()
+            
+        start = self._row % data_size
+        end = (start + batch_size) % data_size
+        if start > end:
+            # Note: this case is only possible when 'double_with_flipped' is active
+            ind_range = self._indices[start:] + self._indices[:end]
+        else:
+            ind_range = self._indices[start:end]
+               
+        # ensure we have the correct batch-size
+        assert len(ind_range) == batch_size, "Assertion of batch_size and ind_range failed."
+        
+        # get next filenames
+        file_names = [self._file_name_list[i] for i in ind_range]
+        
+        # do equal random crop?
+        if self._crop_size is not None:
+            offset_x = random.randint(0, self._data_img_size[1] - self._crop_size[1])
+            offset_y = random.randint(0, self._data_img_size[0] - self._crop_size[0])
+        
+        # load serialized sequences
+        seq_input_list = []
+        seq_target_list = []
+        for i, f in enumerate(file_names):
+            virtual_row = self._row + i
+                                       
+            current = tt.utils.image.read_as_binary(f, dtype=np.uint8)
+            current = np.reshape(current, [self.serialized_sequence_length] + list(self._data_img_size))
+            
+            # select random part of the sequence with length of inputs+targets
+            inputs_length = self.input_shape[0]
+            targets_length = self.target_shape[0]
+            total_length = inputs_length + targets_length
+            start_t = random.randint(0, self.serialized_sequence_length - total_length)
+            current = current[start_t:(start_t + total_length)]
+            
+            if self._crop_size is not None:
+                current = current[:, offset_y:(offset_y + self._crop_size[0]),
+                                  offset_x:(offset_x + self._crop_size[1]),:]
+
+            if self.double_with_flipped:
+                # do flipping: every even frame is 1st part, and every odd frame in 2nd part
+                #              of our virtual row index
+                if virtual_row < data_size and virtual_row % 2 == 0 \
+                   or virtual_row >= data_size and virtual_row % 2 == 1:
+                    current = current[:,:,::-1,:] # horizontal flip
+            
+            seq_input_list.append(current[0:inputs_length])
+            seq_target_list.append(current[inputs_length:(inputs_length + total_length)])
+        
+        input_sequence = np.stack(seq_input_list)
+        target_sequence = np.stack(seq_target_list)
+        
+        # convert to float of scale [0.0, 1.0]
+        inputs = input_sequence.astype(np.float32) / 255
+        targets = target_sequence.astype(np.float32) / 255
+                
+        # delayed inc of row-counter because it is used in the loop
+        self._row += batch_size
+        
+        return inputs, targets
+    
+    @tt.utils.attr.override
+    def reset(self):
+        self._row = 0
+        np.random.shuffle(self._indices)
+        
+    @property
+    def serialized_sequence_length(self):
+        """Gets the serialized sequence length"""
+        return self._serialized_sequence_length
+    
+    @property
+    def double_with_flipped(self):
+        """Gets whether doubling the datasize by using the flipped
+           images as well is activated.
+        """
+        return self._double_with_flipped
