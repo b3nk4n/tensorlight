@@ -19,77 +19,6 @@ FRAME_WIDTH = 320
 FRAME_CHANNELS = 3
 
 
-def _serialize_frame_sequences(dataset_path, subdir, image_size, serialized_sequence_length):
-    # create additional subdir for the image size that a
-    # previous preprocessing does not have to be deleted
-    image_prop_dir = "{}_{}_{}".format(image_size[0], image_size[1], image_size[2])
-    full_path = os.path.join(dataset_path, subdir, image_prop_dir)
-    sequence_files = tt.utils.path.get_filenames(full_path, '*.seq')
-    
-    # Reuse previous preprocessing if possible
-    files_count = len(seq_file_list)
-    if files_count > 0:
-        print("Found {} serialized frame sequences. Skipping serialization.".format(files_count))
-        return files_count         
-
-    video_filenames = tt.utils.path.get_filenames(dataset_path, '*.mpg')
-    
-    # create subdir folder that will contain the .seq files
-    if not os.path.exists(full_path):
-        os.mkdir(full_path)  
-    
-    frame_scale_factor = image_size[0] / float(FRAME_HEIGHT)
-    
-    print("Serializing frame sequences...")
-    success_counter = 0
-    bounds_counter = 0
-    short_counter = 0
-    progress = tt.utils.ui.ProgressBar(len(video_filenames))
-    for i, video_filename in enumerate(video_filenames):
-        with tt.utils.video.VideoReader(video_filename) as vr:
-            # until we reach the end of the video
-            clip_id = 0
-            while True:
-                frames = []
-                if vr.frames_left >= serialized_sequence_length:
-                    for f in xrange(serialized_sequence_length):
-                        frame = vr.next_frame(frame_scale_factor)
-
-                        if frame is None:
-                            break
-
-                        # ensure frame is not too large
-                        h, w, c = np.shape(frame)
-                        if h > image_size[0] or w > image_size[1]:
-                            frame = frame[:image_size[0], :image_size[1], :]
-                        if not h < image_size[0] and not w < image_size[1]:
-                            frame = np.reshape(frame, [image_size[0], image_size[1], -1])
-                            if image_size[2] == 1:
-                                frame = tt.utils.image.to_grayscale(frame)
-                            frames.append(frame)
-                        else:
-                            # clip has wrong bounds
-                            bounds_counter += 1
-                            break
-
-                if len(frames) == serialized_sequence_length:
-                    filename = os.path.basename(video_filename)
-                    filename_seq = "{}-{}.seq".format(os.path.splitext(filename)[0], clip_id)
-                    filepath_seq = os.path.join(full_path, filename_seq)
-                    tt.utils.image.write_as_binary(filepath_seq, np.asarray(frames))
-                    success_counter += 1
-                    clip_id += 1
-                else:
-                    if clip_id == 0:
-                        # clip end reached in first run (video was not used at all!)
-                        short_counter += 1
-                    break
-        progress.update(i+1)
-    print("Successfully generated {} frame sequences. Too short: {}, Too small bounds: {}" \
-          .format(success_counter, short_counter, bounds_counter))
-    return success_counter
-
-
 class UCF11TrainDataset(base.AbstractQueueDataset):
     """UCF-11 sports dataset that creates a bunch of binary frame sequences
        and uses a file queue for multi-threaded input reading.
@@ -97,7 +26,7 @@ class UCF11TrainDataset(base.AbstractQueueDataset):
        References: http://crcv.ucf.edu/data/UCF_YouTube_Action.php
     """
     def __init__(self, data_dir, input_seq_length=5, target_seq_length=5,
-                 image_size=(FRAME_HEIGHT, FRAME_WIDTH, FRAME_CHANNELS),
+                 image_scale_factor=1.0, gray_scale=False,
                  min_examples_in_queue=512, queue_capacitiy=1024, num_threads=8,
                  serialized_sequence_length=30, do_distortion=True, crop_size=None):
         """Creates a training dataset instance that uses a queue.
@@ -109,9 +38,10 @@ class UCF11TrainDataset(base.AbstractQueueDataset):
             The length of the input sequence.
         target_seq_length: length
             The length of the target sequence.
-        image_size: list(int) of shape [h, w, c]
-            The image size, how the data with default scale [240, 320, 3]
-            should be scaled to.
+        image_scale_factor: float in range (0.0, 1.0], optional
+            The image scale size, how the data should be scaled to.
+        gray_scale: Boolean, optional
+            Whether we scale the image to gray or not.
         min_examples_in_queue: int, optional
             The minimum examples that have to be in the queue.
             A higher value ensures a good mix.
@@ -127,6 +57,10 @@ class UCF11TrainDataset(base.AbstractQueueDataset):
         crop_size: tuple(int) or None, optional
             The size (height, width) to randomly crop the images.
         """
+        image_size = [int(FRAME_HEIGHT * image_scale_factor),
+                      int(FRAME_WIDTH * image_scale_factor),
+                      1 if gray_scale else FRAME_CHANNELS]
+        
         if crop_size is not None:
             assert image_size[0] > crop_size[0] and image_size[1] > crop_size[1], \
                 "Image size has to be larger than the crop size."
@@ -136,18 +70,18 @@ class UCF11TrainDataset(base.AbstractQueueDataset):
         self._crop_size = crop_size
         self._data_img_size = image_size
         
-        try:
-            rar_path = tt.utils.data.download(UCF11_URL, data_dir)
-            dataset_path = tt.utils.data.extract(rar_path, data_dir)
-            self._data_dir = dataset_path
-           
-        except:
-            print 'Please set the correct path to UCF11 dataset. Might be caused by a download error.'
-            sys.exit()
+        # download and extract data
+        rar_path = tt.utils.data.download(UCF11_URL, data_dir)
+        dataset_path = tt.utils.data.extract(rar_path, data_dir)
+        self._data_dir = dataset_path
         
         # generate frame sequences.
-        dataset_size = _serialize_frame_sequences(dataset_path, SUBDIR_TRAIN,
-                                                  image_size, serialized_sequence_length)
+        video_filenames = tt.utils.path.get_filenames(dataset_path, '*.mpg')
+        dataset_size, _ = tt.utils.data.preprocess_videos(dataset_path, tt.utils.data.SUBDIR_TRAIN,
+                                                          video_filenames,
+                                                          [FRAME_HEIGHT, FRAME_WIDTH, FRAME_CHANNELS],
+                                                          serialized_sequence_length,
+                                                          gray_scale, image_scale_factor)
         
         if crop_size is None:
             input_shape = [input_seq_length, image_size[0], image_size[1], image_size[2]]
@@ -264,7 +198,7 @@ class UCF11ValidDataset(base.AbstractDataset):
        References: http://crcv.ucf.edu/data/UCF_YouTube_Action.php
     """
     def __init__(self, data_dir, input_seq_length=5, target_seq_length=5,
-                 image_size=(FRAME_HEIGHT, FRAME_WIDTH, FRAME_CHANNELS),
+                 image_scale_factor=1.0, gray_scale=False,
                  serialized_sequence_length=30, do_distortion=True, crop_size=None):
         """Creates a validation dataset instance.
         Parameters
@@ -275,9 +209,10 @@ class UCF11ValidDataset(base.AbstractDataset):
             The length of the input sequence.
         target_seq_length: length
             The length of the target sequence.
-        image_size: list(int) of shape [h, w, c]
-            The image size, how the data with default scale [240, 320, 3]
-            should be scaled to.
+        image_scale_factor: float in range (0.0, 1.0], optional
+            The image scale size, how the data should be scaled to.
+        gray_scale: Boolean, optional
+            Whether we scale the image to gray or not.
         serialized_sequence_length: int, optional
             The sequence length of each serialized file.
         do_distortion: Boolean, optional
@@ -286,6 +221,10 @@ class UCF11ValidDataset(base.AbstractDataset):
         crop_size: tuple(int) or None, optional
             The size (height, width) to randomly crop the images.
         """
+        image_size = [int(FRAME_HEIGHT * image_scale_factor),
+                      int(FRAME_WIDTH * image_scale_factor),
+                      1 if gray_scale else FRAME_CHANNELS]
+        
         if crop_size is not None:
             assert image_size[0] > crop_size[0] and image_size[1] > crop_size[1], \
                 "Image size has to be larger than the crop size."
@@ -295,17 +234,18 @@ class UCF11ValidDataset(base.AbstractDataset):
         self._crop_size = crop_size
         self._data_img_size = image_size
         
-        try:
-            rar_path = tt.utils.data.download(UCF11_URL, data_dir)
-            dataset_path = tt.utils.data.extract(rar_path, data_dir)
-            self._data_dir = dataset_path
-        except:
-            print 'Please set the correct path to UCF11 dataset. Might be caused by a download error.'
-            sys.exit()
+        # download and extract data
+        rar_path = tt.utils.data.download(UCF11_URL, data_dir)
+        dataset_path = tt.utils.data.extract(rar_path, data_dir)
+        self._data_dir = dataset_path
         
-        # generate frame sequences
-        dataset_size = _serialize_frame_sequences(dataset_path, SUBDIR_VALID,
-                                                  image_size, serialized_sequence_length)
+        # generate frame sequences.
+        video_filenames = tt.utils.path.get_filenames(dataset_path, '*.mpg')
+        dataset_size, _ = tt.utils.data.preprocess_videos(dataset_path, tt.utils.data.SUBDIR_VALID,
+                                                          video_filenames,
+                                                          [FRAME_HEIGHT, FRAME_WIDTH, FRAME_CHANNELS],
+                                                          serialized_sequence_length,
+                                                          gray_scale, image_scale_factor)
         
         self._file_name_list = tt.utils.path.get_filenames(self._data_dir, '*.seq')
         self._indices = range(dataset_size)

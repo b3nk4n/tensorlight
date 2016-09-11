@@ -13,83 +13,9 @@ UCF101_SPLITS_URL = 'http://crcv.ucf.edu/data/UCF101/UCF101TrainTestSplits-Recog
 UCF101_TRAINLIST = "trainlist03.txt"
 UCF101_TESTLIST = "testlist03.txt"
 
-SUBDIR_TRAIN = '_train'
-SUBDIR_VALID = '_valid'
-SUBDIR_TEST = '_test'
-
 FRAME_HEIGHT = 240
 FRAME_WIDTH = 320
 FRAME_CHANNELS = 3
-
-
-def _serialize_frame_sequences(dataset_path, subdir, file_list, image_size, serialized_sequence_length):
-    # create additional subdir for the image size that a
-    # previous preprocessing does not have to be deleted
-    image_prop_dir = "{}_{}_{}".format(image_size[0], image_size[1], image_size[2])
-    full_path = os.path.join(dataset_path, subdir, image_prop_dir)
-    seq_file_list = tt.utils.path.get_filenames(full_path, '*.seq')
-    
-    # Reuse previous preprocessing if possible
-    files_count = len(seq_file_list)
-    if files_count > 0:
-        print("Found {} serialized frame sequences. Skipping serialization.".format(files_count))
-        return files_count           
-                
-    # create subdir folder that will contain the .seq files
-    if not os.path.exists(full_path):
-        os.mkdir(full_path)            
-                
-    frame_scale_factor = image_size[0] / float(FRAME_HEIGHT)
-    
-    print("Serializing frame sequences...")
-    success_counter = 0
-    bounds_counter = 0
-    short_counter = 0
-    progress = tt.utils.ui.ProgressBar(len(file_list))
-    for i, filename in enumerate(file_list):
-        video_filename = os.path.join(dataset_path, filename)
-        with tt.utils.video.VideoReader(video_filename) as vr:
-            # until we reach the end of the video
-            clip_id = 0
-            while True:
-                frames = []
-                if vr.frames_left >= serialized_sequence_length:
-                    for f in xrange(serialized_sequence_length):
-                        frame = vr.next_frame(frame_scale_factor)
-
-                        if frame is None:
-                            break
-
-                        # ensure frame is not too large
-                        h, w, c = np.shape(frame)
-                        if h > image_size[0] or w > image_size[1]:
-                            frame = frame[:image_size[0], :image_size[1], :]
-                        if not h < image_size[0] and not w < image_size[1]:
-                            frame = np.reshape(frame, [image_size[0], image_size[1], -1])
-                            if image_size[2] == 1:
-                                frame = tt.utils.image.to_grayscale(frame)
-                            frames.append(frame)
-                        else:
-                            # clip has wrong bounds
-                            bounds_counter += 1
-                            break
-
-                if len(frames) == serialized_sequence_length:
-                    filename = os.path.basename(video_filename)
-                    filename_seq = "{}-{}.seq".format(os.path.splitext(filename)[0], clip_id)
-                    filepath_seq = os.path.join(full_path, filename_seq)
-                    tt.utils.image.write_as_binary(filepath_seq, np.asarray(frames))
-                    success_counter += 1
-                    clip_id += 1
-                else:
-                    if clip_id == 0:
-                        # clip end reached in first run (video was not used at all!)
-                        short_counter += 1
-                    break
-        progress.update(i+1)
-    print("Successfully generated {} frame sequences. Too short: {}, Too small bounds: {}" \
-          .format(success_counter, short_counter, bounds_counter))
-    return success_counter
 
 
 class UCF101TrainDataset(base.AbstractQueueDataset):
@@ -99,7 +25,7 @@ class UCF101TrainDataset(base.AbstractQueueDataset):
        References: http://crcv.ucf.edu/data/UCF101.php
     """
     def __init__(self, data_dir, input_seq_length=5, target_seq_length=5,
-                 image_size=(FRAME_HEIGHT, FRAME_WIDTH, FRAME_CHANNELS),
+                 image_scale_factor=1.0, gray_scale=False,
                  min_examples_in_queue=1024, queue_capacitiy=2048, num_threads=8,
                  serialized_sequence_length=30, do_distortion=True, crop_size=None):
         """Creates a training dataset instance that uses a queue.
@@ -111,9 +37,10 @@ class UCF101TrainDataset(base.AbstractQueueDataset):
             The length of the input sequence.
         target_seq_length: length
             The length of the target sequence.
-        image_size: list(int) of shape [h, w, c]
-            The image size, how the data with default scale [240, 320, 3]
-            should be scaled to.
+        image_scale_factor: float in range (0.0, 1.0], optional
+            The image scale size, how the data should be scaled to.
+        gray_scale: Boolean, optional
+            Whether we scale the image to gray or not.
         min_examples_in_queue: int, optional
             The minimum examples that have to be in the queue.
             A higher value ensures a good mix.
@@ -129,6 +56,10 @@ class UCF101TrainDataset(base.AbstractQueueDataset):
         crop_size: tuple(int) or None, optional
             The size (height, width) to randomly crop the images.
         """
+        image_size = [int(FRAME_HEIGHT * image_scale_factor),
+                      int(FRAME_WIDTH * image_scale_factor),
+                      1 if gray_scale else FRAME_CHANNELS]
+        
         if crop_size is not None:
             assert image_size[0] > crop_size[0] and image_size[1] > crop_size[1], \
                 "Image size has to be larger than the crop size."
@@ -149,9 +80,11 @@ class UCF101TrainDataset(base.AbstractQueueDataset):
             
         # generate frame sequences
         train_files = UCF101TrainDataset._read_train_splits(splits_path)
-        dataset_size = _serialize_frame_sequences(dataset_path, SUBDIR_TRAIN,
-                                                  train_files, image_size,
-                                                  serialized_sequence_length)
+        dataset_size, _ = tt.utils.data.preprocess_videos(dataset_path, tt.utils.data.SUBDIR_TRAIN,
+                                                          train_files,
+                                                          [FRAME_HEIGHT, FRAME_WIDTH, FRAME_CHANNELS],
+                                                          serialized_sequence_length,
+                                                          gray_scale, image_scale_factor)
         
         if crop_size is None:
             input_shape = [input_seq_length, image_size[0], image_size[1], image_size[2]]
@@ -277,7 +210,7 @@ class UCF101BaseEvaluationDataset(base.AbstractDataset):
        References: http://crcv.ucf.edu/data/UCF101.php
     """
     def __init__(self, data_dir, subdir, input_seq_length=5, target_seq_length=5,
-                 image_size=(FRAME_HEIGHT, FRAME_WIDTH, FRAME_CHANNELS),
+                 image_scale_factor=1.0, gray_scale=False,
                  serialized_sequence_length=30, double_with_flipped=False,
                  crop_size=None):
         """Creates a dataset instance.
@@ -291,9 +224,10 @@ class UCF101BaseEvaluationDataset(base.AbstractDataset):
             The length of the input sequence.
         target_seq_length: length
             The length of the target sequence.
-        image_size: list(int) of shape [h, w, c]
-            The image size, how the data with default scale [240, 320, 3]
-            should be scaled to.
+        image_scale_factor: float in range (0.0, 1.0], optional
+            The image scale size, how the data should be scaled to.
+        gray_scale: Boolean, optional
+            Whether we scale the image to gray or not.
         serialized_sequence_length: int, optional
             The sequence length of each serialized file.
         double_with_flipped: Boolean, optional
@@ -303,6 +237,10 @@ class UCF101BaseEvaluationDataset(base.AbstractDataset):
         crop_size: tuple(int) or None, optional
             The size (height, width) to randomly crop the images.
         """
+        image_size = [int(FRAME_HEIGHT * image_scale_factor),
+                      int(FRAME_WIDTH * image_scale_factor),
+                      1 if gray_scale else FRAME_CHANNELS]
+        
         if crop_size is not None:
             assert image_size[0] > crop_size[0] and image_size[1] > crop_size[1], \
                 "Image size has to be larger than the crop size."
@@ -322,13 +260,12 @@ class UCF101BaseEvaluationDataset(base.AbstractDataset):
 
         # generate frame sequences
         (eval_files) = UCF101BaseEvaluationDataset._read_eval_splits(splits_path)
-        eval_index = 0 if subdir == SUBDIR_VALID else 1
-        dataset_size = _serialize_frame_sequences(dataset_path, subdir,
-                                                  eval_files[eval_index], image_size,
-                                                  serialized_sequence_length)
-        
-        validation_path = os.path.join(dataset_path, subdir)
-        self._file_name_list = tt.utils.path.get_filenames(validation_path, '*.seq')
+        eval_index = 0 if subdir == tt.utils.data.SUBDIR_VALID else 1
+        dataset_size, seq_files = tt.utils.data.preprocess_videos(dataset_path, subdir, eval_files[eval_index],
+                                                                  [FRAME_HEIGHT, FRAME_WIDTH, FRAME_CHANNELS],
+                                                                  serialized_sequence_length,
+                                                                  gray_scale, image_scale_factor)
+        self._file_name_list = seq_files
         
         # even if the dataset size is doubled, use the original
         # size for the indices list to reduce its size...
@@ -466,7 +403,7 @@ class UCF101ValidDataset(UCF101BaseEvaluationDataset):
        References: http://crcv.ucf.edu/data/UCF101.php
     """
     def __init__(self, data_dir, input_seq_length=5, target_seq_length=5,
-                 image_size=(FRAME_HEIGHT, FRAME_WIDTH, FRAME_CHANNELS),
+                 image_scale_factor=1.0, gray_scale=False,
                  serialized_sequence_length=30, double_with_flipped=False,
                  crop_size=None):
         """Creates a validation dataset instance.
@@ -478,9 +415,10 @@ class UCF101ValidDataset(UCF101BaseEvaluationDataset):
             The length of the input sequence.
         target_seq_length: length
             The length of the target sequence.
-        image_size: list(int) of shape [h, w, c]
-            The image size, how the data with default scale [240, 320, 3]
-            should be scaled to.
+        image_scale_factor: float in range (0.0, 1.0], optional
+            The image scale size, how the data should be scaled to.
+        gray_scale: Boolean, optional
+            Whether we scale the image to gray or not.
         serialized_sequence_length: int, optional
             The sequence length of each serialized file.
         double_with_flipped: Boolean, optional
@@ -490,9 +428,9 @@ class UCF101ValidDataset(UCF101BaseEvaluationDataset):
         crop_size: tuple(int) or None, optional
             The size (height, width) to randomly crop the images.
         """
-        super(UCF101ValidDataset, self).__init__(data_dir, SUBDIR_VALID,
+        super(UCF101ValidDataset, self).__init__(data_dir, tt.utils.data.SUBDIR_VALID,
                                                  input_seq_length, target_seq_length,
-                                                 image_size, serialized_sequence_length,
+                                                 image_scale_factor, gray_scale, serialized_sequence_length,
                                                  double_with_flipped, crop_size)
         
         
@@ -507,7 +445,7 @@ class UCF101TestDataset(UCF101BaseEvaluationDataset):
        References: http://crcv.ucf.edu/data/UCF101.php
     """
     def __init__(self, data_dir, input_seq_length=5, target_seq_length=5,
-                 image_size=(FRAME_HEIGHT, FRAME_WIDTH, FRAME_CHANNELS),
+                 image_scale_factor=1.0, gray_scale=False,
                  serialized_sequence_length=30, double_with_flipped=False,
                  crop_size=None):
         """Creates a validation dataset instance.
@@ -519,9 +457,10 @@ class UCF101TestDataset(UCF101BaseEvaluationDataset):
             The length of the input sequence.
         target_seq_length: length
             The length of the target sequence.
-        image_size: list(int) of shape [h, w, c]
-            The image size, how the data with default scale [240, 320, 3]
-            should be scaled to.
+        image_scale_factor: float in range (0.0, 1.0], optional
+            The image scale size, how the data should be scaled to.
+        gray_scale: Boolean, optional
+            Whether we scale the image to gray or not.
         serialized_sequence_length: int, optional
             The sequence length of each serialized file.
         double_with_flipped: Boolean, optional
@@ -531,7 +470,7 @@ class UCF101TestDataset(UCF101BaseEvaluationDataset):
         crop_size: tuple(int) or None, optional
             The size (height, width) to randomly crop the images.
         """
-        super(UCF101TestDataset, self).__init__(data_dir, SUBDIR_TEST,
+        super(UCF101TestDataset, self).__init__(data_dir, tt.utils.data.SUBDIR_TEST,
                                                 input_seq_length, target_seq_length,
-                                                image_size, serialized_sequence_length,
+                                                image_scale_factor, gray_scale, serialized_sequence_length, 
                                                 double_with_flipped, crop_size)
