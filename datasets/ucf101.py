@@ -80,11 +80,12 @@ class UCF101TrainDataset(base.AbstractQueueDataset):
             
         # generate frame sequences
         train_files = UCF101TrainDataset._read_train_splits(splits_path)
-        dataset_size, _ = tt.utils.data.preprocess_videos(dataset_path, tt.utils.data.SUBDIR_TRAIN,
-                                                          train_files,
-                                                          [FRAME_HEIGHT, FRAME_WIDTH, FRAME_CHANNELS],
-                                                          serialized_sequence_length,
-                                                          gray_scale, image_scale_factor)
+        dataset_size, seq_files = tt.utils.data.preprocess_videos(dataset_path, tt.utils.data.SUBDIR_TRAIN,
+                                                                  train_files,
+                                                                  [FRAME_HEIGHT, FRAME_WIDTH, FRAME_CHANNELS],
+                                                                  serialized_sequence_length,
+                                                                  gray_scale, image_scale_factor)
+        self._file_name_list = seq_files
         
         if crop_size is None:
             input_shape = [input_seq_length, image_size[0], image_size[1], image_size[2]]
@@ -151,9 +152,8 @@ class UCF101TrainDataset(base.AbstractQueueDataset):
     @tt.utils.attr.override
     def get_batch(self, batch_size):
         # Generate a batch of sequences and labels by building up a queue of examples.
-        seq_filenames = tt.utils.path.get_filenames(self._data_dir, '*.seq')
         with tf.name_scope('preprocessing'):
-            filename_queue = tf.train.string_input_producer(seq_filenames,
+            filename_queue = tf.train.string_input_producer(self._file_name_list,
                                                             capacity=256)
             seq_record = self._read_record(filename_queue)  
 
@@ -187,6 +187,7 @@ class UCF101TrainDataset(base.AbstractQueueDataset):
                                         batch_size,
                                         self._min_examples_in_queue, self._queue_capacitiy,
                                         shuffle=True, num_threads=self._num_threads)
+                                        # TODO: make shuffle!!!
 
     @property
     def serialized_sequence_length(self):
