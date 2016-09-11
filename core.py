@@ -204,7 +204,8 @@ class AbstractRuntime(object):
 
             if checkpoint_file is None:
                 # start session and init all variables
-                self.session.run(tf.initialize_all_variables())
+                init_op = tf.initialize_all_variables()
+                self.session.run(init_op)
             else:
                 if checkpoint_file == LATEST_CHECKPOINT:
                     checkpoint_path = tf.train.latest_checkpoint(self.train_dir)
@@ -240,7 +241,7 @@ class AbstractRuntime(object):
         pass
         
     def train(self, batch_size, valid_batch_size=None, steps=-1, epochs=-1, train_feeds={}, valid_feeds={},
-              on_validate=None, display_step=10, summary_steps=100, checkpoint_steps=1000,
+              on_validate=None, display_steps=10, summary_steps=100, checkpoint_steps=1000,
               validation_steps=1000, early_validation_at_step=100,
               do_checkpoints=True, do_summary=True):
         """Train the model.
@@ -267,7 +268,7 @@ class AbstractRuntime(object):
         on_validate: function or None, optional,
             A function with signature on_validate(runtime, gstep) that can
             be executed after each evaluation step.
-        display_step: int, optional
+        display_steps: int, optional
             In which interval a averaged print-out of the current loss
             shoud be performed. Required for logging/testing only.
         summary_steps: int, optional
@@ -292,6 +293,10 @@ class AbstractRuntime(object):
         assert not(steps > 0 and epochs > 0), "Not allowed to set both, 'steps' and 'epochs' parameter"
         
         with self.graph.as_default():
+            if valid_batch_size is None:
+                # take training batch_size as fallback.
+                valid_batch_size = batch_size
+            
             batches_per_epoch = self.datasets.train.size // batch_size
 
             if epochs > 0:
@@ -350,13 +355,13 @@ class AbstractRuntime(object):
 
                     total_loss_sum += total_loss
                     loss_sum += loss
-                    if gstep % display_step == 0:
+                    if gstep % display_steps == 0:
                         # info
                         num_examples_per_step = batch_size
                         examples_per_sec = num_examples_per_step / duration
                         sec_per_batch = float(duration)
-                        avg_total_loss = total_loss_sum / display_step
-                        avg_loss = loss_sum / display_step
+                        avg_total_loss = total_loss_sum / display_steps
+                        avg_loss = loss_sum / display_steps
                         total_loss_sum = 0
                         loss_sum = 0
                         print("@{:5d}: loss: {:7.3f}, t-loss: {:7.3f} ({:7.1f} examples/sec, {:5.2f} sec/batch)" \
@@ -729,7 +734,11 @@ class MultiGpuRuntime(AbstractRuntime):
                                                           feeds=self._model_feeds,
                                                           is_training=self._ph.is_training,
                                                           device_scope=scope,
-                                                          memory_device='/cpu:0')
+                                                          memory_device=None) # '/cpu:0'
+                        # FIXME: inference(..., memory_device=...) should be set to '/cpu:0' according to
+                        #        the TensorFlow CIFAR-10 example. But this causes init-errors on the LSMT-cells.
+                        #        Doing no assignment to CPU-memory works. It might requrie more memory, but the
+                        #        performance is almost the same.
                         
                         # ensure the inference shape is fully defined and equal to target shape
                         inference = tf.reshape(inference, [-1] + this_targets.get_shape().as_list()[1:],
@@ -742,6 +751,9 @@ class MultiGpuRuntime(AbstractRuntime):
                     
                     with tf.name_scope("total_loss"):
                         total_loss = self._model.total_loss(loss, inference, this_targets, device_scope=scope)
+                        
+                    with tf.name_scope("evaluation"):
+                        eval_dict = self._model.evaluation(inference, y, device_scope=scope)
 
                     # Calculate the moving averages of the loss for one tower of the model
                     loss_averages_op = tt.board.loss_summary([total_loss, loss] + \
@@ -772,29 +784,112 @@ class MultiGpuRuntime(AbstractRuntime):
         # This is also the synchronization point across all towers.
         grads = tt.training.average_gradients(tower_grads)
         
-        return grads, summaries, total_loss, loss
+        return grads, summaries, total_loss, loss, eval_dict
         
     @tt.utils.attr.override
-    def train(self, batch_size, steps=-1, epochs=-1, feeds={}, on_validate=None,
-              display_step=10, do_checkpoints=True, do_summary=True):
+    def train(self, batch_size, valid_batch_size=None, steps=-1, epochs=-1, train_feeds={}, valid_feeds={},
+              on_validate=None, display_steps=10, summary_steps=100, checkpoint_steps=1000,
+              validation_steps=1000, early_validation_at_step=100,
+              do_checkpoints=True, do_summary=True):
+        """Train the model.
+           Note that either 'steps' or 'epochs' has to be defined as a param.
+        Parameters
+        ----------
+        batch_size: int
+            The batch size to use for training (and for validation, in case
+            'valid_batch_size') is not defined.
+        valid_batch_size: int or None, optional
+            The batch size to use for validation, or None to use the same as for training.
+            You might want to use a different batch_size for validation, to make sure that
+            every example is actually evaluated.
+        steps: int, partly-required
+            The number of steps to train the model.
+        epochs: int, partly-required
+            The number of epochs to train the model.
+        train_feeds: dict(str, tf.placeholder), optional
+            The model specific feeds for training, that have been
+            defined in AbstractModel.fetch_feeds().
+        valid_feeds: dict(str, tf.placeholder), optional
+            The model specific feeds for validation, that have been
+            defined in AbstractModel.fetch_feeds().
+        on_validate: function or None, optional,
+            A function with signature on_validate(runtime, gstep) that can
+            be executed after each evaluation step.
+        display_steps: int, optional
+            In which interval a averaged print-out of the current loss
+            shoud be performed. Required for logging/testing only.
+        summary_steps: int, optional
+            In which interval we write a summary to TensorBoard.
+        checkpoint_steps: int, optional
+            In which interval we create a checkpoint.
+        validation_steps: int, optional
+            In which interval we perform a validation,
+            which is also written to TensorBoard
+        early_validation_at_step: int, optional
+            On which (global) step we perform an early validation, basically that
+            we get an early feedback of the losses, as well as if there is an error
+            in doing a validation.
+        do_checkpoints: Boolean, optioanl
+            Whether we create checkpoints or not. Deactivate this for example programs
+            where you do not want to fill up your disk.
+        do_summary: Boolean, optional
+            Whether we create summaries or not. Deactivate this for example programs
+            where you do not want to fill up your disk.
+        """
         assert batch_size % float(self.num_gpus) == 0, "Batch-size has to be multiples of 'num_gpus'."
+        
         with tf.device('/cpu:0'):
-            return super(MultiGpuRuntime, self).train(batch_size, steps, epochs, feeds, display_step,
+            return super(MultiGpuRuntime, self).train(batch_size, valid_batch_size, steps, epochs,
+                                                      train_feeds, valid_feeds, on_validate, 
+                                                      display_steps, summary_steps, checkpoint_steps,
+                                                      validation_steps, early_validation_at_step,
                                                       do_checkpoints, do_summary)              
     
     @tt.utils.attr.override
     def validate(self, batch_size, feeds={}):
+        """Performs a validation on the trained model using the validation
+           dataset that was registered to the runtime.
+        Parameters
+        ----------
+        batch_size: int
+            The batch-size to use.
+        feeds: dict(str, tf.placeholder), optional
+            The model specific feeds, that have been
+            defined in AbstractModel.fetch_feeds().
+        """
         assert batch_size % float(self.num_gpus) == 0, "Batch-size has to be multiples of 'num_gpus'."
         return super(MultiGpuRuntime, self).validate(batch_size, feeds)
     
     @tt.utils.attr.override
     def test(self, batch_size, feeds={}):
+        """Performs a test on the trained model using the test
+           dataset that was registered to the runtime.
+        Parameters
+        ----------
+        batch_size: int
+            The batch-size to use.
+        feeds: dict(str, tf.placeholder), optional
+            The model specific feeds, that have been
+            defined in AbstractModel.fetch_feeds().
+        """
         assert batch_size % float(self.num_gpus) == 0, "Batch-size has to be multiples of 'num_gpus'."
         return super(MultiGpuRuntime, self).test(batch_size, feeds)
         
     
     @tt.utils.attr.override
     def predict(self, inputs, feeds={}):
+        """Performs a prediction using the trained model.
+        Parameters
+        ----------
+        inputs: numpy n-D array
+            The inputs to the model to do the inference.
+        feeds: dict(str, tf.placeholder), optional
+            The model specific feeds, that have been
+            defined in AbstractModel.fetch_feeds().
+        Returns
+        ---------
+        The predictions of the model as an numpy n-D array.
+        """
         # Workaround: Let each tower do the same stuff, but only use the result of the
         #             first tower. Required to support e.g. batch-size 1 or odd batches.
         inputs_concat = inputs
