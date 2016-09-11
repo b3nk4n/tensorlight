@@ -11,8 +11,7 @@ import base
 
 UCF11_URL = 'http://crcv.ucf.edu/data/UCF11_updated_mpg.rar'
 
-SUBDIR_TRAIN = '_train'
-SUBDIR_VALID = '_valid'
+SUBDIR_SHARED = '_shared'
 
 FRAME_HEIGHT = 240
 FRAME_WIDTH = 320
@@ -77,7 +76,7 @@ class UCF11TrainDataset(base.AbstractQueueDataset):
         
         # generate frame sequences.
         video_filenames = tt.utils.path.get_filenames(dataset_path, '*.mpg')
-        dataset_size, seq_files = tt.utils.data.preprocess_videos(dataset_path, tt.utils.data.SUBDIR_TRAIN,
+        dataset_size, seq_files = tt.utils.data.preprocess_videos(dataset_path, SUBDIR_SHARED,
                                                           video_filenames,
                                                           [FRAME_HEIGHT, FRAME_WIDTH, FRAME_CHANNELS],
                                                           serialized_sequence_length,
@@ -118,8 +117,6 @@ class UCF11TrainDataset(base.AbstractQueueDataset):
             record.key, value = reader.read(filename_queue)
             decoded_record_bytes = tf.decode_raw(value, tf.uint8)
 
-            record.data = decoded_record_bytes[0:input_seq_length]
-
             decoded_record_bytes = tf.reshape(decoded_record_bytes,
                                               [self._serialized_sequence_length, record.height, record.width, record.depth])
 
@@ -130,9 +127,12 @@ class UCF11TrainDataset(base.AbstractQueueDataset):
             sequence_start = tf.sparse_tensor_to_dense(seq_start_offset)
 
             # take a random slice of frames as input
-            record.data = tf.cast(tf.slice(decoded_record_bytes, sequence_start,
-                                           [total_seq_length, record.height, record.width, record.depth]),
-                                  tf.float32)
+            #record.data = tf.cast(tf.slice(decoded_record_bytes, sequence_start,
+            #                               [total_seq_length, record.height, record.width, record.depth]),
+            #                      tf.float32)
+            #return record
+            
+            record.data = decoded_record_bytes
             return record
 
     @tt.utils.attr.override
@@ -243,13 +243,13 @@ class UCF11ValidDataset(base.AbstractDataset):
         
         # generate frame sequences.
         video_filenames = tt.utils.path.get_filenames(dataset_path, '*.mpg')
-        dataset_size, _ = tt.utils.data.preprocess_videos(dataset_path, tt.utils.data.SUBDIR_VALID,
-                                                          video_filenames,
-                                                          [FRAME_HEIGHT, FRAME_WIDTH, FRAME_CHANNELS],
-                                                          serialized_sequence_length,
-                                                          gray_scale, image_scale_factor)
+        dataset_size, seq_files = tt.utils.data.preprocess_videos(dataset_path, SUBDIR_SHARED,
+                                                                  video_filenames,
+                                                                  [FRAME_HEIGHT, FRAME_WIDTH, FRAME_CHANNELS],
+                                                                  serialized_sequence_length,
+                                                                  gray_scale, image_scale_factor)
         
-        self._file_name_list = tt.utils.path.get_filenames(self._data_dir, '*.seq')
+        self._file_name_list = seq_files
         self._indices = range(dataset_size)
         self._row = 0
         

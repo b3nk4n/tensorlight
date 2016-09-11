@@ -132,7 +132,7 @@ class UCF101TrainDataset(base.AbstractQueueDataset):
             record.key, value = reader.read(filename_queue)
             decoded_record_bytes = tf.decode_raw(value, tf.uint8)
 
-            record.data = decoded_record_bytes[0:input_seq_length]
+            record.data = decoded_record_bytes[0:input_seq_length] # FIXME: this result is overriden..
 
             decoded_record_bytes = tf.reshape(decoded_record_bytes,
                                               [self._serialized_sequence_length, record.height, record.width, record.depth])
@@ -158,7 +158,7 @@ class UCF101TrainDataset(base.AbstractQueueDataset):
             seq_record = self._read_record(filename_queue)  
 
             # convert to float of scale [0.0, 1.0]
-            seq_data = tf.cast(seq_record.data, tf.float32)
+            seq_data = tf.cast(seq_record.data, tf.float32) # FIXME redundant! In _read_record() end
             seq_data = seq_data / 255
     
             input_seq_length = self.input_shape[0]
@@ -187,7 +187,6 @@ class UCF101TrainDataset(base.AbstractQueueDataset):
                                         batch_size,
                                         self._min_examples_in_queue, self._queue_capacitiy,
                                         shuffle=True, num_threads=self._num_threads)
-                                        # TODO: make shuffle!!!
 
     @property
     def serialized_sequence_length(self):

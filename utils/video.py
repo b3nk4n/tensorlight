@@ -157,9 +157,9 @@ class VideoWriter():
         frame: ndarray(uint8)
             The video frame to write.
         """
-        if frame.shape[2] == 3
+        if frame.shape[2] == 3:
             frame = tt.utils.image.as_opencv_type(frame)
-            frame = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
+            frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
         
         padded_frame = self._ensure_min_frame_size(frame)
         self.vidwriter.write(padded_frame)

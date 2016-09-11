@@ -186,8 +186,10 @@ def as_opencv_type(image):
         return np.uint8(image)
     else:
         return np.float32(image)
-        
 
+#def is_opencv_uint_type(image)
+#    if t == np.float32 or t == np.uint8 or t == np.uint16:
+#        return True
 
 def pad_or_crop(image, desired_shape, pad_value=0,
                 ensure_copy=True):
