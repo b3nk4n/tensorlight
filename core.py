@@ -134,7 +134,9 @@ class AbstractRuntime(object):
                 self._ph.targets = tf.placeholder(tf.float32, [None] + self._datasets.train.target_shape, "Y")
 
             if isinstance(self.datasets.train, tt.datasets.base.AbstractQueueDataset):
-                inputs, targets = self._datasets.train.get_batch(self._ph.batch_size)
+                with tf.device("/cpu:0"):
+                    # doing inputs on CPU is generally a good idea
+                    inputs, targets = self._datasets.train.get_batch(self._ph.batch_size)
                 if is_autoencoder:
                     targets = inputs
             else:
@@ -399,7 +401,7 @@ class AbstractRuntime(object):
                                 self._saver.save(self.session, checkpoint_path, global_step=self._global_step)
 
             except tf.errors.OutOfRangeError:
-                print("Done training -- epoch limit reached")
+                print("Interrupted: Queue runners are out of range. Epoch limit reached?")
     
     def predict(self, inputs, feeds={}):
         """Performs a prediction using the trained model.

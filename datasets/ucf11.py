@@ -27,7 +27,7 @@ class UCF11TrainDataset(base.AbstractQueueDataset):
     """
     def __init__(self, data_dir, input_seq_length=5, target_seq_length=5,
                  image_scale_factor=1.0, gray_scale=False,
-                 min_examples_in_queue=512, queue_capacitiy=1024, num_threads=8,
+                 min_examples_in_queue=1024, queue_capacitiy=2048, num_threads=16,
                  serialized_sequence_length=30, do_distortion=True, crop_size=None):
         """Creates a training dataset instance that uses a queue.
         Parameters
@@ -128,7 +128,7 @@ class UCF11TrainDataset(base.AbstractQueueDataset):
             seq_start_offset = tf.SparseTensor(indices=[[0]], values=rnd_start_index, shape=[4])
             sequence_start = tf.sparse_tensor_to_dense(seq_start_offset)
 
-            # take first frames as input
+            # take a random slice of frames as input
             record.data = tf.cast(tf.slice(decoded_record_bytes, sequence_start,
                                            [total_seq_length, record.height, record.width, record.depth]),
                                   tf.float32)
@@ -139,7 +139,8 @@ class UCF11TrainDataset(base.AbstractQueueDataset):
         # Generate a batch of sequences and labels by building up a queue of examples.
         seq_filenames = tt.utils.path.get_filenames(self._data_dir, '*.seq')
         with tf.name_scope('preprocessing'):
-            filename_queue = tf.train.string_input_producer(seq_filenames)
+            filename_queue = tf.train.string_input_producer(seq_filenames,
+                                                            capacity=128)
             seq_record = self._read_record(filename_queue)  
 
             # convert to float of scale [0.0, 1.0]
@@ -171,6 +172,7 @@ class UCF11TrainDataset(base.AbstractQueueDataset):
                 sequence_inputs = seq_data[0:input_seq_length,:,:,:]
                 sequence_targets = seq_data[input_seq_length:,:,:,:]
 
+        #return sequence_inputs, sequence_targets     
         return tt.inputs.generate_batch(sequence_inputs, sequence_targets,
                                         batch_size,
                                         self._min_examples_in_queue, self._queue_capacitiy,

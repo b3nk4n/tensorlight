@@ -83,7 +83,7 @@ class AbstractQueueDataset(AbstractDataset):
     __metaclass__ = ABCMeta
 
     def __init__(self, data_dir, dataset_size, input_shape, target_shape,
-                 min_examples_in_queue=512, queue_capacitiy=1024, num_threads=8):
+                 min_examples_in_queue=1024, queue_capacitiy=2048, num_threads=8):
         """Creates a dataset instance that uses a queue.
         Parameters
         ----------
@@ -97,9 +97,12 @@ class AbstractQueueDataset(AbstractDataset):
             The shape of the targets.
         min_examples_in_queue: int, optional
             The minimum examples that have to be in the queue.
-            A higher value ensures a good mix.
+            A higher value ensures a good mix. But a high value (>10.000) is only 
+            required when we use large files with multiple-entries.
+            Using large files can improve I/O performance.
         queue_capacitiy: int, optional
-            The maximum capacity of the input queue.
+            The maximum capacity of the input queue. When the queue is created, this
+            many examples will be created before the application launches.
         num_threads: int, optional
             The number of threads to generate the inputs.
         """
