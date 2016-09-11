@@ -189,10 +189,10 @@ def pad_or_crop(image, desired_shape, pad_value=0,
     do_crop = True if (desired_h < h or desired_w < w) else False
     
     if do_pad:
-        pad_top = (desired_h - h) // 2
-        pad_bottom = desired_h - h - pad_top
-        pad_left = (desired_w - w) // 2
-        pad_right = desired_w - w - pad_left
+        pad_top = max(0, (desired_h - h) // 2)
+        pad_bottom = max(0, desired_h - h - pad_top)
+        pad_left = max(0, (desired_w - w) // 2)
+        pad_right = max(0, desired_w - w - pad_left)
         # np.pad always creates a copy of the original
         image = np.pad(image,
                        ((pad_top, pad_bottom),
@@ -201,8 +201,8 @@ def pad_or_crop(image, desired_shape, pad_value=0,
                        mode='constant',
                        constant_values=pad_value)
     if do_crop:
-        left = (w - desired_w) // 2
-        top = (w - desired_h) // 2
+        left = max(0, (w - desired_w) // 2)
+        top = max(0, (w - desired_h) // 2)
         if ensure_copy:
             # create a copy before returning the array-view
             image = image.copy()
