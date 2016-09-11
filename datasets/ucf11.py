@@ -127,12 +127,8 @@ class UCF11TrainDataset(base.AbstractQueueDataset):
             sequence_start = tf.sparse_tensor_to_dense(seq_start_offset)
 
             # take a random slice of frames as input
-            #record.data = tf.cast(tf.slice(decoded_record_bytes, sequence_start,
-            #                               [total_seq_length, record.height, record.width, record.depth]),
-            #                      tf.float32)
-            #return record
-            
-            record.data = decoded_record_bytes
+            record.data = tf.slice(decoded_record_bytes, sequence_start,
+                                   [total_seq_length, record.height, record.width, record.depth])
             return record
 
     @tt.utils.attr.override
