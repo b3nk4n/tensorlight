@@ -177,7 +177,8 @@ def preprocess_videos(dataset_path, subdir, file_list, image_size, serialized_se
                             break
                         
                         # ensure bounds
-                        tt.utils.image.pad_or_crop(frame, target_size, pad_value=0.0)
+                        frame = tt.utils.image.pad_or_crop(frame, target_size, pad_value=0.0,
+                                                           ensure_copy=False)
                         
                         # convert to gray if requried
                         if gray_scale == 1:
