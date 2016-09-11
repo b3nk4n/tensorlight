@@ -23,10 +23,13 @@ def read(filepath, color_flags=cv2.IMREAD_COLOR):
         Returns image data as an array of shape [height, width, channels].
     """
     image = cv2.imread(filepath, flags=color_flags)
+    
     # introduce a 1-channel dimension to handle the indexing
     # of color and gray images the same way
     if color_flags == cv2.IMREAD_GRAYSCALE:
         image = np.expand_dims(image, axis=2)
+    else:
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
     return image
 
 
@@ -49,7 +52,11 @@ def write(filepath, image, value_range=VALUE_RANGE_0_255):
     elif value_range == VALUE_RANGE_1:
         image = image * 127.5 + 127.5
     elif value_range == VALUE_RANGE_0_255:
-        pass  
+        pass
+    
+    if image.shape[2] == 3:
+        image = as_opencv_type(image)
+        image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
     cv2.imwrite(filepath, image)
 
 
@@ -100,15 +107,16 @@ def resize(image, scale=None, size=None):
     image: ndarray(uint8)
         Returns the rescaled image.
     """
+    assert scale is None or size is None, "Either define scale or size, not both."
+    assert scale is not None or size is not None, "Either scale or size parameter has to defined."
+    
     img_shape = np.shape(image)
     
     if scale is not None:
         image = cv2.resize(image, (0, 0), fx=scale, fy=scale)
     elif size is not None:
         image = cv2.resize(image, (size[1], size[0]))
-    else:
-        raise ValueError('Either scale or size parameter has to defined.')
-    
+
     if img_shape[2] == 1:
         image = np.expand_dims(image, axis=2)
      
@@ -128,7 +136,8 @@ def to_grayscale(image):
     """
     img_channels = np.shape(image)[2]
     if img_channels == 3:
-        image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        image = as_opencv_type(image)
+        image = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
         image = np.expand_dims(image, axis=2)
     # introduce a 1-channel dimension to handle the indexing
     # of color and gray images the same way
@@ -155,8 +164,29 @@ def to_rgb(image):
             image = np.squeeze(image, axis=2)
    
         if img_channels != 3:
-            image = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
+            image = as_opencv_type(image)
+            image = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
     return image
+
+
+def as_opencv_type(image):
+    """Converts an image to an OpenCV compatible type.
+    Parameters
+    ----------
+    image: ndarray of shape [h, w, c]
+        The image to ensure the correct type.
+    Returns
+    ---------
+    The converted image or the same if the type was already correct.
+    """
+    t = image.dtype
+    if t == np.float32 or t == np.uint8 or t == np.uint16:
+        return image
+    elif t == np.uint32 or t == np.int or t == np.int32 or t == np.int64:
+        return np.uint8(image)
+    else:
+        return np.float32(image)
+        
 
 
 def pad_or_crop(image, desired_shape, pad_value=0,

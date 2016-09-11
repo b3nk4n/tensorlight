@@ -5,7 +5,7 @@ import cv2
 import numpy as np
 import tensortools as tt
 
-from moviepy.video.io import ImageSequenceClip
+from moviepy.video.io.ImageSequenceClip import ImageSequenceClip
 
 
 class VideoReader():
@@ -47,6 +47,7 @@ class VideoReader():
         self._current_frame_id += 1
         success, image = self._vidcap.read()
         if success:
+            image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
             image = tt.utils.image.resize(image, scale)
             return image
         else:
@@ -156,6 +157,10 @@ class VideoWriter():
         frame: ndarray(uint8)
             The video frame to write.
         """
+        if frame.shape[2] == 3
+            frame = tt.utils.image.as_opencv_type(frame)
+            frame = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
+        
         padded_frame = self._ensure_min_frame_size(frame)
         self.vidwriter.write(padded_frame)
   
