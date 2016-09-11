@@ -311,8 +311,8 @@ class AbstractRuntime(object):
                 total_loss_sum = 0
                 loss_sum = 0
 
-                x_dummy = np.zeros([batch_size] + self.datasets.train.input_shape)
-                y_dummy = np.zeros([batch_size] + self.datasets.train.target_shape)
+                x_dummy = np.zeros([batch_size] + self.datasets.train.input_shape, np.float32)
+                y_dummy = np.zeros([batch_size] + self.datasets.train.target_shape, np.float32)
                 
                 # add batch-size to summary. Copy is required to allow rerun training
                 summaries_copy = copy.copy(self._summaries)
@@ -420,7 +420,7 @@ class AbstractRuntime(object):
             batch_size = inputs.shape[0]
             
             # prepare feeding
-            y_dummy = np.zeros([batch_size] + self._ph.targets.get_shape().as_list()[1:])
+            y_dummy = np.zeros([batch_size] + self._ph.targets.get_shape().as_list()[1:], np.float32)
             feed = self._feed_func(inputs, y_dummy, batch_size, False)
             feed.update({self._ph.input_from_queue: False})
             for key, value in feeds.iteritems():
@@ -496,8 +496,8 @@ class AbstractRuntime(object):
         
         dataset.reset()
         eval_sums = np.zeros(len(eval_ops))
-        x_dummy = np.zeros([batch_size] + dataset.input_shape)
-        y_dummy = np.zeros([batch_size] + dataset.target_shape)
+        x_dummy = np.zeros([batch_size] + dataset.input_shape, np.float32)
+        y_dummy = np.zeros([batch_size] + dataset.target_shape, np.float32)
         progress = tt.utils.ui.ProgressBar(num_batches * batch_size)
         for b in xrange(num_batches):
             # prepare feeding
