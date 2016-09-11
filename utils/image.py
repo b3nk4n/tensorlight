@@ -33,7 +33,7 @@ def read(filepath, color_flags=cv2.IMREAD_COLOR):
     return image
 
 
-def write(filepath, image, value_range=VALUE_RANGE_0_255):
+def write(filepath, image):
     """Saves an image or a frame to the specified path.
     Parameters
     ----------
@@ -47,17 +47,16 @@ def write(filepath, image, value_range=VALUE_RANGE_0_255):
     dirpath = os.path.dirname(filepath)
     if not os.path.exists(dirpath):
         os.makedirs(dirpath)
-    if value_range == VALUE_RANGE_0_1:
-        image = image * 255.0
-    elif value_range == VALUE_RANGE_1:
-        image = image * 127.5 + 127.5
-    elif value_range == VALUE_RANGE_0_255:
-        pass
     
     if image.shape[2] == 3:
-        image = as_opencv_type(image)
+        image = cast(image)
         image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
-    cv2.imwrite(filepath, image)
+    
+    factor = 1
+    if is_float_image(image):
+        factor = 255
+        
+    cv2.imwrite(filepath, image * factor)
 
 
 def write_as_binary(filepath, image):
@@ -136,7 +135,7 @@ def to_grayscale(image):
     """
     img_channels = np.shape(image)[2]
     if img_channels == 3:
-        image = as_opencv_type(image)
+        image = cast(image)
         image = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
         image = np.expand_dims(image, axis=2)
     # introduce a 1-channel dimension to handle the indexing
@@ -145,7 +144,7 @@ def to_grayscale(image):
 
 
 def to_rgb(image):
-    """Converts a grayscaled image with scale [0,1] to a colored one.
+    """Converts a grayscaled image to a colored one.
     Parameters
     ----------
     image: ndarray(uint8)
@@ -164,12 +163,12 @@ def to_rgb(image):
             image = np.squeeze(image, axis=2)
    
         if img_channels != 3:
-            image = as_opencv_type(image)
+            image = cast(image)
             image = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
     return image
 
 
-def as_opencv_type(image):
+def cast(image):
     """Converts an image to an OpenCV compatible type.
     Parameters
     ----------
@@ -179,17 +178,36 @@ def as_opencv_type(image):
     ---------
     The converted image or the same if the type was already correct.
     """
-    t = image.dtype
-    if t == np.float32 or t == np.uint8 or t == np.uint16:
+    if is_valid_type(image):
         return image
-    elif t == np.uint32 or t == np.int or t == np.int32 or t == np.int64:
+    elif is_uint_image(image):
         return np.uint8(image)
     else:
         return np.float32(image)
 
-#def is_opencv_uint_type(image)
-#    if t == np.float32 or t == np.uint8 or t == np.uint16:
-#        return True
+    
+def is_valid_type(array):
+    """Gets whether the array has a valid OpenCV image type"""
+    t = array.dtype
+    return True if t == np.float32 or t == np.uint8 or t == np.uint16 else False
+
+    
+def is_uint_image(image):
+    """Gets whether the image is an image of scale [0, 255].
+       This is only determined by the type, not by the data.
+    """
+    t = image.dtype
+    return True if t == np.int or t == np.uint32 or t == np.int32 or t == np.int64 \
+        or t == np.uint8 or t == np.uint16 else False
+
+
+def is_float_image(image):
+    """Gets whether the image is an image of scale [0.0, 1.0].
+       This is only determined by the type, not by the data.
+    """
+    t = image.dtype
+    return True if t == np.float or t == np.float32 or t == np.float64 else False
+
 
 def pad_or_crop(image, desired_shape, pad_value=0,
                 ensure_copy=True):

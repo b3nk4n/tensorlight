@@ -134,7 +134,11 @@ def image_from_array(img_array, format='png'):
     IPython.display.Image
         An image object for plots.
     """
-    img_data = np.uint8(img_array)
+    factor = 1
+    if utils.image.is_float_image(img_array):
+        factor = 255
+    
+    img_data = np.uint8(img_array * factor)
     f = StringIO()
     img_data = utils.image.to_rgb(img_data)
     arr = PIL.Image.fromarray(img_data)
@@ -156,8 +160,7 @@ def display_image(image):
     display(image)
 
 
-def display_batch(img_array_batch, nrows=2, ncols=2, title='',
-                  min_value=0, max_value=255):
+def display_batch(img_array_batch, nrows=2, ncols=2, title=''):
     """Display a batch of images given as a 4D numpy array.
     Remarks: Some RGB images might be displayed with changed colors.
     Parameters
@@ -172,13 +175,15 @@ def display_batch(img_array_batch, nrows=2, ncols=2, title='',
         The number or colums.
     title: str, optional
         The title of the figure.
-    min_value: int/float, optional
-        The minimum value of the image data.
-    max_value: int/float, optional
-        The maximum value of the image data.
     """
     if img_array_batch is None:
         return
+    
+    # determine scale from fist image
+    if (utils.image.is_float_image(img_array_batch[0])):
+        max_value = 1
+    else:
+        max_value = 255
     
     # create figure with random id
     fig = plt.figure(random.randint(1, sys.maxint))
@@ -194,7 +199,7 @@ def display_batch(img_array_batch, nrows=2, ncols=2, title='',
             cmap = plt.cm.gray
         
         plt.subplot(nrows,ncols,i + 1)
-        plt.imshow(current_img, cmap=cmap, vmin=min_value, vmax=max_value)
+        plt.imshow(current_img, cmap=cmap, vmin=0, vmax=max_value)
 
 
 def display_array(img_array, format='png'):

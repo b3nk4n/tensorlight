@@ -48,7 +48,7 @@ class VideoReader():
         success, image = self._vidcap.read()
         if success:
             image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-            image = tt.utils.image.resize(image, scale)
+            image = resize(image, scale)
             return image
         else:
             return None
@@ -186,16 +186,23 @@ def write_gif(filepath, images, fps=24):
     if not isinstance(images, list):
         splitted = np.split(images, images.shape[0])
         images = [np.squeeze(s, axis=(0,)) for s in splitted]
-      
+    elif len(images) == 0:
+        return
+        
     # ensure directory exists
     if not os.path.exists(filepath):
         os.makedirs(filepath)
-    
-    clip = ImageSequenceClip(images, fps=fps)
+        
+    # scale factor for float
+    factor = 1
+    if tt.utils.image.is_float_image(images[0]):
+        factor = 255
+
+    clip = ImageSequenceClip([img * factor for img in images], fps=fps)
     clip.write_gif(filepath, verbose=False)
 
     
-def write_multi_gif(filepath, images_list, fps=24, pad_value=255, pad_width=2):
+def write_multi_gif(filepath, images_list, fps=24, pad_value=0, pad_width=2):
     """Saves multiple sequences of images as a single animated GIF.
        The single clips will be padded and combined in a row.
     Parameters
@@ -263,7 +270,7 @@ def _to_single_sequence(images, pad_value, pad_width, seq_length):
     # concatenate
     return np.concatenate(padded_list, axis=1)
     
-def write_image_sequence(filepath, images, pad_value=255, pad_width=2):
+def write_image_sequence(filepath, images, pad_value=0, pad_width=2):
     """Saves a sequence of images as a single image file.
     Parameters
     ----------
@@ -281,7 +288,7 @@ def write_image_sequence(filepath, images, pad_value=255, pad_width=2):
     tt.utils.image.write(filepath, concat_image)
     
 
-def write_multi_image_sequence(filepath, images_list, pad_value=255, pad_width=2):
+def write_multi_image_sequence(filepath, images_list, pad_value=0, pad_width=2):
     """Saves multiple sequences of images as a single image file.
     Parameters
     ----------
