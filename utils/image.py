@@ -202,7 +202,7 @@ def pad_or_crop(image, desired_shape, pad_value=0,
                        constant_values=pad_value)
     if do_crop:
         left = max(0, (w - desired_w) // 2)
-        top = max(0, (w - desired_h) // 2)
+        top = max(0, (h - desired_h) // 2)
         if ensure_copy:
             # create a copy before returning the array-view
             image = image.copy()
