@@ -1,3 +1,5 @@
+from __future__ import print_function
+
 import os
 import sys
 import time
@@ -156,6 +158,7 @@ class AbstractRuntime(object):
             When training a model, it is often beneficial to maintain moving averages of
             the trained parameters.  Evaluations that use averaged parameters sometimes
             produce significantly better results than the final trained values.
+            Tracking EMA variables can be disabled, but it is strongly recommended to keep it active.
         restore_ema_variables: Boolean, optional
             Indicates whether the original variable values should be restore (default) or its
             created exponential moving averages during training (True).
@@ -184,7 +187,7 @@ class AbstractRuntime(object):
             input_shape = reference_dataset.input_shape
             target_shape = reference_dataset.target_shape
         
-        # create or reuse whole graph
+        """# create or reuse whole graph
         if self._graph is None:
             print("Creating new graph...")
             self._graph = tf.Graph()
@@ -196,9 +199,6 @@ class AbstractRuntime(object):
         
         with self.graph.as_default():
             if reuse_graph:
-                # reuse everything, as we are re-creating the model with new inputs shapes
-                #tf.get_variable_scope().reuse_variables()
-                
                 # clear previous model-inferences
                 del self._inferences[:]
                 self._inferences = []
@@ -209,11 +209,29 @@ class AbstractRuntime(object):
                 tmp_saver.save(self.session, tmp_name)
                 
                  # close session to ensure all resources are released
+                self.close()"""
+                
+        recreate = False
+        if self._graph is not None:
+            recreate = True
+            # re-create model
+            with self.graph.as_default():
+                # clear previous model-inferences
+                del self._inferences[:]
+                self._inferences = []
+            
+                if checkpoint_file is None:
+                    # use new saver to not modify 'max_to_keep' of global saver
+                    saver = tf.train.Saver()
+                    tmp_name = "/tmp/tmp-{}.ckpt".format(int(time.time()))
+                    saver.save(self.session, tmp_name)
+                
+                 # close session to ensure all resources are released
                 self.close()
-                self._graph = tf.Graph()
-                
-                
-                
+
+        # crate a new graph
+        self._graph = tf.Graph()
+
         with self.graph.as_default():
             # runtime placeholders and variables
             self._global_step = tf.get_variable('global_step', shape=[], dtype=tf.int32, trainable=False,
@@ -300,23 +318,30 @@ class AbstractRuntime(object):
             self._saver = tf.train.Saver(max_to_keep=self.max_checkpoints_to_keep)
 
             if checkpoint_file is None:
-                if not reuse_graph:
+                if recreate:
+                    if restore_ema_variables:
+                        # init all at first to ensure no non-initialized variables
+                        init_op = tf.initialize_all_variables()
+                        self.session.run(init_op)
+                        
+                        # Restore the moving average of the trainable variables for evaluation
+                        variables_to_restore = variable_averages.variables_to_restore()
+                        saver = tf.train.Saver(variables_to_restore)
+                        print("Restoring EMA variables...")
+                        try:
+                            saver.restore(self.session, tmp_name)
+                        except tf.errors.NotFoundError:
+                            print("Warning: Could not restore model, because no EMA variables have been found.",\
+                                  "Use 'restore_ema_variables=False' instead.")
+                    else:
+                        print("Restoring variables...")
+                        saver = tf.train.Saver()
+                        saver.restore(self.session, tmp_name)
+                else:
                     # start session and init all variables
                     print("Initializing variables...")
                     init_op = tf.initialize_all_variables()
                     self.session.run(init_op)
-                else:
-                    if restore_ema_variables:
-                        # Restore the moving average version of the learned variables for evaluation
-                        variables_to_restore = variable_averages.variables_to_restore()
-                        saver = tf.train.Saver(variables_to_restore)
-                        print("Restoring EMA variables...")
-                        saver.restore(self.session, tmp_name)
-                        print("Initializing other variables...")
-                        initialize_uninitialized_variables(self.session)
-                    else:
-                        print("Restoring variables...")
-                        tmp_saver.restore(self.session, tmp_name)
             else:
                 if checkpoint_file == LATEST_CHECKPOINT:
                     checkpoint_path = tf.train.latest_checkpoint(self.train_dir)
@@ -493,13 +518,13 @@ class AbstractRuntime(object):
                         epochs == -1 and gstep % validation_steps == 0 or \
                         epochs > 0 and this_step % batches_per_epoch == 0:
                         # validate
-                        print
+                        print()
                         self._test_internal(valid_batch_size, self.datasets.valid, "validation", valid_feeds, do_summary)
-                        print
+                        print()
                         
                         if on_validate is not None:
                             on_validate(self, gstep)
-                            print
+                            print()
 
                     if do_checkpoints:
                         if gstep % checkpoint_steps == 0 or this_step == steps:
@@ -659,7 +684,6 @@ class AbstractRuntime(object):
     
     def _create_session(self):
         """Creates the TensorFlow session."""
-        print("Creating new session...")
         gpu_options = tf.GPUOptions(
             per_process_gpu_memory_fraction=self._gpu.memory_fraction,
             allow_growth=self._gpu.allow_growth)
@@ -667,11 +691,11 @@ class AbstractRuntime(object):
         
     def close(self):
         """Closes the runtime and releases the all threads."""
-        self._coord.request_stop()
-        print("Coordinator stopped.")
-
-        # Wait for threads to finish
+        if self._coord is not None:
+            self._coord.request_stop()
+        
         if self._threads is not None:
+            # Wait for threads to finish
             self._coord.join(self._threads)
         
         self.session.close()
