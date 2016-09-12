@@ -48,7 +48,7 @@ class VideoReader():
         success, image = self._vidcap.read()
         if success:
             image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-            image = resize(image, scale)
+            image = tt.utils.image.resize(image, scale)
             return image
         else:
             return None
