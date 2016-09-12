@@ -273,12 +273,13 @@ class AbstractRuntime(object):
             summaries.extend(tt.board.variables_histogram_summary())
 
             # Track the moving averages of all trainable variables
-            if track_ema_variables:
-                variable_averages = tf.train.ExponentialMovingAverage(0.9999, self._global_step)
-                variables_averages_op = variable_averages.apply(tf.trainable_variables())
+            variable_averages = tf.train.ExponentialMovingAverage(0.9999, self._global_step)
 
+            if track_ema_variables:
+                variables_averages_op = variable_averages.apply(tf.trainable_variables())
                 train_op = tf.group(apply_gradient_op, variables_averages_op, name="train_op")
             else:
+                # exclude the 
                 train_op = tf.group(apply_gradient_op, name="train_op")
             
             # fetch update ops, that is required e.g. for tf.contrib.layers.batch_norm
@@ -302,30 +303,20 @@ class AbstractRuntime(object):
                 if not reuse_graph:
                     # start session and init all variables
                     print("Initializing variables...")
-                    
                     init_op = tf.initialize_all_variables()
                     self.session.run(init_op)
                 else:
-                    print("Restoring variables...")
-                    
                     if restore_ema_variables:
                         # Restore the moving average version of the learned variables for evaluation
                         variables_to_restore = variable_averages.variables_to_restore()
                         saver = tf.train.Saver(variables_to_restore)
+                        print("Restoring EMA variables...")
+                        saver.restore(self.session, tmp_name)
+                        print("Initializing other variables...")
+                        initialize_uninitialized_variables(self.session)
                     else:
-                        saver = tf.train.Saver()
-                    saver.restore(self.session, tmp_name)
- 
-                    #print("Initializing new variable...")
-                    #initialize_uninitialized_variables(self.session)
-                    
-                    #mae_vars = tf.get_collection(tf.GraphKeys.MOVING_AVERAGE_VARIABLES)
-                    #for var in mae_vars:
-                    #    print(var.name)
-                    #self.session.run(tf.initialize_variables(mae_vars))
-                    
-                    #print("Initializing new variable (2)...")
-                    #initialize_uninitialized_variables(self.session)
+                        print("Restoring variables...")
+                        tmp_saver.restore(self.session, tmp_name)
             else:
                 if checkpoint_file == LATEST_CHECKPOINT:
                     checkpoint_path = tf.train.latest_checkpoint(self.train_dir)

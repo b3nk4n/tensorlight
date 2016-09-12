@@ -209,14 +209,14 @@ def is_float_image(image):
     return True if t == np.float or t == np.float32 or t == np.float64 else False
 
 
-def pad_or_crop(image, desired_shape, pad_value=0,
+def pad_or_crop(images, desired_shape, pad_value=0,
                 ensure_copy=True):
-    """Pads or crops an image to the desired size. The padding and
+    """Pads or crops an image (or images) to the desired size. The padding and
        cropping is performed relative to the center.
     Parameters
     ----------
     image: ndarray
-        The image to pad or crop.
+        The image (or images) to pad or crop of shape [..., h, w, c].
     desired_shape: list or tuple of shape [h, w] or [h, w, c]
         The desired target shape. In case a shape of dimension [h, w, c]
         is passed, the channel-dim will be ignored. Is is only accepted that
@@ -231,7 +231,10 @@ def pad_or_crop(image, desired_shape, pad_value=0,
     ----------
     The padded or cropped image.
     """
-    h, w, c = image.shape
+    h = images.shape[-3]
+    w = images.shape[-2]
+    c = images.shape[-1]
+
     desired_h = desired_shape[0]
     desired_w = desired_shape[1]
     
@@ -243,19 +246,25 @@ def pad_or_crop(image, desired_shape, pad_value=0,
         pad_bottom = max(0, desired_h - h - pad_top)
         pad_left = max(0, (desired_w - w) // 2)
         pad_right = max(0, desired_w - w - pad_left)
+        
+        pad_tuples = [(pad_top, pad_bottom),
+                      (pad_left, pad_right),
+                      (0, 0)]
+        # insert zero-pad for all dimension prior the image shape (e.g. batch-size, time,...)
+        for i in range(len(images.shape) - 3):
+            pad_tuples.insert(0, (0,0))
+        
         # np.pad always creates a copy of the original
-        image = np.pad(image,
-                       ((pad_top, pad_bottom),
-                        (pad_left, pad_right),
-                        (0, 0)),
-                       mode='constant',
-                       constant_values=pad_value)
+        images = np.pad(images,
+                        pad_tuples,
+                        mode='constant',
+                        constant_values=pad_value)
     if do_crop:
         left = max(0, (w - desired_w) // 2)
         top = max(0, (h - desired_h) // 2)
         if ensure_copy:
             # create a copy before returning the array-view
-            image = image.copy()
-        image = image[top:(top + desired_h), left:(left + desired_w), :]
+            images = images.copy()
+        images = images[..., top:(top + desired_h), left:(left + desired_w), :]
         
-    return image
+    return images
