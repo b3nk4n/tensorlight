@@ -83,8 +83,10 @@ class AbstractRuntime(object):
         self._gpu.allow_growth = gpu_allow_growth
         self._gpu.memory_fraction = gpu_memory_fraction
            
-    def register_datasets(self, train_ds, valid_ds=None, test_ds=None):
+    def register_datasets(self, train_ds=None, valid_ds=None, test_ds=None):
         """Registers the datasets.
+           Note: You might want to register no dataset in case you only do predictions
+                 on a pre-trained dataset.
         Parameters
         ----------
         train_ds: AbstractDataset
@@ -130,16 +132,16 @@ class AbstractRuntime(object):
             Set to True to show additional construction/variable information.
         """
         with self.graph.as_default():
-            self._ph.inputs = tf.placeholder(tf.float32, [None] + self._datasets.train.input_shape, "X")
+            self._ph.inputs = tf.placeholder(tf.float32, [None] + self.datasets.train.input_shape, "X")
             if is_autoencoder:
-                self._ph.targets = tf.placeholder(tf.float32, [None] + self._datasets.train.input_shape, "Y")
+                self._ph.targets = tf.placeholder(tf.float32, [None] + self.datasets.train.input_shape, "Y")
             else:
-                self._ph.targets = tf.placeholder(tf.float32, [None] + self._datasets.train.target_shape, "Y")
+                self._ph.targets = tf.placeholder(tf.float32, [None] + self.datasets.train.target_shape, "Y")
 
             if isinstance(self.datasets.train, tt.datasets.base.AbstractQueueDataset):
                 with tf.device("/cpu:0"):
                     # doing inputs on CPU is generally a good idea
-                    inputs, targets = self._datasets.train.get_batch(self._ph.batch_size)
+                    inputs, targets = self.datasets.train.get_batch(self._ph.batch_size)
                 if is_autoencoder:
                     targets = inputs
             else:
@@ -292,25 +294,29 @@ class AbstractRuntime(object):
         assert not(steps <= 0 and epochs <= 0), "Either set 'steps' or 'epochs' parameter"
         assert not(steps > 0 and epochs > 0), "Not allowed to set both, 'steps' and 'epochs' parameter"
         
+        dataset = self.datasets.train
+        if not self._check_dataset_registered(dataset):
+            return
+        
         with self.graph.as_default():
             if valid_batch_size is None:
                 # take training batch_size as fallback.
                 valid_batch_size = batch_size
             
-            batches_per_epoch = self.datasets.train.size // batch_size
+            batches_per_epoch = dataset.size // batch_size
 
             if epochs > 0:
                 steps = batches_per_epoch * epochs
 
-            self.datasets.train.reset()
+            dataset.reset()
 
             try:
                 this_step = 0
                 total_loss_sum = 0
                 loss_sum = 0
 
-                x_dummy = np.zeros([batch_size] + self.datasets.train.input_shape, np.float32)
-                y_dummy = np.zeros([batch_size] + self.datasets.train.target_shape, np.float32)
+                x_dummy = np.zeros([batch_size] + dataset.input_shape, np.float32)
+                y_dummy = np.zeros([batch_size] + dataset.target_shape, np.float32)
                 
                 # add batch-size to summary. Copy is required to allow rerun training
                 summaries_copy = copy.copy(self._summaries)
@@ -329,19 +335,19 @@ class AbstractRuntime(object):
                     start_time = time.time()
 
                     # prepare feeding
-                    if isinstance(self.datasets.train, tt.datasets.base.AbstractQueueDataset):
+                    if isinstance(dataset, tt.datasets.base.AbstractQueueDataset):
                         batch_x = x_dummy
                         batch_y = y_dummy
                     else:
-                        batch_x, batch_y = self.datasets.train.get_batch(batch_size)
+                        batch_x, batch_y = dataset.get_batch(batch_size)
                     feed = self._feed_func(batch_x, batch_y, batch_size, True)
                     feed.update({self._ph.input_from_queue: True \
-                                 if isinstance(self.datasets.train, tt.datasets.base.AbstractQueueDataset) else False})
+                                 if isinstance(dataset, tt.datasets.base.AbstractQueueDataset) else False})
                     for key, value in train_feeds.iteritems():
                         feed.update({self._model_feeds[key]: value})
                     
-                    if this_step == 1 and isinstance(self.datasets.train, tt.datasets.base.AbstractQueueDataset):
-                        print("Filling queue with {} examples...".format(self.datasets.train.min_examples_in_queue))
+                    if this_step == 1 and isinstance(dataset, tt.datasets.base.AbstractQueueDataset):
+                        print("Filling queue with {} examples...".format(dataset.min_examples_in_queue))
 
                     # step counter is increment when train_op is executed
                     _, gstep, total_loss, loss = self.session.run([self._train_op,
@@ -472,8 +478,7 @@ class AbstractRuntime(object):
             Whether the validation results should be written to summary.
             Basically should be set to True while training only.
         """
-        if dataset is None:
-            print("No {} dataset registered. Skipping.".format(title))
+        if not self._check_dataset_registered(dataset):
             return
         
         batches_per_epoch = dataset.size // batch_size
@@ -535,6 +540,13 @@ class AbstractRuntime(object):
             for sum_str in summary_strings:
                 self.summary_writer.add_summary(sum_str, gstep)
             self.summary_writer.flush()
+            
+    def _check_dataset_registered(self, dataset):
+        """Checks if the corresponding dataset has been registered."""
+        if dataset is None:
+            print("No proper dataset registered. Skipping.")
+            return False
+        return True
     
     def _create_session(self):
         """Creates the TensorFlow session."""
