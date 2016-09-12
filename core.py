@@ -39,7 +39,7 @@ class AbstractRuntime(object):
         """
         assert gpu_memory_fraction > 0 and gpu_memory_fraction <= 1, "GPU memory fraction has to be in range (0,1]."
         
-        self._graph = tf.Graph()
+        self._graph = None
         self._session = None
         self._datasets = collections.namedtuple("datasets", ("train", "valid", "test"))
         self._model = None
@@ -63,18 +63,17 @@ class AbstractRuntime(object):
         self._total_loss = None
         self._loss = None
         self._eval_dict = {}
-            
-        with self.graph.as_default():
-            self._global_step = tf.Variable(0, trainable=False)
-            
-            self._ph = collections.namedtuple("placeholders", ("inputs",
-                                                               "targets"
-                                                               "is_training",
-                                                               "batch_size",
-                                                               "input_from_queue"))
-            self._ph.is_training = tf.placeholder(tf.bool, name='is_training')
-            self._ph.batch_size = tf.placeholder(tf.int32, name='batch_size')
-            self._ph.input_from_queue = tf.placeholder(tf.bool, name='input_from_queue')
+        
+        # placeholders and variables
+        self._global_step = None
+        self._ph = collections.namedtuple("placeholders", ("inputs",
+                                                           "targets"
+                                                           "is_training",
+                                                           "batch_size",
+                                                           "input_from_queue"))
+        self._ph.is_training = None
+        self._ph.batch_size = None
+        self._ph.input_from_queue = None    
             
         self._train_dir = train_dir
         self._max_checkpoints_to_keep = max_checkpoints_to_keep
@@ -100,6 +99,12 @@ class AbstractRuntime(object):
         self._datasets.valid = valid_ds
         self._datasets.test = test_ds
         
+    def unregister_datasets(self):
+        """Unregisters all datasets.
+           This can be used before re-building the model.
+        """
+        self.register_datasets(None, None, None)
+        
     def register_model(self, model):
         """Registers the model.
         Parameters
@@ -107,6 +112,9 @@ class AbstractRuntime(object):
         model: AbstractModel
             The model to register.
         """
+        if self._model is not None:
+            raise ValueError("It is not allowed to change th model registration at runtime.")
+        
         self._model = model
         
     def register_optimizer(self, optimizer):
@@ -119,29 +127,112 @@ class AbstractRuntime(object):
         """
         self._optimizer = optimizer
         
-    def build(self, is_autoencoder=False, checkpoint_file=None, verbose=False):
+    def build(self, is_autoencoder=False, input_shape=None, target_shape=None,
+              checkpoint_file=None, track_ema_variables=True, restore_ema_variables=False,
+              verbose=False):
         """ Builds the model. This must be calles before training, validation, testing or prediction.
+            This method can be called a second time to re-create a model. In case the dataset's  the
+            input shape or target shape, or the explicit input/target-shape changes, it required a model
+            that is fully-convolutional.
         Parameters
         ----------
         is_autoencoder: Boolean, optional
             Whether we build an autoencoder, where the inputs equals the targets.
+        input_shape: list(int), optional
+            Spcifies the shape (excluding batch-size!) for the placeholder and the input to the model.
+            Only used when no dataset is registered, because a dataset already defines the shape.
+            This can be useful when to want to do predictions on a different shape that the model was trained.
+        target_shape: list(int), optional
+            Spcifies the shape (excluding batch-size!) for the placeholder and the target/output of the model,
+            as well as the ground truth (GT) shape.
+            Only used when no dataset is registered, because a dataset already defines the shape.
+            This can be useful when to want to do predictions on a different shape that the model was trained.
         checkpoint_file: str, optional
             The filename of the checkpoint file withing 'train_dir' to restore.
             Use 'LATEST' or 'tt.core.LATEST_CHECKPOINT' to restore the lastest file.
+        track_ema_variables: Boolean, optional
+            Indicates whether exponential moving averages of the trainable variables should be
+            tracked (default) or not (False) during training.
+            When training a model, it is often beneficial to maintain moving averages of
+            the trained parameters.  Evaluations that use averaged parameters sometimes
+            produce significantly better results than the final trained values.
+        restore_ema_variables: Boolean, optional
+            Indicates whether the original variable values should be restore (default) or its
+            created exponential moving averages during training (True).
+            It is only used when a model gets restored or recreated.
         verbose: Boolean, optional
             Set to True to show additional construction/variable information.
         """
+        # take train set as reference for input and target shape
+        reference_dataset = self.datasets.train
+        if reference_dataset is None:
+            # 1st fallback: validation set
+            reference_dataset = self.datasets.valid
+        if reference_dataset is None:
+            # 2nd fallback: test set
+            reference_dataset = self.datasets.valid
+        
+        if reference_dataset is None:
+            # use explicit input/target shape defined for this build
+            is_queue_dataset = None
+            
+            if input_shape == None or (not(is_autoencoder) and target_shape == None):
+                raise ValueError("No dataset are registered, input and target shapes have to be defined explicitely.")
+        else:
+            # use the input/target shape defined by the dataset
+            is_queue_dataset = isinstance(reference_dataset, tt.datasets.base.AbstractQueueDataset)
+            input_shape = reference_dataset.input_shape
+            target_shape = reference_dataset.target_shape
+        
+        # create or reuse whole graph
+        if self._graph is None:
+            print("Creating new graph...")
+            self._graph = tf.Graph()
+            reuse_graph = False
+        else:
+            print("Reusing existing graph...")
+            
+            reuse_graph = True
+        
         with self.graph.as_default():
-            self._ph.inputs = tf.placeholder(tf.float32, [None] + self.datasets.train.input_shape, "X")
+            if reuse_graph:
+                # reuse everything, as we are re-creating the model with new inputs shapes
+                #tf.get_variable_scope().reuse_variables()
+                
+                # clear previous model-inferences
+                del self._inferences[:]
+                self._inferences = []
+                
+                # use NEW saver to not modify the "max_to_keep order"
+                tmp_saver = tf.train.Saver()
+                tmp_name = "/tmp/tmp-{}.ckpt".format(int(time.time()))
+                tmp_saver.save(self.session, tmp_name)
+                
+                 # close session to ensure all resources are released
+                self.close()
+                self._graph = tf.Graph()
+                
+                
+                
+        with self.graph.as_default():
+            # runtime placeholders and variables
+            self._global_step = tf.get_variable('global_step', shape=[], dtype=tf.int32, trainable=False,
+                                                initializer=tf.zeros_initializer)
+            self._ph.is_training = tf.placeholder(tf.bool, name='is_training')
+            self._ph.batch_size = tf.placeholder(tf.int32, name='batch_size')
+            self._ph.input_from_queue = tf.placeholder(tf.bool, name='input_from_queue')
+            
+            # input placeholders
+            self._ph.inputs = tf.placeholder(tf.float32, [None] + input_shape, "X")
             if is_autoencoder:
-                self._ph.targets = tf.placeholder(tf.float32, [None] + self.datasets.train.input_shape, "Y")
+                self._ph.targets = tf.placeholder(tf.float32, [None] + input_shape, "Y")
             else:
-                self._ph.targets = tf.placeholder(tf.float32, [None] + self.datasets.train.target_shape, "Y")
+                self._ph.targets = tf.placeholder(tf.float32, [None] + target_shape, "Y")
 
-            if isinstance(self.datasets.train, tt.datasets.base.AbstractQueueDataset):
+            if is_queue_dataset:
                 with tf.device("/cpu:0"):
                     # doing inputs on CPU is generally a good idea
-                    inputs, targets = self.datasets.train.get_batch(self._ph.batch_size)
+                    inputs, targets = reference_dataset.get_batch(self._ph.batch_size)
                 if is_autoencoder:
                     targets = inputs
             else:
@@ -182,10 +273,13 @@ class AbstractRuntime(object):
             summaries.extend(tt.board.variables_histogram_summary())
 
             # Track the moving averages of all trainable variables
-            variable_averages = tf.train.ExponentialMovingAverage(0.9999, self._global_step)
-            variables_averages_op = variable_averages.apply(tf.trainable_variables())
+            if track_ema_variables:
+                variable_averages = tf.train.ExponentialMovingAverage(0.9999, self._global_step)
+                variables_averages_op = variable_averages.apply(tf.trainable_variables())
 
-            train_op = tf.group(apply_gradient_op, variables_averages_op, name="train_op")
+                train_op = tf.group(apply_gradient_op, variables_averages_op, name="train_op")
+            else:
+                train_op = tf.group(apply_gradient_op, name="train_op")
             
             # fetch update ops, that is required e.g. for tf.contrib.layers.batch_norm
             update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
@@ -205,21 +299,45 @@ class AbstractRuntime(object):
             self._saver = tf.train.Saver(max_to_keep=self.max_checkpoints_to_keep)
 
             if checkpoint_file is None:
-                # start session and init all variables
-                init_op = tf.initialize_all_variables()
-                self.session.run(init_op)
+                if not reuse_graph:
+                    # start session and init all variables
+                    print("Initializing variables...")
+                    
+                    init_op = tf.initialize_all_variables()
+                    self.session.run(init_op)
+                else:
+                    print("Restoring variables...")
+                    
+                    if restore_ema_variables:
+                        # Restore the moving average version of the learned variables for evaluation
+                        variables_to_restore = variable_averages.variables_to_restore()
+                        saver = tf.train.Saver(variables_to_restore)
+                    else:
+                        saver = tf.train.Saver()
+                    saver.restore(self.session, tmp_name)
+ 
+                    #print("Initializing new variable...")
+                    #initialize_uninitialized_variables(self.session)
+                    
+                    #mae_vars = tf.get_collection(tf.GraphKeys.MOVING_AVERAGE_VARIABLES)
+                    #for var in mae_vars:
+                    #    print(var.name)
+                    #self.session.run(tf.initialize_variables(mae_vars))
+                    
+                    #print("Initializing new variable (2)...")
+                    #initialize_uninitialized_variables(self.session)
             else:
                 if checkpoint_file == LATEST_CHECKPOINT:
                     checkpoint_path = tf.train.latest_checkpoint(self.train_dir)
                     assert checkpoint_path is not None, "No latest checkpoint file found."
                 else:
                     checkpoint_path = os.path.join(self.train_dir, checkpoint_file)
+                print("Restoring variables from {}...".format(checkpoint_path))
                 self._saver.restore(self.session, checkpoint_path)
-                print("Restoring variables from: {}".format(checkpoint_path))
 
             # creates coordinatior and queue threads
             self._coord = tf.train.Coordinator()
-            if isinstance(self.datasets.train, tt.datasets.base.AbstractQueueDataset):
+            if is_queue_dataset:
                 self._threads = tf.train.start_queue_runners(sess=self.session, coord=self._coord)
                 
             # Model information
@@ -550,6 +668,7 @@ class AbstractRuntime(object):
     
     def _create_session(self):
         """Creates the TensorFlow session."""
+        print("Creating new session...")
         gpu_options = tf.GPUOptions(
             per_process_gpu_memory_fraction=self._gpu.memory_fraction,
             allow_growth=self._gpu.allow_growth)
@@ -922,9 +1041,14 @@ class MultiGpuRuntime(AbstractRuntime):
         return self._num_gpus
 
     
-    
 def show_trainable_parameters(verbose=False):
-    """Shows the number of trainable parameters in this graph."""
+    """Shows the number of trainable parameters in this graph.
+    Parameters
+    ----------
+    verbose: Boolean, optional
+        Show additional information and list the number of trainable
+        variables per variable, not just the total sum.
+    """
     total_parameters = 0
     for variable in tf.trainable_variables():
         # shape is an array of tf.Dimension
@@ -938,3 +1062,45 @@ def show_trainable_parameters(verbose=False):
     if verbose:
         print("----------------------------------------")
     print("Total model-params: {}".format(total_parameters))
+
+    
+def uninitialized_variables(session, var_list=None):
+    """Gets the list of uninitialized variables.
+       Note: this has to be evaluated on a session.
+    Parameters
+    ----------
+    session: tf.Session
+        The TensorFlow session to scan for uninitialized variables
+    var_list: list(tf.Varaible) or None
+        The list of variables to filter for uninitialized ones.
+        Defaults to tf.all_variables() is used.
+    """
+    if var_list is None:
+        var_list = tf.all_variables()
+    #return list(tf.get_variable(name) for name in
+    #            session.run(tf.report_uninitialized_variables(var_list)))
+    
+    reported_var_names = session.run(tf.report_uninitialized_variables(var_list))
+    uninit_vars = []
+    for name in reported_var_names:
+        try:
+            uninit_vars.append(tf.get_variable(name))
+            print(name)
+        except ValueError:
+            print("NO", name)
+            
+    return uninit_vars
+    
+    
+def initialize_uninitialized_variables(session, var_list=None):
+    """Initializes all uninitialized variables.
+    Parameters
+    ----------
+    session: tf.Session
+        The TensorFlow session to scan for uninitialized variables
+    var_list: list(tf.Varaible) or None
+        The list of variables to filter for uninitialized ones.
+        Defaults to tf.all_variables() is used.
+    """
+    uninit_vars = uninitialized_variables(session, var_list)
+    session.run(tf.initialize_variables(uninit_vars))
