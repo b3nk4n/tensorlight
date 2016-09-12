@@ -44,6 +44,9 @@ class AbstractRuntime(object):
         self._datasets = collections.namedtuple("datasets", ("train", "valid", "test"))
         self._model = None
         self._inferences = []
+        
+        # set Adam optimizer as default
+        self._optimizer = tt.training.Optimizer(tt.training.ADAM, 0.001)
 
         self._coord = None
         self._threads = None
@@ -104,20 +107,20 @@ class AbstractRuntime(object):
         """
         self._model = model
         
-    def build(self, initial_lr, lr_decay_step_interval=sys.maxint, lr_decay_factor=1.0, lr_decay_staircase=True,
-              is_autoencoder=False, checkpoint_file=None, verbose=False):
+    def register_optimizer(self, optimizer):
+        """Registers the optimizer.
+           In case no optimizer was defined, Adam optimizer will be used.
+        Parameters
+        ----------
+        optimizer: tt.training.Optimizer
+            The optimizer to use while graph construction.
+        """
+        self._optimizer = optimizer
+        
+    def build(self, is_autoencoder=False, checkpoint_file=None, verbose=False):
         """ Builds the model. This must be calles before training, validation, testing or prediction.
         Parameters
         ----------
-        initial_lr: float
-            The initial learning rate, that will use exponential decay.
-        lr_decay_step_interval: int, optional
-            The step rate when to perform learning rate decay.
-            Defaults to sys.maxint, equivalent to no decay.
-        lr_decay_factor: float, optional
-            The learning rate decay factor.
-        lr_decay_staircase: Boolean, optional
-            Whether we use smooth decay or staircase decay (default).
         is_autoencoder: Boolean, optional
             Whether we build an autoencoder, where the inputs equals the targets.
         checkpoint_file: str, optional
@@ -160,15 +163,10 @@ class AbstractRuntime(object):
                                                                               self._ph.batch_size: bs,
                                                                               self._ph.is_training: is_train}
                 self._model_feeds = self._model.fetch_feeds();
-
-            # Decay the learning rate exponentially based on the number of steps
-            lr = tf.train.exponential_decay(initial_lr,
-                                            self._global_step,
-                                            lr_decay_step_interval,
-                                            lr_decay_factor,
-                                            staircase=lr_decay_staircase)
             
-            opt = tf.train.AdamOptimizer(lr)
+            # build the optimizer instance
+            with tf.name_scope('optimizer'):
+                opt, lr = self.optimizer.build(self._global_step)
               
             # build (multi-)device specific computation graph for inference
             grads, summaries, total_loss, loss, eval_dict = self._build_computation_graph(x, y, opt)
@@ -575,6 +573,12 @@ class AbstractRuntime(object):
            Use the members ds.train, ds.valid or ds.test
            of the returned tuple."""
         return self._datasets
+    
+    @property
+    def optimizer(self):
+        """Gets the optimizer. Changes at runtime do not inflence the optimizer,
+           since it is created during graph construction. Use it read-only."""
+        return self._optimizer
     
     @property
     def gstep(self):

@@ -1,4 +1,189 @@
+import sys
+import collections
+
 import tensorflow as tf
+
+
+ADAM = 'adam'
+SGD = 'sgd'
+RMSPROP = 'rmsprop'
+ADADELTA = 'adadelta'
+ADAGRAD = 'adagrad'
+MOMENTUM = 'momentum'
+NESTEROV = 'nesterov'
+
+
+class Optimizer(object):
+    """Optimizer class to encapsulate (all) optimizers from its creation.
+       This is required to enable delayed-build of the optimizer.
+    """
+    def __init__(self, optimizer_name, initial_lr):
+        """Creates an optimizer with its default hyperparams.
+           Note: Momentum-based optimizers (RMSProp, Momentum, Nesterov) should
+                 sets its momentum explicitely.
+        Parameters
+        ----------
+        optimizer_name: str
+            The optimizer to use. Use keys such as 'tt.training.ADAM' or 'adam'.
+        initial_lr: float
+            The inital learning rate > 0
+        """
+        assert initial_lr > 0, "Learning rate must be positive."
+        
+        self._optimizer_name = optimizer_name.lower()
+        self._initial_lr = initial_lr
+        self._decay = collections.namedtuple("decay", ("step_interval",
+                                                       "rate",
+                                                       "staircase"))
+        self._hyper = collections.namedtuple("hyperparams", ("rho",
+                                                             "epsilon",
+                                                             "initial_accumulator_value",
+                                                             "beta1",
+                                                             "beta2",
+                                                             "decay",
+                                                             "momentum"))
+        
+        # set default hyperparams and decay
+        self.set_decay(sys.maxint, 1.0)
+        self.set_hyperparams()
+                 
+    def set_decay(self, step_interval, rate, staircase=True):
+        """Sets the exponential decay. No decay is used by default.
+        Parameters
+        ----------
+        step_interval: int
+            The number of steps when to decay the learning rate.
+            Use sys.maxint to use no decay.
+        rate: float
+            The decay rate.
+        staircase: Boolean, optional
+            Whether to use staircase decay (default) or not.
+        """
+        assert step_interval > 0, "Decay step interval must be > 0."
+        assert rate > 0 and rate <= 1, "Decay rate must be in range (0, 1]."
+        
+        self._decay.step_interval = step_interval
+        self._decay.rate = rate
+        self._decay.staircase = staircase
+        
+    def set_hyperparams(self, epsilon=1e-8, beta1=0.9, beta2=0.999, momentum=0.0,
+                        decay=0.9, rho=0.95, initial_accumulator_value=0.1):
+        """Sets the hyper parameters. Choose the related ones to your defined
+           learning algorithm. All others will be ignored. This function resets
+           all not-specified values to its defaults.
+        epsilon: float, optional
+            The fuzz factor. Value is typically close to 0.
+        beta1: float, optional
+            The exponential decay rate for the 1st moment estimates.
+            Value is typically close to 1.
+        beta2: float, optoinal
+            The exponential decay rate for the 2nd moment estimates.
+            Value is typically close to 1.
+        momentum: float, optional
+            The momentum to use.
+        decay: float, optional
+            Discounting factor for the history/coming gradient.
+        rho: float, optional
+            The rho-decay rate.
+        initial_accumulator_value: float, optional
+            Starting value for the accumulators, must be positive
+        """
+        assert epsilon >= 0, "Epsilon must be >= 0 (usually very small)."
+        assert beta1 > 0 and beta1 < 1, "Beta1 must be in range (0, 1)."
+        assert beta2 > 0 and beta2 < 1, "Beta2 must be in range (0, 1)."
+        assert momentum >= 0, "Momentum must be >= 0."
+        assert decay >= 0, "Decay must be >= 0."
+        assert rho >= 0, "Rho must be >= 0."
+        assert initial_accumulator_value >= 0, "Accumulator value must be >= 0."
+        
+        self._hyper.epsilon = epsilon
+        self._hyper.beta1 = beta1
+        self._hyper.beta2 = beta2
+        self._hyper.momentum = momentum
+        self._hyper.decay = decay
+        self._hyper.rho = rho
+        self._hyper.initial_accumulator_value = initial_accumulator_value
+        
+    def build(self, global_step):
+        """Actually builds the optimizer including the learning rate decay
+           if it was configured.
+        Parameters
+        ----------
+        global_step: int or tf.Variable
+            The global step counter.
+        Returns
+        ----------
+        Tuple (optimizer, learning_rate) of the created optimizer.
+        """
+        if self.uses_decay:
+            # Decay the learning rate exponentially based on the number of steps
+            lr = tf.train.exponential_decay(self.initial_lr,
+                                            global_step,
+                                            self.decay.step_interval,
+                                            self.decay.rate,
+                                            staircase=self.decay.staircase)
+        else:
+            lr = self.initial_lr
+        
+        if self.name == SGD:
+            opt = tf.train.GradientDescentOptimizer(lr)
+        elif self.name == ADAM:
+            opt = tf.train.AdamOptimizer(lr,
+                                         beta1=self._hyper.beta1,
+                                         beta2=self._hyper.beta2,
+                                         epsilon=self._hyper.epsilon)
+        elif self.name == RMSPROP:
+            opt = tf.train.RMSPropOptimizer(lr,
+                                            decay=self._hyper.decay,
+                                            momentum=self._hyper.momentum,
+                                            epsilon=self._hyper.epsilon)
+        elif self.name == ADADELTA:
+            opt = tf.train.AdadeltaOptimizer(lr,
+                                             rho=self._hyper.rho,
+                                             epsilon=self._hyper.epsilon)
+        elif self.name == ADAGRAD:
+            opt = tf.train.AdagradOptimizer(lr,
+                                            initial_accumulator_value=self._hyper.initial_accumulator_value)
+        elif self.name == MOMENTUM:
+            opt = tf.train.MomentumOptimizer(lr,
+                                             momentum=self._hyper.momentum,
+                                             use_nesterov=False)
+        elif self.name == NESTEROV:
+            opt = tf.train.MomentumOptimizer(lr,
+                                             momentum=self._hyper.momentum,
+                                             use_nesterov=True)
+        else:
+            raise ValueError("Unknown optimizer. Contributors welcome...")
+        return opt, lr
+        
+    @property
+    def name(self):
+        """Gets the optimizers name."""
+        return self._optimizer_name
+    
+    @property
+    def initial_lr(self):
+        """Gets the initial learning rate."""
+        return self._initial_lr
+       
+    @property
+    def decay(self):
+        """Gets the (exponential) decay properties."""
+        return self._decay
+    
+    @property
+    def uses_decay(self):
+        """Indicates whether (exponential) decay is used or not."""
+        return True if self.decay.step_interval == sys.maxint or self.decay.rate == 1 else False
+    
+    @property
+    def hyperparams(self):
+        """Gets the hyper parameters for the optimizer.
+           Only the hyper params relevant for this optimizer are used.
+        """
+        return self._hyper
+
+
 
 def average_gradients(tower_grads):
     """Calculate the average gradient for each shared variable across all towers
