@@ -17,7 +17,8 @@ class Optimizer(object):
     """Optimizer class to encapsulate (all) optimizers from its creation.
        This is required to enable delayed-build of the optimizer.
     """
-    def __init__(self, optimizer_name, initial_lr):
+    def __init__(self, optimizer_name, initial_lr,
+                 step_interval=sys.maxint, rate=1.0, staircase=True):
         """Creates an optimizer with its default hyperparams.
            Note: Momentum-based optimizers (RMSProp, Momentum, Nesterov) should
                  sets its momentum explicitely.
@@ -26,15 +27,31 @@ class Optimizer(object):
         optimizer_name: str
             The optimizer to use. Use keys such as 'tt.training.ADAM' or 'adam'.
         initial_lr: float
-            The inital learning rate > 0
+            The inital learning rate > 0.
+        step_interval: int, optional
+            The number of steps when to decay the learning rate.
+            Use sys.maxint to use no decay.
+        rate: float, optional
+            The decay rate.
+        staircase: Boolean, optional
+            Whether to use staircase decay (default) or not.
         """
         assert initial_lr > 0, "Learning rate must be positive."
+        assert step_interval > 0, "Decay step interval must be > 0."
+        assert rate > 0 and rate <= 1, "Decay rate must be in range (0, 1]."
         
         self._optimizer_name = optimizer_name.lower()
         self._initial_lr = initial_lr
+        
+        # set decay
         self._decay = collections.namedtuple("decay", ("step_interval",
                                                        "rate",
                                                        "staircase"))
+        self._decay.step_interval = step_interval
+        self._decay.rate = rate
+        self._decay.staircase = staircase
+        
+        # set default hyper-params
         self._hyper = collections.namedtuple("hyperparams", ("rho",
                                                              "epsilon",
                                                              "initial_accumulator_value",
@@ -42,29 +59,7 @@ class Optimizer(object):
                                                              "beta2",
                                                              "decay",
                                                              "momentum"))
-        
-        # set default hyperparams and decay
-        self.set_decay(sys.maxint, 1.0)
         self.set_hyperparams()
-                 
-    def set_decay(self, step_interval, rate, staircase=True):
-        """Sets the exponential decay. No decay is used by default.
-        Parameters
-        ----------
-        step_interval: int
-            The number of steps when to decay the learning rate.
-            Use sys.maxint to use no decay.
-        rate: float
-            The decay rate.
-        staircase: Boolean, optional
-            Whether to use staircase decay (default) or not.
-        """
-        assert step_interval > 0, "Decay step interval must be > 0."
-        assert rate > 0 and rate <= 1, "Decay rate must be in range (0, 1]."
-        
-        self._decay.step_interval = step_interval
-        self._decay.rate = rate
-        self._decay.staircase = staircase
         
     def set_hyperparams(self, epsilon=1e-8, beta1=0.9, beta2=0.999, momentum=0.0,
                         decay=0.9, rho=0.95, initial_accumulator_value=0.1):
