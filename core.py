@@ -1071,19 +1071,42 @@ def show_trainable_parameters(verbose=False):
         Show additional information and list the number of trainable
         variables per variable, not just the total sum.
     """
-    total_parameters = 0
-    for variable in tf.trainable_variables():
-        # shape is an array of tf.Dimension
-        shape = variable.get_shape()
-        variable_parametes = 1
-        for dim in shape:
-            variable_parametes *= dim.value
-        if verbose:
-            print("{}: {}".format(variable.name, variable_parametes))
-        total_parameters += variable_parametes
+    trainable_vars = tf.trainable_variables()
+    
+    if len(trainable_vars) == 0:
+        print("No model-params found.")
+        return
+    
+    print()
     if verbose:
-        print("----------------------------------------")
-    print("Total model-params: {}".format(total_parameters))
+        print("-" * 80)
+    
+    total_parameters = 0
+    groups = {}
+    for var in trainable_vars:
+        # shape is an array of tf.Dimension
+        shape = var.get_shape()
+        var_params = 1
+        for dim in shape:
+            var_params *= dim.value
+        if verbose:
+            print("{:69} | {:8d}".format(var.name, var_params))
+        
+        total_parameters += var_params
+        
+        group_name = var.name.split('/')[0]
+        if group_name in groups:
+            groups[group_name] += var_params
+        else:
+            groups.update({group_name: var_params})
+    
+    print("-" * 80)
+    for group, count in groups.iteritems():
+        print("{:69} | {:8d}".format(group, count))
+    print("=" * 80)
+    print("{:69} | {:8d}".format("TOTAL", total_parameters))
+    print("-" * 80)
+    print()
 
     
 def uninitialized_variables(session, var_list=None):
