@@ -377,7 +377,7 @@ class AbstractRuntime(object):
         pass
         
     def train(self, batch_size, valid_batch_size=None, steps=-1, epochs=-1, train_feeds={}, valid_feeds={},
-              on_validate=None, display_steps=10, summary_steps=100, checkpoint_steps=1000,
+              on_validate=None, display_steps=25, summary_steps=100, checkpoint_steps=1000,
               validation_steps=1000, early_validation_at_step=100,
               do_checkpoints=True, do_summary=True):
         """Train the model.
@@ -446,6 +446,7 @@ class AbstractRuntime(object):
 
             try:
                 this_step = 0
+                step_divisor = 0
                 total_loss_sum = 0
                 loss_sum = 0
 
@@ -493,19 +494,23 @@ class AbstractRuntime(object):
 
                     assert not np.isnan(loss), 'Warning: Model diverged with loss = NaN'
 
+                    step_divisor += 1
                     total_loss_sum += total_loss
                     loss_sum += loss
-                    if gstep % display_steps == 0:
+                    if this_step == 1 or gstep % display_steps == 0:
                         # info
                         num_examples_per_step = batch_size
                         examples_per_sec = num_examples_per_step / duration
                         sec_per_batch = float(duration)
-                        avg_total_loss = total_loss_sum / display_steps
-                        avg_loss = loss_sum / display_steps
+                        avg_total_loss = total_loss_sum / step_divisor
+                        avg_loss = loss_sum / step_divisor
+                        step_divisor = 0
                         total_loss_sum = 0
                         loss_sum = 0
-                        print("@{:5d}: loss: {:7.3f}, t-loss: {:7.3f} ({:7.1f} examples/sec, {:5.2f} sec/batch)" \
-                              .format(gstep, avg_loss, avg_total_loss, examples_per_sec, sec_per_batch))
+                        print("@{:5d}: loss: {:7.3f}, t-loss: {:7.3f} ({:7.1f}" \
+                              "examples/sec, {:5.2f} sec/batch)" \
+                              .format(gstep, avg_loss, avg_total_loss,
+                                      examples_per_sec, sec_per_batch))
 
                     if gstep % summary_steps == 0 or this_step == steps:
                         # summary
@@ -519,7 +524,8 @@ class AbstractRuntime(object):
                         epochs > 0 and this_step % batches_per_epoch == 0:
                         # validate
                         print()
-                        self._test_internal(valid_batch_size, self.datasets.valid, "validation", valid_feeds, do_summary)
+                        self._test_internal(valid_batch_size, self.datasets.valid,
+                                            "validation", valid_feeds, do_summary)
                         print()
                         
                         if on_validate is not None:
@@ -530,7 +536,8 @@ class AbstractRuntime(object):
                         if gstep % checkpoint_steps == 0 or this_step == steps:
                             # save regular checkpoint
                             checkpoint_path = os.path.join(self.train_dir, "model.ckpt")
-                            self._saver.save(self.session, checkpoint_path, global_step=self._global_step)
+                            self._saver.save(self.session, checkpoint_path,
+                                             global_step=self._global_step)
 
                         if epochs > 0:
                             if this_step % batches_per_epoch == 0:
@@ -940,7 +947,7 @@ class MultiGpuRuntime(AbstractRuntime):
         
     @tt.utils.attr.override
     def train(self, batch_size, valid_batch_size=None, steps=-1, epochs=-1, train_feeds={}, valid_feeds={},
-              on_validate=None, display_steps=10, summary_steps=100, checkpoint_steps=1000,
+              on_validate=None, display_steps=25, summary_steps=100, checkpoint_steps=1000,
               validation_steps=1000, early_validation_at_step=100,
               do_checkpoints=True, do_summary=True):
         """Train the model.
