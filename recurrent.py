@@ -486,7 +486,7 @@ class LSTMConv2DCell(RNNConv2DCell):
     def __init__(self, height, width, n_filters, ksize_input, ksize_hidden,
                  use_peepholes=False, cell_clip=None,
                  bn_input_hidden=False, bn_hidden_hidden=False, bn_peepholes=False,
-                 updates_collections=tf.GraphKeys.UPDATE_OPS, is_training=True, # TODO: doc-string!
+                 updates_collections=tf.GraphKeys.UPDATE_OPS, is_training=None,
                  weight_init=tf.contrib.layers.xavier_initializer(),
                  hidden_weight_init=tt.init.orthogonal_initializer(),
                  forget_bias=1.0,
@@ -514,6 +514,23 @@ class LSTMConv2DCell(RNNConv2DCell):
             A float (> 0) value, if provided the cell state is clipped
             by this value prior to the cell output activation.
             Both sides are clipped (range [-cell_clip, cell_clip]).
+        bn_input_hidden: Boolean, optional
+            Set to true to enable batch-normalization for input-hidden connections,
+            excluding peepholes. Requires to set 'is_training' param.
+        bn_hidden_hidden: Boolean, optional
+            Set to true to enable batch-normalization for hidden-hidden connections,
+            excluding peepholes. Requires to set 'is_training' param.
+        bn_peepholes: Boolean, optional
+            Set to true to enable batch-normalization for peephole connections
+            Requires to set 'is_training' param.
+        updates_collections: str or None
+            Collections to collect the update ops for computation in case of
+            batch normalization is used. If None, a control dependency would be
+            added to make sure the updates are computed. This is only required
+            when any kind of batch_normalization is used, else ignored.
+        is_training: Boolean or None, optional
+            Whether or not the layer is in training mode. This is only required
+            when any kind of batch_normalization is used, else ignored.
         weight_init : float or function, optional
             Initialization's of the input weights, either the standard deviation
             or a initializer-fuction such as xavier init.
@@ -529,6 +546,13 @@ class LSTMConv2DCell(RNNConv2DCell):
         device: str or None, optional
             The device to which memory the variables will get stored on. (e.g. '/cpu:0')
         """
+        if bn_input_hidden or bn_hidden_hidden or bn_peepholes:
+            assert is_training is not None, "When BatchNorm is used," \
+                                            "training mode has to be specified."
+        
+        if bn_peepholes:
+            assert use_peepholes, "Enabling batch-norm for peepholes requires to enbale them."
+        
         self._height = height
         self._width = width
         self._n_filters = n_filters
@@ -537,7 +561,7 @@ class LSTMConv2DCell(RNNConv2DCell):
         self._weight_init = weight_init
         self._hidden_weight_init = hidden_weight_init
         self._forget_bias = forget_bias
-        self._state_is_tuple = True
+        self._state_is_tuple = TrueIn training mode
         self._activation = activation
         self._hidden_activation = hidden_activation
         self._device = device
