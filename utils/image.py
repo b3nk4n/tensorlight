@@ -268,3 +268,23 @@ def pad_or_crop(images, desired_shape, pad_value=0,
         images = images[..., top:(top + desired_h), left:(left + desired_w), :]
         
     return images
+
+def gaussian_blur(image, sigma=1.0):
+    """Applies a gaussian filter to an image, by processing each channel seperately.
+    Notes: we do not use: scipy.ndimage.filters.gaussian_filter(), because it makes
+           the image gray-scaled, but with shape [..., 3]
+    Parameters
+    ----------
+    image: ndarray
+        The image to filter. Can have any number of channels, because each is
+        processed separately.
+    sigma: float
+        The sigma level, where a larger number means more blur effect.
+    Returns
+    ----------
+    The blurred image.
+    """
+    
+    # apply equal gaussian and use ksize=0 to auto-compute it from sigma
+    blurred_img = cv2.GaussianBlur(image,(0,0), sigma)
+    return blurred_img
