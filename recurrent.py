@@ -465,6 +465,170 @@ class BasicLSTMConv2DCell(RNNConv2DCell):
             return new_h, new_state
 
         
+class LSTMConv2DCell(RNNConv2DCell):
+    """2D convolutional LSTM recurrent network cell.
+    We add forget_bias (default: 1) to the biases of the forget gate in order to
+    reduce the scale of forgetting in the beginning of the training.
+    It allows cell clipping and supports peep-hole connections, as well as
+    batch-normalization.
+    
+    References:
+    [Convolutional LSTM Network: A Machine Learning Approach for
+    Precipitation Nowcasting](http://arxiv.org/pdf/1506.04214)
+    [Recurrent Batch Normalization](https://arxiv.org/abs/1603.09025)
+    """
+
+    def __init__(self, height, width, n_filters, ksize_input, ksize_hidden,
+                 use_peepholes=False, cell_clip=None,
+                 weight_init=tf.contrib.layers.xavier_initializer(),
+                 hidden_weight_init=tt.init.orthogonal_initializer(),
+                 forget_bias=1.0,
+                 activation=tf.nn.tanh, hidden_activation=tf.nn.sigmoid,
+                 device=None):
+        """Initialize the basic 2D convolutional LSTM cell.
+        Parameters
+        ----------
+        height: int
+            The height of the input image.
+        width: int
+            The width of the input image.
+        n_filters: int
+            The number of filters of the convolutional kernel. This also specifies
+            the depth/channels of the output.
+        ksize_hidden: tuple or list of (int, int) 
+            The number of (rows, columns) of the convolutioanl kernel
+            for input to state transition. Usually ksize_hidden > ksize_input
+        ksize_hidden: tuple or list of (int, int) 
+            The number of (rows, columns) of the convolutioanl kernel
+            for state to state transition. Usually ksize_hidden > ksize_input
+        weight_init : float or function, optional
+            Initialization's of the input weights, either the standard deviation
+            or a initializer-fuction such as xavier init.
+        hidden_weight_init : float or function, optional
+            Initialization's of the hidden weights, either the standard deviation
+            or a initializer-fuction such as xavier or orthogonal init.
+        forget_bias: float
+            The bias added to forget gates (see above).
+        activation: function
+            Activation function of the output and cell states.
+        hidden_activation: function
+            Activation function of the hidden states.
+        device: str or None, optional
+            The device to which memory the variables will get stored on. (e.g. '/cpu:0')
+        """
+        self._height = height
+        self._width = width
+        self._n_filters = n_filters
+        self._ksize_input = ksize_input
+        self._ksize_hidden = ksize_hidden
+        self._weight_init = weight_init
+        self._hidden_weight_init = hidden_weight_init
+        self._forget_bias = forget_bias
+        self._state_is_tuple = True
+        self._activation = activation
+        self._hidden_activation = hidden_activation
+        self._device = device
+        
+        self._use_peepholes = use_peepholes
+
+    @property
+    def state_size(self):
+        return tf.nn.rnn_cell.LSTMStateTuple(
+            (self._height, self._width, self._n_filters), 
+            (self._height, self._width, self._n_filters))
+
+    @property
+    def output_size(self):
+        return (self._height, self._width, self._n_filters)
+
+    def __call__(self, inputs, state, scope=None):
+        """2D convolutional Long short-term memory cell (LSTMConv2D)."""
+        with vs.variable_scope(scope or type(self).__name__):  # "LSTMConv2DCell"
+            c, h = state
+            
+            conv_xi = tt.network.conv2d("Conv_xi", inputs, self._n_filters,
+                                        self._ksize_input, (1, 1),
+                                        weight_init=self._weight_init,
+                                        bias_init=0.0,
+                                        device=self._device)
+            conv_xj = tt.network.conv2d("Conv_xj", inputs,self._n_filters,
+                                        self._ksize_input, (1, 1),
+                                        weight_init=self._weight_init,
+                                        bias_init=0.0,
+                                        device=self._device)
+            conv_xf = tt.network.conv2d("Conv_xf", inputs, self._n_filters,
+                                        self._ksize_input, (1, 1),
+                                        weight_init=self._weight_init,
+                                        bias_init=self._forget_bias,
+                                        device=self._device)
+            conv_xo = tt.network.conv2d("Conv_xo", inputs, self._n_filters,
+                                        self._ksize_input, (1, 1),
+                                        weight_init=self._weight_init,
+                                        bias_init=0.0,
+                                        device=self._device)
+
+            conv_hi = tt.network.conv2d("Conv_hi", h, self._n_filters, 
+                                        self._ksize_hidden, (1, 1),
+                                        weight_init=self._hidden_weight_init,
+                                        bias_init=None,
+                                        device=self._device)
+            conv_hj = tt.network.conv2d("Conv_hj", h, self._n_filters,
+                                        self._ksize_hidden, (1, 1),
+                                        weight_init=self._hidden_weight_init,
+                                        bias_init=None,
+                                        device=self._device)
+            conv_hf = tt.network.conv2d("Conv_hf", h, self._n_filters,
+                                        self._ksize_hidden, (1, 1),
+                                        weight_init=self._hidden_weight_init,
+                                        bias_init=None,
+                                        device=self._device)
+            conv_ho = tt.network.conv2d("Conv_ho", h, self._n_filters,
+                                        self._ksize_hidden, (1, 1),
+                                        weight_init=self._hidden_weight_init,
+                                        bias_init=None,
+                                        device=self._device)
+
+            i = conv_xi + conv_hi  # input gate
+            j = conv_xj + conv_hj  # new input
+            f = conv_xf + conv_hf  # forget gate
+            o = conv_xo + conv_ho  # output gate
+            
+            if self._use_peepholes:
+                conv_ci = tt.network.conv2d("Conv_ci", c, self._n_filters, 
+                                            self._ksize_hidden, (1, 1),
+                                            weight_init=self._weight_init,
+                                            bias_init=None,
+                                            device=self._device)
+                conv_cf = tt.network.conv2d("Conv_cf", c, self._n_filters,
+                                            self._ksize_hidden, (1, 1),
+                                            weight_init=self._weight_init,
+                                            bias_init=None,
+                                            device=self._device)
+                i += conv_ci
+                f += conv_cf
+
+            # i_t = sig(i)
+            # f_t = sig(f + b_f)
+            # new_c = f_t * c + i_t * tanh(j)
+            # o_t = sig(o)
+            # new_h = o_t * tanh(new_c)
+            new_c = (c * self._hidden_activation(f) + self._hidden_activation(i) *
+                 self._activation(j))
+            
+            if self._use_peepholes:
+                conv_co = tt.network.conv2d("Conv_diago", new_c, self._n_filters,
+                                            self._ksize_hidden, (1, 1),
+                                            weight_init=self._weight_init,
+                                            bias_init=None,
+                                            device=self._device)
+                o += conv_co
+            
+            new_h = self._activation(new_c) * self._hidden_activation(o)
+
+            new_state = tf.nn.rnn_cell.LSTMStateTuple(new_c, new_h)
+            return new_h, new_state
+        
+        
 class MultiRNNConv2DCell(RNNConv2DCell):
     """2D convolutional RNN cell composed sequentially of multiple simple cells."""
 
