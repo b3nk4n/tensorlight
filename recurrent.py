@@ -404,48 +404,48 @@ class BasicLSTMConv2DCell(RNNConv2DCell):
         """2D convolutional Long short-term memory cell (LSTMConv2D)."""
         with vs.variable_scope(scope or type(self).__name__):  # "BasicLSTMConv2DCell"
             c, h = state
-            
-            conv_xi = tt.network.conv2d("Conv_xi", inputs, self._n_filters,
-                                        self._ksize_input, (1, 1),
-                                        weight_init=self._weight_init,
-                                        bias_init=0.0,
-                                        device=self._device)
-            conv_xj = tt.network.conv2d("Conv_xj", inputs,self._n_filters,
-                                        self._ksize_input, (1, 1),
-                                        weight_init=self._weight_init,
-                                        bias_init=0.0,
-                                        device=self._device)
-            conv_xf = tt.network.conv2d("Conv_xf", inputs, self._n_filters,
-                                        self._ksize_input, (1, 1),
-                                        weight_init=self._weight_init,
-                                        bias_init=self._forget_bias,
-                                        device=self._device)
-            conv_xo = tt.network.conv2d("Conv_xo", inputs, self._n_filters,
-                                        self._ksize_input, (1, 1),
-                                        weight_init=self._weight_init,
-                                        bias_init=0.0,
-                                        device=self._device)
-
-            conv_hi = tt.network.conv2d("Conv_hi", h, self._n_filters, 
-                                        self._ksize_hidden, (1, 1),
-                                        weight_init=self._hidden_weight_init,
-                                        bias_init=None,
-                                        device=self._device)
-            conv_hj = tt.network.conv2d("Conv_hj", h, self._n_filters,
-                                        self._ksize_hidden, (1, 1),
-                                        weight_init=self._hidden_weight_init,
-                                        bias_init=None,
-                                        device=self._device)
-            conv_hf = tt.network.conv2d("Conv_hf", h, self._n_filters,
-                                        self._ksize_hidden, (1, 1),
-                                        weight_init=self._hidden_weight_init,
-                                        bias_init=None,
-                                        device=self._device)
-            conv_ho = tt.network.conv2d("Conv_ho", h, self._n_filters,
-                                        self._ksize_hidden, (1, 1),
-                                        weight_init=self._hidden_weight_init,
-                                        bias_init=None,
-                                        device=self._device)
+            with tf.variable_scope("Conv_x"):
+                conv_xi = tt.network.conv2d("xi", inputs, self._n_filters,
+                                            self._ksize_input, (1, 1),
+                                            weight_init=self._weight_init,
+                                            bias_init=0.0,
+                                            device=self._device)
+                conv_xj = tt.network.conv2d("xj", inputs,self._n_filters,
+                                            self._ksize_input, (1, 1),
+                                            weight_init=self._weight_init,
+                                            bias_init=0.0,
+                                            device=self._device)
+                conv_xf = tt.network.conv2d("xf", inputs, self._n_filters,
+                                            self._ksize_input, (1, 1),
+                                            weight_init=self._weight_init,
+                                            bias_init=self._forget_bias,
+                                            device=self._device)
+                conv_xo = tt.network.conv2d("xo", inputs, self._n_filters,
+                                            self._ksize_input, (1, 1),
+                                            weight_init=self._weight_init,
+                                            bias_init=0.0,
+                                            device=self._device)
+            with tf.variable_scope("Conv_h"):
+                conv_hi = tt.network.conv2d("hi", h, self._n_filters, 
+                                            self._ksize_hidden, (1, 1),
+                                            weight_init=self._hidden_weight_init,
+                                            bias_init=None,
+                                            device=self._device)
+                conv_hj = tt.network.conv2d("hj", h, self._n_filters,
+                                            self._ksize_hidden, (1, 1),
+                                            weight_init=self._hidden_weight_init,
+                                            bias_init=None,
+                                            device=self._device)
+                conv_hf = tt.network.conv2d("hf", h, self._n_filters,
+                                            self._ksize_hidden, (1, 1),
+                                            weight_init=self._hidden_weight_init,
+                                            bias_init=None,
+                                            device=self._device)
+                conv_ho = tt.network.conv2d("ho", h, self._n_filters,
+                                            self._ksize_hidden, (1, 1),
+                                            weight_init=self._hidden_weight_init,
+                                            bias_init=None,
+                                            device=self._device)
 
             i = conv_xi + conv_hi  # input gate
             j = conv_xj + conv_hj  # new input
@@ -472,6 +472,11 @@ class LSTMConv2DCell(RNNConv2DCell):
     It allows cell clipping and supports peep-hole connections, as well as
     batch-normalization.
     
+    As proposed in the RNN-BatchNorm paper, we do not center the input-hidden connections
+    and rely on the learned forget-bias (center=False).
+    Additionally, we optionally support BN for peephole-connections, which are not used
+    in the paper. Use them with caution!!!
+    
     References:
     [Convolutional LSTM Network: A Machine Learning Approach for
     Precipitation Nowcasting](http://arxiv.org/pdf/1506.04214)
@@ -480,6 +485,8 @@ class LSTMConv2DCell(RNNConv2DCell):
 
     def __init__(self, height, width, n_filters, ksize_input, ksize_hidden,
                  use_peepholes=False, cell_clip=None,
+                 bn_input_hidden=False, bn_hidden_hidden=False, bn_peepholes=False,
+                 updates_collections=tf.GraphKeys.UPDATE_OPS, is_training=True, # TODO: doc-string!
                  weight_init=tf.contrib.layers.xavier_initializer(),
                  hidden_weight_init=tt.init.orthogonal_initializer(),
                  forget_bias=1.0,
@@ -537,6 +544,11 @@ class LSTMConv2DCell(RNNConv2DCell):
         
         self._use_peepholes = use_peepholes
         self._cell_clip = cell_clip
+        self._bn_input_hidden = bn_input_hidden
+        self._bn_hidden_hidden = bn_hidden_hidden
+        self._bn_peepholes = bn_peepholes
+        self._updates_collections = updates_collections
+        self._is_training = is_training
 
     @property
     def state_size(self):
@@ -552,68 +564,137 @@ class LSTMConv2DCell(RNNConv2DCell):
         """2D convolutional Long short-term memory cell (LSTMConv2D)."""
         with vs.variable_scope(scope or type(self).__name__):  # "LSTMConv2DCell"
             c, h = state
-            
-            conv_xi = tt.network.conv2d("Conv_xi", inputs, self._n_filters,
-                                        self._ksize_input, (1, 1),
-                                        weight_init=self._weight_init,
-                                        bias_init=0.0,
-                                        device=self._device)
-            conv_xj = tt.network.conv2d("Conv_xj", inputs,self._n_filters,
-                                        self._ksize_input, (1, 1),
-                                        weight_init=self._weight_init,
-                                        bias_init=0.0,
-                                        device=self._device)
-            conv_xf = tt.network.conv2d("Conv_xf", inputs, self._n_filters,
-                                        self._ksize_input, (1, 1),
-                                        weight_init=self._weight_init,
-                                        bias_init=self._forget_bias,
-                                        device=self._device)
-            conv_xo = tt.network.conv2d("Conv_xo", inputs, self._n_filters,
-                                        self._ksize_input, (1, 1),
-                                        weight_init=self._weight_init,
-                                        bias_init=0.0,
-                                        device=self._device)
+            with tf.variable_scope("Conv_x") as varscope:
+                conv_xi = tt.network.conv2d("xi", inputs, self._n_filters,
+                                            self._ksize_input, (1, 1),
+                                            weight_init=self._weight_init,
+                                            bias_init=0.0,
+                                            device=self._device)
+                
+                if self._bn_input_hidden:
+                    conv_xi = tf.contrib.layers.batch_norm(conv_xi, scale=True,
+                        center=False, updates_collections=self._updates_collections,
+                        is_trianing=self._is_training)
+                    
+                    # reuse the same batch-variables in the next 2d-convs
+                    varscope.reuse_variables()
+                
+                conv_xj = tt.network.conv2d("xj", inputs,self._n_filters,
+                                            self._ksize_input, (1, 1),
+                                            weight_init=self._weight_init,
+                                            bias_init=0.0,
+                                            device=self._device)
+                
+                if self._bn_input_hidden:
+                    conv_xj = tf.contrib.layers.batch_norm(conv_xj, scale=True,
+                        center=False, updates_collections=self._updates_collections,
+                        is_trianing=self._is_training)
+                
+                conv_xf = tt.network.conv2d("xf", inputs, self._n_filters,
+                                            self._ksize_input, (1, 1),
+                                            weight_init=self._weight_init,
+                                            bias_init=self._forget_bias,
+                                            device=self._device)
+                
+                if self._bn_input_hidden:
+                    conv_xf = tf.contrib.layers.batch_norm(conv_xf, scale=True,
+                        center=False, updates_collections=self._updates_collections,
+                        is_trianing=self._is_training)
+                
+                conv_xo = tt.network.conv2d("xo", inputs, self._n_filters,
+                                            self._ksize_input, (1, 1),
+                                            weight_init=self._weight_init,
+                                            bias_init=0.0,
+                                            device=self._device)
+                
+                if self._bn_input_hidden:
+                    conv_xo = tf.contrib.layers.batch_norm(conv_xo, scale=True,
+                        center=False, updates_collections=self._updates_collections,
+                        is_trianing=self._is_training)
 
-            conv_hi = tt.network.conv2d("Conv_hi", h, self._n_filters, 
-                                        self._ksize_hidden, (1, 1),
-                                        weight_init=self._hidden_weight_init,
-                                        bias_init=None,
-                                        device=self._device)
-            conv_hj = tt.network.conv2d("Conv_hj", h, self._n_filters,
-                                        self._ksize_hidden, (1, 1),
-                                        weight_init=self._hidden_weight_init,
-                                        bias_init=None,
-                                        device=self._device)
-            conv_hf = tt.network.conv2d("Conv_hf", h, self._n_filters,
-                                        self._ksize_hidden, (1, 1),
-                                        weight_init=self._hidden_weight_init,
-                                        bias_init=None,
-                                        device=self._device)
-            conv_ho = tt.network.conv2d("Conv_ho", h, self._n_filters,
-                                        self._ksize_hidden, (1, 1),
-                                        weight_init=self._hidden_weight_init,
-                                        bias_init=None,
-                                        device=self._device)
+            with tf.variable_scope("Conv_h") as varscope:
+                conv_hi = tt.network.conv2d("hi", h, self._n_filters, 
+                                            self._ksize_hidden, (1, 1),
+                                            weight_init=self._hidden_weight_init,
+                                            bias_init=None,
+                                            device=self._device)
+                
+                if self._bn_input_hidden:
+                    conv_hi = tf.contrib.layers.batch_norm(conv_hi, scale=True,
+                        center=False, updates_collections=self._updates_collections,
+                        is_trianing=self._is_training)
+                    
+                    # reuse the same batch-variables in the next 2d-convs
+                    varscope.reuse_variables()
+                
+                conv_hj = tt.network.conv2d("hj", h, self._n_filters,
+                                            self._ksize_hidden, (1, 1),
+                                            weight_init=self._hidden_weight_init,
+                                            bias_init=None,
+                                            device=self._device)
+                
+                if self._bn_input_hidden:
+                    conv_hj = tf.contrib.layers.batch_norm(conv_hj, scale=True,
+                        center=False, updates_collections=self._updates_collections,
+                        is_trianing=self._is_training)
+                
+                conv_hf = tt.network.conv2d("hf", h, self._n_filters,
+                                            self._ksize_hidden, (1, 1),
+                                            weight_init=self._hidden_weight_init,
+                                            bias_init=None,
+                                            device=self._device)
+                
+                if self._bn_input_hidden:
+                    conv_hf = tf.contrib.layers.batch_norm(conv_hf, scale=True,
+                        center=False, updates_collections=self._updates_collections,
+                        is_trianing=self._is_training)
+                
+                conv_ho = tt.network.conv2d("ho", h, self._n_filters,
+                                            self._ksize_hidden, (1, 1),
+                                            weight_init=self._hidden_weight_init,
+                                            bias_init=None,
+                                            device=self._device)
+                
+                if self._bn_input_hidden:
+                    conv_ho = tf.contrib.layers.batch_norm(conv_ho, scale=True,
+                        center=False, updates_collections=self._updates_collections,
+                        is_trianing=self._is_training)
 
-            i = conv_xi + conv_hi  # input gate
-            j = conv_xj + conv_hj  # new input
-            f = conv_xf + conv_hf  # forget gate
-            o = conv_xo + conv_ho  # output gate
+                i = conv_xi + conv_hi  # input gate
+                j = conv_xj + conv_hj  # new input
+                f = conv_xf + conv_hf  # forget gate
+                o = conv_xo + conv_ho  # output gate
             
             if self._use_peepholes:
                 # peepholes for input
-                conv_ci = tt.network.conv2d("Conv_ci", c, self._n_filters, 
-                                            self._ksize_hidden, (1, 1),
-                                            weight_init=self._weight_init,
-                                            bias_init=None,
-                                            device=self._device)
-                conv_cf = tt.network.conv2d("Conv_cf", c, self._n_filters,
-                                            self._ksize_hidden, (1, 1),
-                                            weight_init=self._weight_init,
-                                            bias_init=None,
-                                            device=self._device)
-                i += conv_ci
-                f += conv_cf
+                with tf.variable_scope("Conv_c"):
+                    conv_ci = tt.network.conv2d("ci", c, self._n_filters, 
+                                                self._ksize_hidden, (1, 1),
+                                                weight_init=self._weight_init,
+                                                bias_init=None,
+                                                device=self._device)
+                    
+                    if self._bn_peepholes:
+                        conv_ci = tf.contrib.layers.batch_norm(conv_ci, scale=True,
+                        center=False, updates_collections=self._updates_collections,
+                        is_trianing=self._is_training)
+                    
+                        # reuse the same batch-variables in the next 2d-convs
+                        varscope.reuse_variables()
+                    
+                    conv_cf = tt.network.conv2d("cf", c, self._n_filters,
+                                                self._ksize_hidden, (1, 1),
+                                                weight_init=self._weight_init,
+                                                bias_init=None,
+                                                device=self._device)
+                    
+                    if self._bn_peepholes:
+                        conv_cf = tf.contrib.layers.batch_norm(conv_cf, scale=True,
+                            center=False, updates_collections=self._updates_collections,
+                            is_trianing=self._is_training)
+                    
+                    i += conv_ci
+                    f += conv_cf
 
             # i_t = sig(i)
             # f_t = sig(f + b_f)
@@ -629,12 +710,28 @@ class LSTMConv2DCell(RNNConv2DCell):
             
             if self._use_peepholes:
                 # peepholes for output
-                conv_co = tt.network.conv2d("Conv_co", new_c, self._n_filters,
-                                            self._ksize_hidden, (1, 1),
-                                            weight_init=self._weight_init,
-                                            bias_init=None,
-                                            device=self._device)
-                o += conv_co
+                with tf.variable_scope("Conv_c"):
+                    conv_co = tt.network.conv2d("co", new_c, self._n_filters,
+                                                self._ksize_hidden, (1, 1),
+                                                weight_init=self._weight_init,
+                                                bias_init=None,
+                                                device=self._device)
+                    
+                    if self._bn_peepholes:
+                        # reuse the same batch-variables from same scope above
+                        varscope.reuse_variables()
+                        
+                        conv_co = tf.contrib.layers.batch_norm(conv_co, scale=True,
+                            center=False, updates_collections=self._updates_collections,
+                            is_trianing=self._is_training)
+                    
+                    o += conv_co
+            
+            if self._bn_hidden_hidden:
+                new_c = tf.contrib.layers.batch_norm(new_c,
+                                                     center=True, scale=True,
+                                                     updates_collections=self._updates_collections,
+                                                     is_trianing=self._is_training)
             
             new_h = self._activation(new_c) * self._hidden_activation(o)
 
@@ -688,7 +785,7 @@ class MultiRNNConv2DCell(RNNConv2DCell):
     
 
     
-class BatchNormalizedLSTMCell(tf.nn.rnn_cell.RNNCell):
+class BatchNormalizedLSTMCell(tf.nn.rnn_cell.RNNCell): # TODO: remove this code!!!
     """Batch normalized LSTM cell.
     References:
         Code:  http://olavnymoen.com/2016/07/07/rnn-batch-normalization
@@ -766,6 +863,10 @@ class BasicLSTMCell(tf.nn.rnn_cell.RNNCell):
     It does not allow cell clipping, a projection layer, and does not
     use peep-hole connections: it is the basic baseline.
     For advanced models, please use the full LSTMCell that follows.
+    
+    This is just a copy of the original code in TensorFlow. The only modification
+    is to use device-string for Multi-GPU environment. Remove this in case
+    there is a way to assign variables to a device in a different way!!!
     """
 
     def __init__(self, num_units, forget_bias=1.0, input_size=None,
