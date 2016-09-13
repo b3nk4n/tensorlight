@@ -1,3 +1,6 @@
+#!/usr/bin/python
+# -*- coding: utf_8 -*-
+
 import sys
 import time
 import numpy as np
@@ -8,7 +11,8 @@ class ProgressBar(object):
        without the need of having JavaScript activated.
        
     References:
-        Taken from: Keras
+        Taken and modified from: Keras:
+        https://github.com/fchollet/keras/blob/master/keras/utils/generic_utils.py
     """
     def __init__(self, max_value, width=20):
         """Creates a progress indicator instance.
@@ -53,18 +57,18 @@ class ProgressBar(object):
         sys.stdout.write("\r")
 
         numdigits = int(np.floor(np.log10(self.max_value))) + 1
-        barstr = '%%%dd/%%%dd [' % (numdigits, numdigits)
+        barstr = '%%%dd/%%%dd ▕' % (numdigits, numdigits)
         bar = barstr % (value, self.max_value)
         prog = float(value) / self.max_value
         prog_width = int(self.width * prog)
         if prog_width > 0:
-            bar += ('=' * (prog_width-1))
+            bar += ('█' * (prog_width-1))
             if value < self.max_value:
-                bar += '>'
+                bar += '▒'
             else:
-                bar += '='
-        bar += ('.' * (self.width - prog_width))
-        bar += ']'
+                bar += '█'
+        bar += ('░' * (self.width - prog_width))
+        bar += '▏'
         sys.stdout.write(bar)
         self.total_width = len(bar)
 
