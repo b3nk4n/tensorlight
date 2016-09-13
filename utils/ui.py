@@ -3,6 +3,7 @@
 
 import sys
 import time
+import math
 import numpy as np
 
 
@@ -14,7 +15,7 @@ class ProgressBar(object):
         Taken and modified from: Keras:
         https://github.com/fchollet/keras/blob/master/keras/utils/generic_utils.py
     """
-    def __init__(self, max_value, width=20):
+    def __init__(self, max_value, width=10):
         """Creates a progress indicator instance.
         Parameters
         ----------
@@ -56,17 +57,19 @@ class ProgressBar(object):
         sys.stdout.write("\b" * prev_total_width)
         sys.stdout.write("\r")
 
-        numdigits = int(np.floor(np.log10(self.max_value))) + 1
-        barstr = '%%%dd/%%%dd ▕' % (numdigits, numdigits)
-        bar = barstr % (value, self.max_value)
         prog = float(value) / self.max_value
+        bar = "{:3d}%▕".format(int(round(prog * 100)))
+        
         prog_width = int(self.width * prog)
+        prog_to_next_step = math.ceil((prog_width + 1) - self.width * prog)
         if prog_width > 0:
             bar += ('█' * (prog_width-1))
-            if value < self.max_value:
+            if value == self.max_value:
+                bar += '█'
+            elif prog_to_next_step < 0.5:
                 bar += '▒'
             else:
-                bar += '█'
+                bar += '░'
         bar += ('░' * (self.width - prog_width))
         bar += '▏'
         sys.stdout.write(bar)
@@ -79,9 +82,9 @@ class ProgressBar(object):
         eta = time_per_unit * (self.max_value - value)
         info = ''
         if value < self.max_value:
-            info += ' - ETA: %ds' % eta
+            info += '- ETA: %ds' % eta
         else:
-            info += ' - %ds' % (now - self.start)
+            info += '- %ds' % (now - self.start)
         for k in self.unique_params:
             info += ' - %s:' % k
             if type(self.sum_params[k]) is list:
