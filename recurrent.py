@@ -561,7 +561,7 @@ class LSTMConv2DCell(RNNConv2DCell):
         self._weight_init = weight_init
         self._hidden_weight_init = hidden_weight_init
         self._forget_bias = forget_bias
-        self._state_is_tuple = TrueIn training mode
+        self._state_is_tuple = True
         self._activation = activation
         self._hidden_activation = hidden_activation
         self._device = device
@@ -589,7 +589,7 @@ class LSTMConv2DCell(RNNConv2DCell):
         with vs.variable_scope(scope or type(self).__name__):  # "LSTMConv2DCell"
             c, h = state
             with tf.variable_scope("Conv_x") as varscope:
-                conv_xi = tt.network.conv2d("xi", inputs, self._n_filters,
+                conv_xi = tt.network.conv2d("i", inputs, self._n_filters,
                                             self._ksize_input, (1, 1),
                                             weight_init=self._weight_init,
                                             bias_init=0.0,
@@ -598,12 +598,9 @@ class LSTMConv2DCell(RNNConv2DCell):
                 if self._bn_input_hidden:
                     conv_xi = tf.contrib.layers.batch_norm(conv_xi, scale=True,
                         center=False, updates_collections=self._updates_collections,
-                        is_trianing=self._is_training)
-                    
-                    # reuse the same batch-variables in the next 2d-convs
-                    varscope.reuse_variables()
+                        is_training=self._is_training, scope="bn_x")
                 
-                conv_xj = tt.network.conv2d("xj", inputs,self._n_filters,
+                conv_xj = tt.network.conv2d("j", inputs,self._n_filters,
                                             self._ksize_input, (1, 1),
                                             weight_init=self._weight_init,
                                             bias_init=0.0,
@@ -612,9 +609,9 @@ class LSTMConv2DCell(RNNConv2DCell):
                 if self._bn_input_hidden:
                     conv_xj = tf.contrib.layers.batch_norm(conv_xj, scale=True,
                         center=False, updates_collections=self._updates_collections,
-                        is_trianing=self._is_training)
+                        is_training=self._is_training, reuse=True, scope="bn_x")
                 
-                conv_xf = tt.network.conv2d("xf", inputs, self._n_filters,
+                conv_xf = tt.network.conv2d("f", inputs, self._n_filters,
                                             self._ksize_input, (1, 1),
                                             weight_init=self._weight_init,
                                             bias_init=self._forget_bias,
@@ -623,9 +620,9 @@ class LSTMConv2DCell(RNNConv2DCell):
                 if self._bn_input_hidden:
                     conv_xf = tf.contrib.layers.batch_norm(conv_xf, scale=True,
                         center=False, updates_collections=self._updates_collections,
-                        is_trianing=self._is_training)
+                        is_training=self._is_training, reuse=True, scope="bn_x")
                 
-                conv_xo = tt.network.conv2d("xo", inputs, self._n_filters,
+                conv_xo = tt.network.conv2d("o", inputs, self._n_filters,
                                             self._ksize_input, (1, 1),
                                             weight_init=self._weight_init,
                                             bias_init=0.0,
@@ -634,10 +631,10 @@ class LSTMConv2DCell(RNNConv2DCell):
                 if self._bn_input_hidden:
                     conv_xo = tf.contrib.layers.batch_norm(conv_xo, scale=True,
                         center=False, updates_collections=self._updates_collections,
-                        is_trianing=self._is_training)
+                        is_training=self._is_training, reuse=True, scope="bn_x")
 
             with tf.variable_scope("Conv_h") as varscope:
-                conv_hi = tt.network.conv2d("hi", h, self._n_filters, 
+                conv_hi = tt.network.conv2d("i", h, self._n_filters, 
                                             self._ksize_hidden, (1, 1),
                                             weight_init=self._hidden_weight_init,
                                             bias_init=None,
@@ -646,12 +643,9 @@ class LSTMConv2DCell(RNNConv2DCell):
                 if self._bn_input_hidden:
                     conv_hi = tf.contrib.layers.batch_norm(conv_hi, scale=True,
                         center=False, updates_collections=self._updates_collections,
-                        is_trianing=self._is_training)
-                    
-                    # reuse the same batch-variables in the next 2d-convs
-                    varscope.reuse_variables()
+                        is_training=self._is_training, scope="bn_h")
                 
-                conv_hj = tt.network.conv2d("hj", h, self._n_filters,
+                conv_hj = tt.network.conv2d("j", h, self._n_filters,
                                             self._ksize_hidden, (1, 1),
                                             weight_init=self._hidden_weight_init,
                                             bias_init=None,
@@ -660,9 +654,9 @@ class LSTMConv2DCell(RNNConv2DCell):
                 if self._bn_input_hidden:
                     conv_hj = tf.contrib.layers.batch_norm(conv_hj, scale=True,
                         center=False, updates_collections=self._updates_collections,
-                        is_trianing=self._is_training)
+                        is_training=self._is_training, reuse=True, scope="bn_h")
                 
-                conv_hf = tt.network.conv2d("hf", h, self._n_filters,
+                conv_hf = tt.network.conv2d("f", h, self._n_filters,
                                             self._ksize_hidden, (1, 1),
                                             weight_init=self._hidden_weight_init,
                                             bias_init=None,
@@ -671,9 +665,9 @@ class LSTMConv2DCell(RNNConv2DCell):
                 if self._bn_input_hidden:
                     conv_hf = tf.contrib.layers.batch_norm(conv_hf, scale=True,
                         center=False, updates_collections=self._updates_collections,
-                        is_trianing=self._is_training)
+                        is_training=self._is_training, reuse=True, scope="bn_h")
                 
-                conv_ho = tt.network.conv2d("ho", h, self._n_filters,
+                conv_ho = tt.network.conv2d("o", h, self._n_filters,
                                             self._ksize_hidden, (1, 1),
                                             weight_init=self._hidden_weight_init,
                                             bias_init=None,
@@ -682,7 +676,7 @@ class LSTMConv2DCell(RNNConv2DCell):
                 if self._bn_input_hidden:
                     conv_ho = tf.contrib.layers.batch_norm(conv_ho, scale=True,
                         center=False, updates_collections=self._updates_collections,
-                        is_trianing=self._is_training)
+                        is_training=self._is_training, reuse=True, scope="bn_h")
 
                 i = conv_xi + conv_hi  # input gate
                 j = conv_xj + conv_hj  # new input
@@ -691,8 +685,8 @@ class LSTMConv2DCell(RNNConv2DCell):
             
             if self._use_peepholes:
                 # peepholes for input
-                with tf.variable_scope("Conv_c"):
-                    conv_ci = tt.network.conv2d("ci", c, self._n_filters, 
+                with tf.variable_scope("Conv_peep"):
+                    conv_ci = tt.network.conv2d("i", c, self._n_filters, 
                                                 self._ksize_hidden, (1, 1),
                                                 weight_init=self._weight_init,
                                                 bias_init=None,
@@ -701,12 +695,9 @@ class LSTMConv2DCell(RNNConv2DCell):
                     if self._bn_peepholes:
                         conv_ci = tf.contrib.layers.batch_norm(conv_ci, scale=True,
                         center=False, updates_collections=self._updates_collections,
-                        is_trianing=self._is_training)
+                        is_training=self._is_training, scope="bn_peep")
                     
-                        # reuse the same batch-variables in the next 2d-convs
-                        varscope.reuse_variables()
-                    
-                    conv_cf = tt.network.conv2d("cf", c, self._n_filters,
+                    conv_cf = tt.network.conv2d("f", c, self._n_filters,
                                                 self._ksize_hidden, (1, 1),
                                                 weight_init=self._weight_init,
                                                 bias_init=None,
@@ -715,7 +706,7 @@ class LSTMConv2DCell(RNNConv2DCell):
                     if self._bn_peepholes:
                         conv_cf = tf.contrib.layers.batch_norm(conv_cf, scale=True,
                             center=False, updates_collections=self._updates_collections,
-                            is_trianing=self._is_training)
+                            is_training=self._is_training, reuse=True, scope="bn_peep")
                     
                     i += conv_ci
                     f += conv_cf
@@ -734,20 +725,17 @@ class LSTMConv2DCell(RNNConv2DCell):
             
             if self._use_peepholes:
                 # peepholes for output
-                with tf.variable_scope("Conv_c"):
-                    conv_co = tt.network.conv2d("co", new_c, self._n_filters,
+                with tf.variable_scope("Conv_peep"):
+                    conv_co = tt.network.conv2d("o", new_c, self._n_filters,
                                                 self._ksize_hidden, (1, 1),
                                                 weight_init=self._weight_init,
                                                 bias_init=None,
                                                 device=self._device)
                     
                     if self._bn_peepholes:
-                        # reuse the same batch-variables from same scope above
-                        varscope.reuse_variables()
-                        
                         conv_co = tf.contrib.layers.batch_norm(conv_co, scale=True,
                             center=False, updates_collections=self._updates_collections,
-                            is_trianing=self._is_training)
+                            is_training=self._is_training, reuse=True, scope="bn_peep")
                     
                     o += conv_co
             
@@ -755,7 +743,7 @@ class LSTMConv2DCell(RNNConv2DCell):
                 new_c = tf.contrib.layers.batch_norm(new_c,
                                                      center=True, scale=True,
                                                      updates_collections=self._updates_collections,
-                                                     is_trianing=self._is_training)
+                                                     is_training=self._is_training, scope="bn_c")
             
             new_h = self._activation(new_c) * self._hidden_activation(o)
 
