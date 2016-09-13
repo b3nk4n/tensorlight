@@ -501,6 +501,12 @@ class LSTMConv2DCell(RNNConv2DCell):
         ksize_hidden: tuple or list of (int, int) 
             The number of (rows, columns) of the convolutioanl kernel
             for state to state transition. Usually ksize_hidden > ksize_input
+        use_peepholes: Boolean, optioanl
+            Set to True to enable diagonal/peephole connections.
+        cell_clip: float, optional
+            A float (> 0) value, if provided the cell state is clipped
+            by this value prior to the cell output activation.
+            Both sides are clipped (range [-cell_clip, cell_clip]).
         weight_init : float or function, optional
             Initialization's of the input weights, either the standard deviation
             or a initializer-fuction such as xavier init.
@@ -530,6 +536,7 @@ class LSTMConv2DCell(RNNConv2DCell):
         self._device = device
         
         self._use_peepholes = use_peepholes
+        self._cell_clip = cell_clip
 
     @property
     def state_size(self):
@@ -594,6 +601,7 @@ class LSTMConv2DCell(RNNConv2DCell):
             o = conv_xo + conv_ho  # output gate
             
             if self._use_peepholes:
+                # peepholes for input
                 conv_ci = tt.network.conv2d("Conv_ci", c, self._n_filters, 
                                             self._ksize_hidden, (1, 1),
                                             weight_init=self._weight_init,
@@ -615,8 +623,13 @@ class LSTMConv2DCell(RNNConv2DCell):
             new_c = (c * self._hidden_activation(f) + self._hidden_activation(i) *
                  self._activation(j))
             
+            if self._cell_clip is not None:
+                # cell clip before output
+                new_c = clip_ops.clip_by_value(new_c, -self._cell_clip, self._cell_clip)
+            
             if self._use_peepholes:
-                conv_co = tt.network.conv2d("Conv_diago", new_c, self._n_filters,
+                # peepholes for output
+                conv_co = tt.network.conv2d("Conv_co", new_c, self._n_filters,
                                             self._ksize_hidden, (1, 1),
                                             weight_init=self._weight_init,
                                             bias_init=None,
