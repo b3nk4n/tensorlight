@@ -22,16 +22,19 @@ class AbstractRuntime(object):
     """Abstract runtime."""
     __metaclass__ = ABCMeta
     
-    def __init__(self, train_dir='train', max_checkpoints_to_keep=5,
+    def __init__(self, train_dir, gpu_devices,
                  gpu_allow_growth=True, gpu_memory_fraction=1.0):
         """Creates a base runtime.
         Parameters
         ----------
-        train_dir: str, optional
+        train_dir: str
             The training directory for checkpoints and summary files.
-        max_checkpoints_to_keep: int, optional
-            The number of last checkpoints to keep. Defaults to 5.
-            Use 0 or None to keep all checkpoints.
+        gpu_devices: list(int)
+            The list of the currently used GPU device IDs.
+            Internally, the runtime filters the devices to select only these GPU devices,
+            to prevent TensorFlow to allocate memory on other devices.
+            If None or empty list, TensorFlow handles device assignment manually or
+            we use a CPU only system. GPU masking will be cleared.
         gpu_allow_growth: Boolean, optional
             Whether the GPUS is allowed to allocate memory dynamically.
             Has the advantage to only use that much memory as it really needs,
@@ -64,6 +67,8 @@ class AbstractRuntime(object):
         
         self._total_loss = None
         self._loss = None
+        
+        # eval-dict might contain multiple items for 
         self._eval_dict = {}
         
         # placeholders and variables
@@ -78,11 +83,15 @@ class AbstractRuntime(object):
         self._ph.input_from_queue = None    
             
         self._train_dir = train_dir
-        self._max_checkpoints_to_keep = max_checkpoints_to_keep
         
-        self._gpu = collections.namedtuple("placeholders", ("allow_growth", "memory_fraction"))
+        self._gpu = collections.namedtuple("gpu", ("devices",
+                                                   "allow_growth",
+                                                   "memory_fraction"))
         self._gpu.allow_growth = gpu_allow_growth
         self._gpu.memory_fraction = gpu_memory_fraction
+        # mask the used devices to enuse not to use memory of other devices
+        self._gpu.devices = gpu_devices
+        tt.hardware.set_cuda_devices(gpu_devices)
            
     def register_datasets(self, train_ds=None, valid_ds=None, test_ds=None):
         """Registers the datasets.
@@ -130,7 +139,7 @@ class AbstractRuntime(object):
         self._optimizer = optimizer
         
     def build(self, is_autoencoder=False, input_shape=None, target_shape=None,
-              checkpoint_file=None, track_ema_variables=True, restore_ema_variables=False,
+              checkpoint_file=None, max_checkpoints_to_keep=5, track_ema_variables=True, restore_ema_variables=False,
               verbose=False):
         """ Builds the model. This must be calles before training, validation, testing or prediction.
             This method can be called a second time to re-create a model. In case the dataset's  the
@@ -152,6 +161,9 @@ class AbstractRuntime(object):
         checkpoint_file: str, optional
             The filename of the checkpoint file withing 'train_dir' to restore.
             Use 'LATEST' or 'tt.core.LATEST_CHECKPOINT' to restore the lastest file.
+        max_checkpoints_to_keep: int, optional
+            The number of last checkpoints to keep. Defaults to 5.
+            Use 0 or None to keep all checkpoints.
         track_ema_variables: Boolean, optional
             Indicates whether exponential moving averages of the trainable variables should be
             tracked (default) or not (False) during training.
@@ -315,7 +327,7 @@ class AbstractRuntime(object):
             self._eval_dict = eval_dict
                 
             # Create a saver to store checkpoints of the model
-            self._saver = tf.train.Saver(max_to_keep=self.max_checkpoints_to_keep)
+            self._saver = tf.train.Saver(max_to_keep=max_checkpoints_to_keep)
 
             if checkpoint_file is None:
                 if recreate:
@@ -372,7 +384,7 @@ class AbstractRuntime(object):
             The TensorFlow optimizer instance.
         Returns
         ----------
-        A tuple of (grads, summaries, total_loss, loss)
+        A tuple of (grads, summaries, total_loss, loss, eval_dict)
         """
         pass
         
@@ -428,125 +440,133 @@ class AbstractRuntime(object):
         assert not(steps <= 0 and epochs <= 0), "Either set 'steps' or 'epochs' parameter"
         assert not(steps > 0 and epochs > 0), "Not allowed to set both, 'steps' and 'epochs' parameter"
         
+        assert batch_size % self.num_computing_devices == 0, \
+            "Batch-size has to be a multiple of computing devices used."
+        assert valid_batch_size is None or valid_batch_size % self.num_computing_devices == 0, \
+            "Validation batch-size has to be a multiple of computing devices used."
+        
         dataset = self.datasets.train
         if not self._check_dataset_registered(dataset):
             return
         
-        with self.graph.as_default():
-            if valid_batch_size is None:
-                # take training batch_size as fallback.
-                valid_batch_size = batch_size
+        if valid_batch_size is None:
+            # take training batch_size as fallback.
+            valid_batch_size = batch_size
             
-            batches_per_epoch = dataset.size // batch_size
+        batches_per_epoch = dataset.size // batch_size
 
-            if epochs > 0:
-                steps = batches_per_epoch * epochs
+        if epochs > 0:
+            steps = batches_per_epoch * epochs
 
-            dataset.reset()
+        dataset.reset()
+        
+        with self.graph.as_default():
+            # take the CPU as root device in case of many GPUs
+            device_scope = None if self.num_computing_devices == 1 else '/cpu:0'
+            with tf.device(device_scope):
+                try:
+                    this_step = 0
+                    step_divisor = 0
+                    total_loss_sum = 0
+                    loss_sum = 0
 
-            try:
-                this_step = 0
-                step_divisor = 0
-                total_loss_sum = 0
-                loss_sum = 0
+                    x_dummy = np.zeros([batch_size] + dataset.input_shape, np.float32)
+                    y_dummy = np.zeros([batch_size] + dataset.target_shape, np.float32)
 
-                x_dummy = np.zeros([batch_size] + dataset.input_shape, np.float32)
-                y_dummy = np.zeros([batch_size] + dataset.target_shape, np.float32)
-                
-                # add batch-size to summary. Copy is required to allow rerun training
-                summaries_copy = copy.copy(self._summaries)
-                summaries_copy.append(tf.scalar_summary('batch_size', batch_size))
-                summary_op = tf.merge_summary(summaries_copy)
+                    # add batch-size to summary. Copy is required to allow rerun training
+                    summaries_copy = copy.copy(self._summaries)
+                    summaries_copy.append(tf.scalar_summary('batch_size', batch_size))
+                    summary_op = tf.merge_summary(summaries_copy)
 
-                while not self._coord.should_stop():
-                    this_step += 1
-                    if (this_step > steps):
-                        break
+                    while not self._coord.should_stop():
+                        this_step += 1
+                        if (this_step > steps):
+                            break
 
-                    if this_step % batches_per_epoch == 1:
-                        epoch = (this_step - 1) // batches_per_epoch + 1
-                        print("Starting epoch {}...".format(epoch))
+                        if this_step % batches_per_epoch == 1:
+                            epoch = (this_step - 1) // batches_per_epoch + 1
+                            print("Starting epoch {}...".format(epoch))
 
-                    start_time = time.time()
+                        start_time = time.time()
 
-                    # prepare feeding
-                    if isinstance(dataset, tt.datasets.base.AbstractQueueDataset):
-                        batch_x = x_dummy
-                        batch_y = y_dummy
-                    else:
-                        batch_x, batch_y = dataset.get_batch(batch_size)
-                    feed = self._feed_func(batch_x, batch_y, batch_size, True)
-                    feed.update({self._ph.input_from_queue: True \
-                                 if isinstance(dataset, tt.datasets.base.AbstractQueueDataset) else False})
-                    for key, value in train_feeds.iteritems():
-                        feed.update({self._model_feeds[key]: value})
-                    
-                    if this_step == 1 and isinstance(dataset, tt.datasets.base.AbstractQueueDataset):
-                        print("Filling queue with {} examples...".format(dataset.min_examples_in_queue))
+                        # prepare feeding
+                        if isinstance(dataset, tt.datasets.base.AbstractQueueDataset):
+                            batch_x = x_dummy
+                            batch_y = y_dummy
+                        else:
+                            batch_x, batch_y = dataset.get_batch(batch_size)
+                        feed = self._feed_func(batch_x, batch_y, batch_size, True)
+                        feed.update({self._ph.input_from_queue: True \
+                                     if isinstance(dataset, tt.datasets.base.AbstractQueueDataset) else False})
+                        for key, value in train_feeds.iteritems():
+                            feed.update({self._model_feeds[key]: value})
 
-                    # step counter is increment when train_op is executed
-                    _, gstep, total_loss, loss = self.session.run([self._train_op,
-                                                                  self._global_step,
-                                                                  self._total_loss,
-                                                                  self._loss],
-                                                                 feed_dict=feed)
-                    duration = time.time() - start_time
+                        if this_step == 1 and isinstance(dataset, tt.datasets.base.AbstractQueueDataset):
+                            print("Filling queue with {} examples...".format(dataset.min_examples_in_queue))
 
-                    assert not np.isnan(loss), 'Warning: Model diverged with loss = NaN'
+                        # step counter is increment when train_op is executed
+                        _, gstep, total_loss, loss = self.session.run([self._train_op,
+                                                                      self._global_step,
+                                                                      self._total_loss,
+                                                                      self._loss],
+                                                                     feed_dict=feed)
+                        duration = time.time() - start_time
 
-                    step_divisor += 1
-                    total_loss_sum += total_loss
-                    loss_sum += loss
-                    if this_step == 1 or gstep % display_steps == 0:
-                        # info
-                        num_examples_per_step = batch_size
-                        examples_per_sec = num_examples_per_step / duration
-                        sec_per_batch = float(duration)
-                        avg_total_loss = total_loss_sum / step_divisor
-                        avg_loss = loss_sum / step_divisor
-                        step_divisor = 0
-                        total_loss_sum = 0
-                        loss_sum = 0
-                        print("@{:5d}: loss: {:7.3f}, t-loss: {:7.3f} ({:7.1f}" \
-                              " examples/sec, {:5.2f} sec/batch)" \
-                              .format(gstep, avg_loss, avg_total_loss,
-                                      examples_per_sec, sec_per_batch))
+                        assert not np.isnan(loss), 'Warning: Model diverged with loss = NaN'
 
-                    if gstep % summary_steps == 0 or this_step == steps:
-                        # summary
-                        if do_summary == True:
-                            summary_str = self.session.run(summary_op, feed_dict=feed)
-                            self.summary_writer.add_summary(summary_str, gstep)
-                            self.summary_writer.flush() 
+                        step_divisor += 1
+                        total_loss_sum += total_loss
+                        loss_sum += loss
+                        if this_step == 1 or gstep % display_steps == 0:
+                            # info
+                            num_examples_per_step = batch_size
+                            examples_per_sec = num_examples_per_step / duration
+                            sec_per_batch = float(duration)
+                            avg_total_loss = total_loss_sum / step_divisor
+                            avg_loss = loss_sum / step_divisor
+                            step_divisor = 0
+                            total_loss_sum = 0
+                            loss_sum = 0
+                            print("@{:5d}: loss: {:7.3f}, t-loss: {:7.3f} ({:7.1f}" \
+                                  " examples/sec, {:5.2f} sec/batch)" \
+                                  .format(gstep, avg_loss, avg_total_loss,
+                                          examples_per_sec, sec_per_batch))
 
-                    if gstep == early_validation_at_step or this_step == steps or \
-                        epochs == -1 and gstep % validation_steps == 0 or \
-                        epochs > 0 and this_step % batches_per_epoch == 0:
-                        # validate
-                        print()
-                        self._test_internal(valid_batch_size, self.datasets.valid,
-                                            "validation", valid_feeds, do_summary)
-                        print()
-                        
-                        if on_validate is not None:
-                            on_validate(self, gstep)
+                        if gstep % summary_steps == 0 or this_step == steps:
+                            # summary
+                            if do_summary == True:
+                                summary_str = self.session.run(summary_op, feed_dict=feed)
+                                self.summary_writer.add_summary(summary_str, gstep)
+                                self.summary_writer.flush() 
+
+                        if gstep == early_validation_at_step or this_step == steps or \
+                            epochs == -1 and gstep % validation_steps == 0 or \
+                            epochs > 0 and this_step % batches_per_epoch == 0:
+                            # validate
+                            print()
+                            self._test_internal(valid_batch_size, self.datasets.valid,
+                                                "validation", valid_feeds, do_summary)
                             print()
 
-                    if do_checkpoints:
-                        if gstep % checkpoint_steps == 0 or this_step == steps:
-                            # save regular checkpoint
-                            checkpoint_path = os.path.join(self.train_dir, "model.ckpt")
-                            self._saver.save(self.session, checkpoint_path,
-                                             global_step=self._global_step)
+                            if on_validate is not None:
+                                on_validate(self, gstep)
+                                print()
 
-                        if epochs > 0:
-                            if this_step % batches_per_epoch == 0:
-                                # save epoch checkpoint
-                                checkpoint_path = os.path.join(self.train_dir, "ep-{}_model.ckpt".format(epoch))
-                                self._saver.save(self.session, checkpoint_path, global_step=self._global_step)
+                        if do_checkpoints:
+                            if gstep % checkpoint_steps == 0 or this_step == steps:
+                                # save regular checkpoint
+                                checkpoint_path = os.path.join(self.train_dir, "model.ckpt")
+                                self._saver.save(self.session, checkpoint_path,
+                                                 global_step=self._global_step)
 
-            except tf.errors.OutOfRangeError:
-                print("Interrupted: Queue runners are out of range. Epoch limit reached?")
+                            if epochs > 0:
+                                if this_step % batches_per_epoch == 0:
+                                    # save epoch checkpoint
+                                    checkpoint_path = os.path.join(self.train_dir, "ep-{}_model.ckpt".format(epoch))
+                                    self._saver.save(self.session, checkpoint_path, global_step=self._global_step)
+
+                except tf.errors.OutOfRangeError:
+                    print("Interrupted: Queue runners are out of range. Epoch limit reached?")
     
     def predict(self, inputs, feeds={}):
         """Performs a prediction using the trained model.
@@ -619,6 +639,9 @@ class AbstractRuntime(object):
             Whether the validation results should be written to summary.
             Basically should be set to True while training only.
         """
+        assert batch_size % self.num_computing_devices == 0, \
+            "Batch-size has to be a multiple of computing devices used."
+        
         if not self._check_dataset_registered(dataset):
             return
         
@@ -742,6 +765,18 @@ class AbstractRuntime(object):
     def placeholders(self):
         """Gets the placeholders as a named tuple."""
         return self._ph
+    
+    @property
+    def gpu(self):
+        """Gets the gpu config as a named tuple."""
+        return self._gpu
+    
+    @property
+    def num_computing_devices(self):
+        """Gets the total number of used computing devices."""
+        if self.gpu.devices is None or len(self.gpu.devices) == 0:
+            return 1
+        return len(self.gpu.devices)
 
     @property
     def summary_writer(self):
@@ -755,27 +790,24 @@ class AbstractRuntime(object):
         """Gets the training directory."""
         return self._train_dir
     
-    @property
-    def max_checkpoints_to_keep(self):
-        """Gets the number of max. checkpoints to keep."""
-        return self._max_checkpoints_to_keep
-    
-    
     
 class DefaultRuntime(AbstractRuntime):
     """The default runtime, where TensorFlow itself
        descides where to assign the ops to."""
     
-    def __init__(self, train_dir='train', max_checkpoints_to_keep=5,
+    def __init__(self, train_dir, gpu_devices=None,
                  gpu_allow_growth=True, gpu_memory_fraction=1.0):
         """Creates the default runtime instance.
         Parameters
         ----------
-        train_dir: str, optional
+        train_dir: str
             The training directory for checkpoints and summary files.
-        max_checkpoints_to_keep: int, optional
-            The number of last checkpoints to keep. Defaults to 5.
-            Use 0 or None to keep all checkpoints.
+        gpu_devices: list(int) or None, optional
+            The list of the currently used GPU device IDs.
+            Internally, the runtime filters the devices to select only these GPU devices,
+            to prevent TensorFlow to allocate memory on other devices.
+            If None or empty list, TensorFlow handles device assignment manually or
+            we use a CPU only system.
         gpu_allow_growth: Boolean, optional
             Whether the GPUS is allowed to allocate memory dynamically.
             Has the advantage to only use that much memory as it really needs,
@@ -783,15 +815,13 @@ class DefaultRuntime(AbstractRuntime):
         gpu_memory_fraction: float in range (0, 1], optional
             The fraction of the (currently available) memory it is allows to reserve.
         """
-        print("Launing default runtime...")
+        assert gpu_devices is None or isinstance(gpu_devices, list), "Define a valid device selection."
         
-        device_list = tt.hardware.get_cuda_devices()
-        if len(device_list) == 0:
-            print("CPU-only mode or selecting GPU device: 0")
-        else:
-            print("Selecting GPU device: {}".format(device_list[0]))
+        if gpu_devices is not None and len(gpu_devices) > 1:
+            # only select the first one
+            gpu_devices = gpu_devices[:1]
         
-        super(DefaultRuntime, self).__init__(train_dir, max_checkpoints_to_keep,
+        super(DefaultRuntime, self).__init__(train_dir, gpu_devices,
                                              gpu_allow_growth, gpu_memory_fraction)
         
     @tt.utils.attr.override
@@ -838,20 +868,24 @@ class DefaultRuntime(AbstractRuntime):
 class MultiGpuRuntime(AbstractRuntime):
     """Advanced runtime that supports the use of multiple GPUs.
        All variables (have to be) stored on the CPU, and each batch
-       is split according to the number of GPUs."""
-    
-    def __init__(self, num_gpus=2, train_dir='train', max_checkpoints_to_keep=5,
+       is split according to the number of GPUs.
+       
+       Note: This runtime implementatin is currently still experimental.
+             There might be init-error on some ops (LSTM-cells) or
+             device-assignment errors (batch_norm). It is currently
+             guaranteed works on simple models only.
+       """
+    def __init__(self, train_dir, gpu_devices=[0,1],
                  gpu_allow_growth=True, gpu_memory_fraction=1.0):
         """Creates a base runtime.
         Parameters
         ----------
-        num_gpus: int, optioanl
-            The number of GPUs to use.
-        train_dir: str, optional
+        train_dir: str
             The training directory for checkpoints and summary files.
-        max_checkpoints_to_keep: int, optional
-            The number of last checkpoints to keep. Defaults to 5.
-            Use 0 or None to keep all checkpoints.
+        gpu_devices: list(int)
+            The list of the currently used GPU device IDs with length >= 2.
+            Internally, the runtime filters the devices to select only these GPU devices,
+            to prevent TensorFlow to allocate memory on other devices.
         gpu_allow_growth: Boolean, optional
             Whether the GPUS is allowed to allocate memory dynamically.
             Has the advantage to only use that much memory as it really needs,
@@ -859,30 +893,24 @@ class MultiGpuRuntime(AbstractRuntime):
         gpu_memory_fraction: float in range (0, 1], optional
             The fraction of the (currently available) memory it is allows to reserve.
         """
-        print("Launing Multi-GPU runtime...")
+        assert gpu_devices is None or (isinstance(gpu_devices, list) and len(gpu_devices) > 1), \
+            "Define a valid device selection."
         
-        device_list = tt.hardware.get_cuda_devices()
-        if len(device_list) == 0:
-            print("Selecting all GPU devices.")
-        else:
-            assert len(device_list) >= num_gpus, "Not enough GPU devices available."
-            print("Selecting GPU devices: {}".format(device_list[0:num_gpus]))
-        self._num_gpus = num_gpus
-        
-        super(MultiGpuRuntime, self).__init__(train_dir, max_checkpoints_to_keep,
+        super(MultiGpuRuntime, self).__init__(train_dir, gpu_devices,
                                               gpu_allow_growth, gpu_memory_fraction)
         
     @tt.utils.attr.override
     def _build_computation_graph(self, x, y, opt):
         # Calculate the gradients for each model tower.
         tower_grads = []
-        tower_total_losses = []
         tower_losses = []
-        splitted_x = tf.split(0, self.num_gpus, x)
-        splitted_y = tf.split(0, self.num_gpus, y)
-        for i in xrange(self.num_gpus):
-            with tf.device('/gpu:%d' % i, ):
-                with tf.name_scope('%s_%d' % ('tower', i)) as scope:
+        tower_total_losses = []
+        eval_dicts = []
+        splitted_x = tf.split(0, self.num_computing_devices, x)
+        splitted_y = tf.split(0, self.num_computing_devices, y)
+        for i in xrange(self.num_computing_devices):
+            with tf.device('/gpu:{}'.format(i)):
+                with tf.name_scope('tower_{}'.format(i)) as scope:
                     this_inputs = splitted_x[i]
                     this_targets = splitted_y[i]
 
@@ -896,7 +924,7 @@ class MultiGpuRuntime(AbstractRuntime):
                                                           memory_device=None) # '/cpu:0'
                         # FIXME: inference(..., memory_device=...) should be set to '/cpu:0' according to
                         #        the TensorFlow CIFAR-10 example. But this causes init-errors on the LSMT-cells.
-                        #        Doing no assignment to CPU-memory works. It might requrie more memory, but the
+                        #        Doing no assignment to CPU-memory works. It might require more memory, but the
                         #        performance is almost the same.
                         
                         # ensure the inference shape is fully defined and equal to target shape
@@ -912,7 +940,7 @@ class MultiGpuRuntime(AbstractRuntime):
                         total_loss = self._model.total_loss(loss, inference, this_targets, device_scope=scope)
                         
                     with tf.name_scope("evaluation"):
-                        eval_dict = self._model.evaluation(inference, y, device_scope=scope)
+                        eval_dict = self._model.evaluation(inference, this_targets, device_scope=scope)
 
                     # Calculate the moving averages of the loss for one tower of the model
                     loss_averages_op = tt.board.loss_summary([total_loss, loss] + \
@@ -921,11 +949,13 @@ class MultiGpuRuntime(AbstractRuntime):
                                                              decay=0.9)
 
                     with tf.control_dependencies([loss_averages_op]):
+                        # only add total_loss there because this one is used on training
                         this_total_loss = tf.identity(total_loss)
-                        this_loss = tf.identity(loss)
-
+                       
+                    tower_losses.append(loss)
                     tower_total_losses.append(this_total_loss)
-                    tower_losses.append(this_loss)
+                        
+                    eval_dicts.append(eval_dict)
 
                     # Reuse variables for the next tower.
                     tf.get_variable_scope().reuse_variables()
@@ -943,98 +973,19 @@ class MultiGpuRuntime(AbstractRuntime):
         # This is also the synchronization point across all towers.
         grads = tt.training.average_gradients(tower_grads)
         
-        return grads, summaries, total_loss, loss, eval_dict
+        # average the losses for evaluation over all towers
+        avg_loss = tf.reduce_mean(tf.pack(tower_losses))
+        avg_total_loss = tf.reduce_mean(tf.pack(tower_total_losses))
         
-    @tt.utils.attr.override
-    def train(self, batch_size, valid_batch_size=None, steps=-1, epochs=-1, train_feeds={}, valid_feeds={},
-              on_validate=None, display_steps=25, summary_steps=100, checkpoint_steps=1000,
-              validation_steps=1000, early_validation_at_step=100,
-              do_checkpoints=True, do_summary=True):
-        """Train the model.
-           Note that either 'steps' or 'epochs' has to be defined as a param.
-        Parameters
-        ----------
-        batch_size: int
-            The batch size to use for training (and for validation, in case
-            'valid_batch_size') is not defined.
-        valid_batch_size: int or None, optional
-            The batch size to use for validation, or None to use the same as for training.
-            You might want to use a different batch_size for validation, to make sure that
-            every example is actually evaluated.
-        steps: int, partly-required
-            The number of steps to train the model.
-        epochs: int, partly-required
-            The number of epochs to train the model.
-        train_feeds: dict(str, tf.placeholder), optional
-            The model specific feeds for training, that have been
-            defined in AbstractModel.fetch_feeds().
-        valid_feeds: dict(str, tf.placeholder), optional
-            The model specific feeds for validation, that have been
-            defined in AbstractModel.fetch_feeds().
-        on_validate: function or None, optional,
-            A function with signature on_validate(runtime, gstep) that can
-            be executed after each evaluation step.
-        display_steps: int, optional
-            In which interval a averaged print-out of the current loss
-            shoud be performed. Required for logging/testing only.
-        summary_steps: int, optional
-            In which interval we write a summary to TensorBoard.
-        checkpoint_steps: int, optional
-            In which interval we create a checkpoint.
-        validation_steps: int, optional
-            In which interval we perform a validation,
-            which is also written to TensorBoard
-        early_validation_at_step: int, optional
-            On which (global) step we perform an early validation, basically that
-            we get an early feedback of the losses, as well as if there is an error
-            in doing a validation.
-        do_checkpoints: Boolean, optioanl
-            Whether we create checkpoints or not. Deactivate this for example programs
-            where you do not want to fill up your disk.
-        do_summary: Boolean, optional
-            Whether we create summaries or not. Deactivate this for example programs
-            where you do not want to fill up your disk.
-        """
-        assert batch_size % float(self.num_gpus) == 0, "Batch-size has to be multiples of 'num_gpus'."
+        # average the evaluation dicts
+        avg_eval_dict = {}
+        for key in eval_dicts[0]:
+            packed_scalar_ops = tf.pack([eval_dicts[i][key] for i in xrange(self.num_computing_devices)])
+            avg_scalar_ops = tf.reduce_mean(packed_scalar_ops)
+            avg_eval_dict.update({key: avg_scalar_ops})
+            
+        return grads, summaries, avg_total_loss, avg_loss, avg_eval_dict
         
-        with tf.device('/cpu:0'):
-            return super(MultiGpuRuntime, self).train(batch_size, valid_batch_size, steps, epochs,
-                                                      train_feeds, valid_feeds, on_validate, 
-                                                      display_steps, summary_steps, checkpoint_steps,
-                                                      validation_steps, early_validation_at_step,
-                                                      do_checkpoints, do_summary)              
-    
-    @tt.utils.attr.override
-    def validate(self, batch_size, feeds={}):
-        """Performs a validation on the trained model using the validation
-           dataset that was registered to the runtime.
-        Parameters
-        ----------
-        batch_size: int
-            The batch-size to use.
-        feeds: dict(str, tf.placeholder), optional
-            The model specific feeds, that have been
-            defined in AbstractModel.fetch_feeds().
-        """
-        assert batch_size % float(self.num_gpus) == 0, "Batch-size has to be multiples of 'num_gpus'."
-        return super(MultiGpuRuntime, self).validate(batch_size, feeds)
-    
-    @tt.utils.attr.override
-    def test(self, batch_size, feeds={}):
-        """Performs a test on the trained model using the test
-           dataset that was registered to the runtime.
-        Parameters
-        ----------
-        batch_size: int
-            The batch-size to use.
-        feeds: dict(str, tf.placeholder), optional
-            The model specific feeds, that have been
-            defined in AbstractModel.fetch_feeds().
-        """
-        assert batch_size % float(self.num_gpus) == 0, "Batch-size has to be multiples of 'num_gpus'."
-        return super(MultiGpuRuntime, self).test(batch_size, feeds)
-        
-    
     @tt.utils.attr.override
     def predict(self, inputs, feeds={}):
         """Performs a prediction using the trained model.
@@ -1052,15 +1003,10 @@ class MultiGpuRuntime(AbstractRuntime):
         # Workaround: Let each tower do the same stuff, but only use the result of the
         #             first tower. Required to support e.g. batch-size 1 or odd batches.
         inputs_concat = inputs
-        for i in xrange(self.num_gpus - 1):
+        for i in xrange(self.num_computing_devices - 1):
             inputs_concat = np.concatenate((inputs_concat, inputs))
         
         return super(MultiGpuRuntime, self).predict(inputs_concat, feeds)
-        
-    @property
-    def num_gpus(self):
-        """Gets the number of used GPUs."""
-        return self._num_gpus
 
     
 def show_trainable_parameters(verbose=False):
@@ -1071,6 +1017,7 @@ def show_trainable_parameters(verbose=False):
         Show additional information and list the number of trainable
         variables per variable, not just the total sum.
     """
+    total_width = 80
     trainable_vars = tf.trainable_variables()
     
     if len(trainable_vars) == 0:
@@ -1079,7 +1026,7 @@ def show_trainable_parameters(verbose=False):
     
     print()
     if verbose:
-        print("-" * 80)
+        print("-" * total_width)
     
     total_parameters = 0
     groups = {}
@@ -1100,12 +1047,12 @@ def show_trainable_parameters(verbose=False):
         else:
             groups.update({group_name: var_params})
     
-    print("-" * 80)
+    print("-" * total_width)
     for group, count in groups.iteritems():
         print("{:69} | {:8d}".format(group, count))
-    print("=" * 80)
+    print("=" * total_width)
     print("{:69} | {:8d}".format("TOTAL", total_parameters))
-    print("-" * 80)
+    print("-" * total_width)
     print()
 
     
@@ -1122,17 +1069,14 @@ def uninitialized_variables(session, var_list=None):
     """
     if var_list is None:
         var_list = tf.all_variables()
-    #return list(tf.get_variable(name) for name in
-    #            session.run(tf.report_uninitialized_variables(var_list)))
-    
+
     reported_var_names = session.run(tf.report_uninitialized_variables(var_list))
     uninit_vars = []
     for name in reported_var_names:
         try:
             uninit_vars.append(tf.get_variable(name))
-            print(name)
         except ValueError:
-            print("NO", name)
+            print("Failed to collect variable {}. Skipping.", name)
             
     return uninit_vars
     
