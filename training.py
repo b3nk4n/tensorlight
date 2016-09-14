@@ -169,7 +169,7 @@ class Optimizer(object):
     @property
     def uses_decay(self):
         """Indicates whether (exponential) decay is used or not."""
-        return True if self.decay.step_interval == sys.maxint or self.decay.rate == 1 else False
+        return False if self.decay.step_interval == sys.maxint or self.decay.rate == 1 else True
     
     @property
     def hyperparams(self):
