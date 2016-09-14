@@ -508,7 +508,7 @@ class AbstractRuntime(object):
                         total_loss_sum = 0
                         loss_sum = 0
                         print("@{:5d}: loss: {:7.3f}, t-loss: {:7.3f} ({:7.1f}" \
-                              "examples/sec, {:5.2f} sec/batch)" \
+                              " examples/sec, {:5.2f} sec/batch)" \
                               .format(gstep, avg_loss, avg_total_loss,
                                       examples_per_sec, sec_per_batch))
 

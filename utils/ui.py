@@ -25,12 +25,15 @@ class ProgressBar(object):
             The width of the progress bar.
         """
         self.width = width
+        self.total_width = 0
+        
+        self.current_value = 0
         self.max_value = max_value
+        
         self.sum_params = {}
         self.unique_params = []
+        
         self.start = time.time()
-        self.total_width = 0
-        self.seen_so_far = 0
 
     def update(self, value, params=[]):
         """Updates the progress bar.
@@ -44,12 +47,12 @@ class ProgressBar(object):
         """
         for k, v in params:
             if k not in self.sum_params:
-                self.sum_params[k] = [v * (value - self.seen_so_far), value - self.seen_so_far]
+                self.sum_params[k] = [v * (value - self.current_value), value - self.current_value]
                 self.unique_params.append(k)
             else:
-                self.sum_params[k][0] += v * (value - self.seen_so_far)
-                self.sum_params[k][1] += (value - self.seen_so_far)
-        self.seen_so_far = value
+                self.sum_params[k][0] += v * (value - self.current_value)
+                self.sum_params[k][1] += (value - self.current_value)
+        self.current_value = value
 
         now = time.time()
 
@@ -60,17 +63,16 @@ class ProgressBar(object):
         prog = float(value) / self.max_value
         bar = "{:3d}%▕".format(int(round(prog * 100)))
         
-        prog_width = int(self.width * prog)
-        prog_to_next_step = math.ceil((prog_width + 1) - self.width * prog)
-        if prog_width > 0:
-            bar += ('█' * (prog_width-1))
-            if value == self.max_value:
-                bar += '█'
-            elif prog_to_next_step < 0.5:
+        prog_width_float = self.width * prog
+        prog_width_int = int(prog_width_float)
+        prog_to_next_step = prog_width_float - prog_width_int
+        bar += ('█' * prog_width_int)
+        if self.width > prog_width_int:
+            if prog_to_next_step >= 0.5:
                 bar += '▒'
             else:
                 bar += '░'
-        bar += ('░' * (self.width - prog_width))
+            bar += ('░' * (self.width - prog_width_int - 1))
         bar += '▏'
         sys.stdout.write(bar)
         self.total_width = len(bar)
