@@ -390,7 +390,7 @@ class AbstractRuntime(object):
         
     def train(self, batch_size, valid_batch_size=None, steps=-1, epochs=-1, train_feeds={}, valid_feeds={},
               on_validate=None, display_steps=25, summary_steps=100, checkpoint_steps=1000,
-              validation_steps=1000, early_validation_at_step=100,
+              validation_steps=1000, extra_validations=[100, 250, 500, 750],
               do_checkpoints=True, do_summary=True):
         """Train the model.
            Note that either 'steps' or 'epochs' has to be defined as a param.
@@ -426,10 +426,11 @@ class AbstractRuntime(object):
         validation_steps: int, optional
             In which interval we perform a validation,
             which is also written to TensorBoard
-        early_validation_at_step: int, optional
-            On which (global) step we perform an early validation, basically that
-            we get an early feedback of the losses, as well as if there is an error
-            in doing a validation.
+        extra_validations: list(int) or None, optional
+            On which (global) step we perform extra validations, basically that we
+            can get an early feedback of the losses, as well as if there is an error
+            in doing a validation. Or when there are huge jumps at the beginning of
+            the training.
         do_checkpoints: Boolean, optioanl
             Whether we create checkpoints or not. Deactivate this for example programs
             where you do not want to fill up your disk.
@@ -539,7 +540,7 @@ class AbstractRuntime(object):
                                 self.summary_writer.add_summary(summary_str, gstep)
                                 self.summary_writer.flush() 
 
-                        if gstep == early_validation_at_step or this_step == steps or \
+                        if gstep in extra_validations or this_step == steps or \
                             epochs == -1 and gstep % validation_steps == 0 or \
                             epochs > 0 and this_step % batches_per_epoch == 0:
                             # validate
