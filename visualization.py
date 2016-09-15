@@ -198,8 +198,10 @@ def display_batch(img_array_batch, nrows=2, ncols=2, title=''):
                 current_img=np.squeeze(current_img)
             cmap = plt.cm.gray
         
-        plt.subplot(nrows,ncols,i + 1)
+        ax = plt.subplot(nrows,ncols,i + 1)
         plt.imshow(current_img, cmap=cmap, vmin=0, vmax=max_value)
+        ax.get_xaxis().set_visible(False)
+        ax.get_yaxis().set_visible(False)
 
 
 def display_array(img_array, format='png'):
