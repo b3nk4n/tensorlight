@@ -117,7 +117,7 @@ def _fspecial_gauss(size, sigma):
     return gauss
 
 
-def ssim(img1, img2, patch_size=11, sigma=1.5, L=255, K1=0.01, K2=0.03, cs_map=False):
+def ssim(img1, img2, patch_size=11, sigma=1.5, L=1.0, K1=0.01, K2=0.03, cs_map=False):
     """Calculates the Structural Similarity Metric corresponding to input images
        Reference: 
            This function attempts to mimic precisely the functionality of ssim.m a
@@ -134,7 +134,6 @@ def ssim(img1, img2, patch_size=11, sigma=1.5, L=255, K1=0.01, K2=0.03, cs_map=F
     sigma: float, optional
         The Gaussian's sigma value.
     L: int, optional
-        Note: Not using 255 will result in slightly different result.
         The bit depth of the image. Use '1' when a value scale of [0,1] is used.
         The scale of [-1, 1] is not supported and has to be rescaled.
     K1: float, optional
@@ -177,7 +176,7 @@ def ssim(img1, img2, patch_size=11, sigma=1.5, L=255, K1=0.01, K2=0.03, cs_map=F
     return ssim_value
 
 
-def ms_ssim(img1, img2, patch_size=11, sigma=1.5, L=255, K1=0.01, K2=0.03,
+def ms_ssim(img1, img2, patch_size=11, sigma=1.5, L=1.0, K1=0.01, K2=0.03,
             level_weights=[0.0448, 0.2856, 0.3001, 0.2363, 0.1333]):
     """Calculates the Multi-Scale Structural Similarity (MS-SSIM) Image
        Quality Assessment according to Z. Wang.
@@ -204,7 +203,6 @@ def ms_ssim(img1, img2, patch_size=11, sigma=1.5, L=255, K1=0.01, K2=0.03,
     sigma: float, optional
         The Gaussian's sigma value.
     L: int, optional
-        WARNING: NOT USING 255 WILL RESULT IN DIFFERENT RESULTS!
         The bit depth of the image. Use '1' when a value scale of [0,1] is used.
         The scale of [-1, 1] is not supported and has to be rescaled.
     K1: float, optional
@@ -256,7 +254,7 @@ def ms_ssim(img1, img2, patch_size=11, sigma=1.5, L=255, K1=0.01, K2=0.03,
         return msssim_value
 
 
-def ss_ssim(img1, img2, patch_size=11, sigma=1.5, L=255, K1=0.01, K2=0.03, level=2):
+def ss_ssim(img1, img2, patch_size=11, sigma=1.5, L=1.0, K1=0.01, K2=0.03, level=2):
     """Calculates the Single-Scale Structural Similarity (SS-SSIM) Image
        Quality Assessment according to Z. Wang.
        References:
@@ -274,7 +272,6 @@ def ss_ssim(img1, img2, patch_size=11, sigma=1.5, L=255, K1=0.01, K2=0.03, level
     sigma: float, optional
         The Gaussian's sigma value.
     L: int, optional
-        WARNING: NOT USING 255 MIGHT RESULT IN DIFFERENT RESULTS!
         The bit depth of the image. Use '1' when a value scale of [0,1] is used.
         The scale of [-1, 1] is not supported and has to be rescaled.
     K1: float, optional
