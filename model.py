@@ -10,15 +10,15 @@ class AbstractModel(object):
     """
     __metaclass__ = ABCMeta
     
-    def __init__(self, reg_lambda=0.0):
+    def __init__(self, weight_decay=0.0):
         """Creates the base model instance that is shared accross all models.
            It allows to build multiple models using the same construction plan.
         Parameters
         ----------
-        reg_lambda: float, optional
-            The regularization factor (lambda).
+        weight_decay: float, optional
+            The weight decay regularization factor (lambda).
         """
-        self._reg_lambda = reg_lambda
+        self._weight_decay = weight_decay
         
     def fetch_feeds(self):
         """Can be overridden to fetch the model specific feeding dict.
@@ -121,6 +121,6 @@ class AbstractModel(object):
         return tf.shape(self._inputs)[0]
     
     @property
-    def reg_lambda(self):
+    def weight_decay(self):
         """Gets the regularization factor (lambda) for weight decay."""
-        return self._reg_lambda
+        return self._weight_decay
