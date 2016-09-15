@@ -325,8 +325,8 @@ class UCF101BaseEvaluationDataset(base.AbstractDataset):
         # get next filenames
         file_names = [self._file_name_list[i] for i in ind_range]
         
-        # do equal random crop?
         if self._crop_size is not None:
+            # do equal random crop
             offset_x = random.randint(0, self._data_img_size[1] - self._crop_size[1])
             offset_y = random.randint(0, self._data_img_size[0] - self._crop_size[0])
         
@@ -364,8 +364,8 @@ class UCF101BaseEvaluationDataset(base.AbstractDataset):
         target_sequence = np.stack(seq_target_list)
         
         # convert to float of scale [0.0, 1.0]
-        inputs = input_sequence.astype(np.float32) / 255
-        targets = target_sequence.astype(np.float32) / 255
+        inputs = input_sequence / np.float32(255)
+        targets = target_sequence / np.float32(255)
                 
         # delayed inc of row-counter because it is used in the loop
         self._row += batch_size
