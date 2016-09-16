@@ -242,9 +242,9 @@ def lstm_state_image_summary(tag_postfix, state_tuples, padding=2):
     padding: int, optional
         The padding between each patch of the image grid.
     """
-    if not isinstance(state_tuples, tuple):
-        # convert to tuple (in case of 1-layer LSTM)
-        tuple_of_state_tuples = tuple(state_tuples)
+    if isinstance(state_tuples, tf.nn.rnn_cell.LSTMStateTuple):
+        # convert to tuple of state-tuples (in case of 1-layer LSTM)
+        tuple_of_state_tuples = (state_tuples, )
     else:
         tuple_of_state_tuples = state_tuples
             
