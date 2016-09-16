@@ -3,7 +3,7 @@ import tensorflow as tf
 import tensortools as tt
 
 
-def sse(outputs, targets):
+def sse(outputs, targets, name=None):
     """Sum of squared error (SSE) between images.
     Parameters
     ----------
@@ -11,6 +11,9 @@ def sse(outputs, targets):
         The first tensor.
     targets: Tensor [batch_size, ...] of type float32
         The second tensor.
+    name: str or None, optional
+        Optioanl name to be applied in TensorBoard. Defaults to "Mean" and follows to
+        '<loss-name>/Mean' in TensorBoard.
     Returns
     ----------
     Returns the calculated error.
@@ -19,10 +22,10 @@ def sse(outputs, targets):
         outputs_rank = outputs.get_shape().ndims
         sum_indices = tuple(range(1, outputs_rank))
         return tf.reduce_mean(
-            tf.reduce_sum(tf.square(outputs - targets), sum_indices))
+            tf.reduce_sum(tf.square(outputs - targets), sum_indices), name=name)
 
     
-def mse(outputs, targets):
+def mse(outputs, targets, name=None):
     """Mean squared error (MSE) between images.
     Parameters
     ----------
@@ -30,15 +33,18 @@ def mse(outputs, targets):
         The first tensor.
     targets: Tensor [batch_size, ...] of type float32
         The second tensor.
+    name: str or None, optional
+        Optioanl name to be applied in TensorBoard. Defaults to "Mean" and follows to
+        '<loss-name>/Mean' in TensorBoard.
     Returns
     ----------
     Returns the calculated error.
     """
     with tf.name_scope('MSE_loss'):
-        return tf.reduce_mean(tf.square(outputs - targets))
+        return tf.reduce_mean(tf.square(outputs - targets), name=name)
 
 
-def rsse(outputs, targets):
+def rsse(outputs, targets, name=None):
     """Rooted sum of squared error (RSSE) between images.
     Parameters
     ----------
@@ -46,6 +52,9 @@ def rsse(outputs, targets):
         The first tensor.
     targets: Tensor [batch_size, ...] of type float32
         The second tensor.
+    name: str or None, optional
+        Optioanl name to be applied in TensorBoard. Defaults to "Mean" and follows to
+        '<loss-name>/Mean' in TensorBoard.
     Returns
     ----------
     Returns the calculated error.
@@ -55,10 +64,10 @@ def rsse(outputs, targets):
         sum_indices = tuple(range(1, outputs_rank))
         return tf.reduce_mean(
             tf.sqrt(
-                tf.reduce_sum(tf.square(outputs - targets), sum_indices)))
+                tf.reduce_sum(tf.square(outputs - targets), sum_indices)), name=name)
 
     
-def rmse(outputs, targets):
+def rmse(outputs, targets, name=None):
     """Rooted mean squared error (RMSE) between images.
     Parameters
     ----------
@@ -66,6 +75,9 @@ def rmse(outputs, targets):
         The first tensor.
     targets: Tensor [batch_size, ...] of type float32
         The second tensor.
+    name: str or None, optional
+        Optioanl name to be applied in TensorBoard. Defaults to "Mean" and follows to
+        '<loss-name>/Mean' in TensorBoard.
     Returns
     ----------
     Returns the calculated error.
@@ -75,10 +87,10 @@ def rmse(outputs, targets):
         reduction_indices = tuple(range(1, outputs_rank))
         return tf.reduce_mean(
             tf.sqrt(
-                tf.reduce_mean(tf.square(outputs - targets), reduction_indices)))
+                tf.reduce_mean(tf.square(outputs - targets), reduction_indices)), name=name)
 
 
-def sae(outputs, targets):
+def sae(outputs, targets, name=None):
     """Sum of aboslute error (SAE) between images.
     Parameters
     ----------
@@ -86,6 +98,9 @@ def sae(outputs, targets):
         The first tensor.
     targets: Tensor [batch_size, ...] of type float32
         The second tensor.
+    name: str or None, optional
+        Optioanl name to be applied in TensorBoard. Defaults to "Mean" and follows to
+        '<loss-name>/Mean' in TensorBoard.
     Returns
     ----------
     Returns the calculated error.
@@ -94,10 +109,10 @@ def sae(outputs, targets):
         outputs_rank = outputs.get_shape().ndims
         sum_indices = tuple(range(1, outputs_rank))
         return tf.reduce_mean(
-            tf.reduce_sum(tf.abs(outputs - targets), sum_indices))
+            tf.reduce_sum(tf.abs(outputs - targets), sum_indices), name=name)
     
     
-def mae(outputs, targets):
+def mae(outputs, targets, name=None):
     """Mean aboslute error (MAE) between images.
     Parameters
     ----------
@@ -105,15 +120,18 @@ def mae(outputs, targets):
         The first tensor.
     targets: Tensor [batch_size, ...] of type float32
         The second tensor.
+    name: str or None, optional
+        Optioanl name to be applied in TensorBoard. Defaults to "Mean" and follows to
+        '<loss-name>/Mean' in TensorBoard.
     Returns
     ----------
     Returns the calculated error.
     """
     with tf.name_scope('MAE_loss'):
-        return tf.reduce_mean(tf.abs(outputs - targets))
+        return tf.reduce_mean(tf.abs(outputs - targets), name=name)
 
 
-def rsae(outputs, targets):
+def rsae(outputs, targets, name=None):
     """Rooted sum of absolute error (RSAE) between images.
     Parameters
     ----------
@@ -121,6 +139,9 @@ def rsae(outputs, targets):
         The first tensor.
     targets: Tensor [batch_size, ...] of type float32
         The second tensor.
+    name: str or None, optional
+        Optioanl name to be applied in TensorBoard. Defaults to "Mean" and follows to
+        '<loss-name>/Mean' in TensorBoard.
     Returns
     ----------
     Returns the calculated error.
@@ -130,10 +151,10 @@ def rsae(outputs, targets):
         sum_indices = tuple(range(1, outputs_rank))
         return tf.reduce_mean(
             tf.sqrt(
-                tf.reduce_sum(tf.abs(outputs - targets), sum_indices)))
+                tf.reduce_sum(tf.abs(outputs - targets), sum_indices)), name=name)
     
     
-def rmae(outputs, targets):
+def rmae(outputs, targets, name=None):
     """Rooted mean absolute error (RMAE) between images.
     Parameters
     ----------
@@ -141,6 +162,9 @@ def rmae(outputs, targets):
         The first tensor.
     targets: Tensor [batch_size, ...] of type float32
         The second tensor.
+    name: str or None, optional
+        Optioanl name to be applied in TensorBoard. Defaults to "Mean" and follows to
+        '<loss-name>/Mean' in TensorBoard.
     Returns
     ----------
     Returns the calculated error.
@@ -150,10 +174,10 @@ def rmae(outputs, targets):
         reduction_indices = tuple(range(1, outputs_rank))
         return tf.reduce_mean(
             tf.sqrt(
-                tf.reduce_mean(tf.abs(outputs - targets), reduction_indices)))
+                tf.reduce_mean(tf.abs(outputs - targets), reduction_indices)), name=name)
     
     
-def bce(output_probs, targets, from_logits=False):
+def bce(output_probs, targets, from_logits=False, name=None):
     """Binary cross-entropy (BCE) between an output and a target tensor.
        Remarks: In case of images, this loss gives great results for image
                 like MNIST or MovingMNIST, but does NOT work for natural images
@@ -168,6 +192,9 @@ def bce(output_probs, targets, from_logits=False):
         The probabilities of the output in scale [0, 1].
     from_logits: Boolean, optional
         Whether the given values are probabilites (default) or logits.
+    name: str or None, optional
+        Optioanl name to be applied in TensorBoard. Defaults to "Mean" and follows to
+        '<loss-name>/Mean' in TensorBoard.
     Returns
     ----------
     Returns the caluclated error.
@@ -183,10 +210,10 @@ def bce(output_probs, targets, from_logits=False):
             output_probs_flat = tf.clip_by_value(output_probs_flat, EPSILON, 1 - EPSILON)
             output_probs_flat = tf.log(output_probs_flat / (1 - output_probs_flat))
         bce_values = tf.nn.sigmoid_cross_entropy_with_logits(output_probs_flat, targets_flat)
-        return tf.reduce_mean(bce_values)
+        return tf.reduce_mean(bce_values, name=name)
 
     
-def ce(outputs, targets):
+def ce(outputs, targets, name=None):
     """Cross entropy error (CE).
     Parameters
     ----------
@@ -194,6 +221,9 @@ def ce(outputs, targets):
         The first tensor.
     targets: Tensor [batch_size, ...] of type float32
         The second tensor.
+    name: str or None, optional
+        Optioanl name to be applied in TensorBoard. Defaults to "Mean" and follows to
+        '<loss-name>/Mean' in TensorBoard.
     Returns
     ----------
     Returns the calculated error.
@@ -201,10 +231,11 @@ def ce(outputs, targets):
     with tf.name_scope('CE_loss'):
         outputs_rank = outputs.get_shape().ndims
         sum_indices = tuple(range(1, outputs_rank))
-        return -tf.reduce_mean(tf.reduce_sum(targets * tf.log(outputs), sum_indices))
+        return -tf.reduce_mean(
+            tf.reduce_sum(targets * tf.log(outputs), sum_indices), name=name)
     
 
-def ssim(img1, img2, patch_size=11, sigma=1.5, L=255, K1=0.01, K2=0.03):
+def ssim(img1, img2, patch_size=11, sigma=1.5, L=255, K1=0.01, K2=0.03, name=None):
     """Calculates the Structural Similarity loss
        Reference: 
            This function attempts to mimic precisely the functionality of ssim.m a
@@ -228,13 +259,17 @@ def ssim(img1, img2, patch_size=11, sigma=1.5, L=255, K1=0.01, K2=0.03):
         The K1 value.
     K2: float, optional
         The K2 value.
+    name: str or None, optional
+        Optioanl name to be applied in TensorBoard. Defaults to "Mean" and follows to
+        '<loss-name>/Mean' in TensorBoard.
     Returns
     ----------
     value: float32
         The structural similarity loss value between both images.
     """
     with tf.name_scope('SSIM_loss'):
-        return 1 - tt.image.ssim(img1, img2, patch_size, sigma, L, K1, K2)
+        return 1 - tt.image.ssim(img1, img2, patch_size, sigma,
+                                 L, K1, K2, name=name)
 
 
 def ms_ssim(img1, img2, patch_size=11, sigma=1.5, L=255, K1=0.01, K2=0.03,
@@ -273,6 +308,9 @@ def ms_ssim(img1, img2, patch_size=11, sigma=1.5, L=255, K1=0.01, K2=0.03,
         default values have been obtained from an empirical analysis. A level of 5 is only
         suitable for huge images. E.g an image of 64x64 pixels with level M=3 can result
         in NaN values.
+    name: str or None, optional
+        Optioanl name to be applied in TensorBoard. Defaults to "Mean" and follows to
+        '<loss-name>/Mean' in TensorBoard.
     Returns
     ----------
     value: float32
@@ -280,10 +318,11 @@ def ms_ssim(img1, img2, patch_size=11, sigma=1.5, L=255, K1=0.01, K2=0.03,
         where '1' means they are identical and '0' means they are completely different.
     """
     with tf.name_scope('MSSSIM_loss'):
-        return 1 - tt.image.ms_ssim(img1, img2, patch_size, sigma, L, K1, K2, level_weights)
+        return 1 - tt.image.ms_ssim(img1, img2, patch_size, sigma,
+                                    L, K1, K2, level_weights, name=name)
 
 
-def ss_ssim(img1, img2, patch_size=11, sigma=1.5, L=255, K1=0.01, K2=0.03, level=2):
+def ss_ssim(img1, img2, patch_size=11, sigma=1.5, L=255, K1=0.01, K2=0.03, level=2, name=None):
     """Calculates the Single-Scale Structural Similarity (SS-SSIM) loss.
        References:
             Z. Wang's "Multi-scale structural similarity
@@ -310,6 +349,9 @@ def ss_ssim(img1, img2, patch_size=11, sigma=1.5, L=255, K1=0.01, K2=0.03, level
     level: int, optional
         The level M=2.
         A level of M=1 equals simple ssim() function.
+    name: str or None, optional
+        Optioanl name to be applied in TensorBoard. Defaults to "Mean" and follows to
+        '<loss-name>/Mean' in TensorBoard.
     Returns
     ----------
     value: float32
@@ -317,7 +359,8 @@ def ss_ssim(img1, img2, patch_size=11, sigma=1.5, L=255, K1=0.01, K2=0.03, level
         where '1' means they are identical and '0' means they are completely different.
     """
     with tf.name_scope('SSSSIM_loss'):
-        return 1 - tt.image.ss_ssim(img1, img2, patch_size, sigma, L, K1, K2, level)
+        return 1 - tt.image.ss_ssim(img1, img2, patch_size, sigma,
+                                    L, K1, K2, level, name=name)
 
     
 def _gradient_differences(img1, img2):
@@ -344,7 +387,7 @@ def _gradient_differences(img1, img2):
     return grad_diff_x, grad_diff_y 
 
     
-def gdl(img1, img2, alpha=1.0):
+def gdl(img1, img2, alpha=1.0, name=None):
     """Computes the (summed) Gradient Differences Loss (GDL) between two images on
        the same scale, as defined in: https://arxiv.org/abs/1511.05440
     Parameters
@@ -355,19 +398,22 @@ def gdl(img1, img2, alpha=1.0):
         The second image. Expected to have values in scale [0, max_value].
     alpha: float, optional
         Value that is in range [1, ...).
+    name: str or None, optional
+        Optioanl name to be applied in TensorBoard. Defaults to "Mean" and follows to
+        '<loss-name>/Mean' in TensorBoard.
     Returns
     ----------
-    mean(gdl_values): float32 Tensor
-        The mean Gradient Differences error over each frame in the batch.
+    mean(sum(gdl_values)): float32 Tensor
+        The per image summed Gradient Differences error over each frame in the batch.
         Attention: The value can get very large for non-similar images (>100k)
     """
     with tf.name_scope('GDL_loss'):
         grad_diff_x, grad_diff_y = _gradient_differences(img1, img2)
         gdl_values = tf.reduce_sum(grad_diff_x ** alpha + grad_diff_y ** alpha, [1, 2, 3])
-        return tf.reduce_mean(gdl_values)
+        return tf.reduce_mean(gdl_values, name=name)
 
     
-def mgdl(img1, img2, alpha=1.0):
+def mgdl(img1, img2, alpha=1.0, name=None):
     """Computes the Mean / per-pixel Gradient Differences Loss (GDL) between
        two images on the same scale. This version takes the mean, that values
        do not explode on large images and have a similar scale like other loss
@@ -380,6 +426,9 @@ def mgdl(img1, img2, alpha=1.0):
         The second image. Expected to have values in scale [0, max_value].
     alpha: float, optional
         Value that is in range [1, ...).
+    name: str or None, optional
+        Optioanl name to be applied in TensorBoard. Defaults to "Mean" and follows to
+        '<loss-name>/Mean' in TensorBoard.
     Returns
     ----------
     mean(gdl_values): float32 Tensor
@@ -388,5 +437,5 @@ def mgdl(img1, img2, alpha=1.0):
     """
     with tf.name_scope('mGDL_loss'):
         grad_diff_x, grad_diff_y = _gradient_differences(img1, img2)
-        gdl_value = tf.reduce_mean(grad_diff_x ** alpha + grad_diff_y ** alpha)
+        gdl_value = tf.reduce_mean(grad_diff_x ** alpha + grad_diff_y ** alpha, name=name)
         return gdl_value

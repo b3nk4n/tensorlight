@@ -117,7 +117,8 @@ def _fspecial_gauss(size, sigma):
     return gauss
 
 
-def ssim(img1, img2, patch_size=11, sigma=1.5, L=1.0, K1=0.01, K2=0.03, cs_map=False):
+def ssim(img1, img2, patch_size=11, sigma=1.5, L=1.0, K1=0.01, K2=0.03,
+         cs_map=False, name=None):
     """Calculates the Structural Similarity Metric corresponding to input images
        Reference: 
            This function attempts to mimic precisely the functionality of ssim.m a
@@ -144,6 +145,9 @@ def ssim(img1, img2, patch_size=11, sigma=1.5, L=1.0, K1=0.01, K2=0.03, cs_map=F
         Whether to return the constrast-structure product only,
         instead of the complete SSIM.
         Basically only used internally for performance. Do not use it from the outside.
+    name: str or None, optional
+        Optional name to be applied in TensorBoard. Defaults to the last operations name
+        of this metric, such as mean, sum or min/max.
     Returns
     ----------
     value: float32
@@ -172,12 +176,12 @@ def ssim(img1, img2, patch_size=11, sigma=1.5, L=1.0, K1=0.01, K2=0.03, cs_map=F
         ssim_value =  tf.reduce_mean(l_p * cs_p)
         # enuse scale [0, 1] even with numerical instabilities
         ssim_value = tf.maximum(0.0, ssim_value)
-        ssim_value = tf.minimum(1.0, ssim_value)
+        ssim_value = tf.minimum(1.0, ssim_value, name=name)
     return ssim_value
 
 
 def ms_ssim(img1, img2, patch_size=11, sigma=1.5, L=1.0, K1=0.01, K2=0.03,
-            level_weights=[0.0448, 0.2856, 0.3001, 0.2363, 0.1333]):
+            level_weights=[0.0448, 0.2856, 0.3001, 0.2363, 0.1333], name=None):
     """Calculates the Multi-Scale Structural Similarity (MS-SSIM) Image
        Quality Assessment according to Z. Wang.
        Problem:
@@ -217,6 +221,9 @@ def ms_ssim(img1, img2, patch_size=11, sigma=1.5, L=1.0, K1=0.01, K2=0.03,
         default values have been obtained from an empirical analysis. A level of 5 is only
         suitable for huge images. E.g an image of 64x64 pixels with level M=3 can result
         in NaN values.
+    name: str or None, optional
+        Optional name to be applied in TensorBoard. Defaults to the last operations name
+        of this metric, such as mean, sum or min/max.
     Returns
     ----------
     value: float32
@@ -249,12 +256,13 @@ def ms_ssim(img1, img2, patch_size=11, sigma=1.5, L=1.0, K1=0.01, K2=0.03,
         msssim_val = tf.reduce_prod((mcs**weights[0:levels-1]) * (mssim**weights[levels-1]), name='prod')
         # enuse scale [0, 1] even with numerical instabilities
         msssim_val = tf.maximum(0.0, msssim_val)
-        msssim_val = tf.minimum(1.0, msssim_val)
+        msssim_val = tf.minimum(1.0, msssim_val, name=name)
         msssim_value = msssim_val
         return msssim_value
 
 
-def ss_ssim(img1, img2, patch_size=11, sigma=1.5, L=1.0, K1=0.01, K2=0.03, level=2):
+def ss_ssim(img1, img2, patch_size=11, sigma=1.5, L=1.0, K1=0.01, K2=0.03, level=2,
+            name=None):
     """Calculates the Single-Scale Structural Similarity (SS-SSIM) Image
        Quality Assessment according to Z. Wang.
        References:
@@ -281,6 +289,9 @@ def ss_ssim(img1, img2, patch_size=11, sigma=1.5, L=1.0, K1=0.01, K2=0.03, level
     level: int, optional
         The level M=2.
         A level of M=1 equals simple ssim() function.
+    name: str or None, optional
+        Optional name to be applied in TensorBoard. Defaults to the last operations name
+        of this metric, such as mean, sum or min/max.
     Returns
     ----------
     value: float32
@@ -294,11 +305,11 @@ def ss_ssim(img1, img2, patch_size=11, sigma=1.5, L=1.0, K1=0.01, K2=0.03, level
             img1 = tf.nn.avg_pool(img1, [1,2,2,1], [1,2,2,1], padding='SAME')
             img2 = tf.nn.avg_pool(img2, [1,2,2,1], [1,2,2,1], padding='SAME')
 
-        ssssim_value = ssim(img1, img2, patch_size, sigma, L, K1, K2)
+        ssssim_value = ssim(img1, img2, patch_size, sigma, L, K1, K2, name=name)
     return ssssim_value
 
 
-def psnr(img1, img2, max_value=1.0):
+def psnr(img1, img2, max_value=1.0, name=None):
     """Computes the Peak Signal to Noise Ratio (PSNR) error between two images.
        Although a higher PSNR generally indicates that the reconstruction is of higher quality,
        in some cases it may not. One has to be extremely careful with the range of validity of this metric;
@@ -311,6 +322,9 @@ def psnr(img1, img2, max_value=1.0):
     max_value: float, optional
         The maximum possible values of image intensities. Alternatively, use 255.0 for images
         in scale [0, 255].
+    name: str or None, optional
+        Optional name to be applied in TensorBoard. Defaults to the last operations name
+        of this metric, such as mean, sum or min/max.
     Returns
     ----------
     mean(psnr_values): float32 Tensor
@@ -332,9 +346,9 @@ def psnr(img1, img2, max_value=1.0):
         # http://stackoverflow.com/questions/26210055/psnr-of-image-using-matlab
         psnr_values = tf.minimum(99.0, psnr_values)
         
-        return tf.reduce_mean(psnr_values)
+        return tf.reduce_mean(psnr_values, name=name)
     
-def sharp_diff(img1, img2, max_value=1.0):
+def sharp_diff(img1, img2, max_value=1.0, name=None):
     """Computes the Sharpness Difference (Sharp. Diff.) error between between two images.
     Parameters
     ----------
@@ -345,6 +359,9 @@ def sharp_diff(img1, img2, max_value=1.0):
     max_value: float, optional
         The maximum possible values of image intensities. Alternatively, use 255.0 for images
         in scale [0, 255].
+    name: str or None, optional
+        Optional name to be applied in TensorBoard. Defaults to the last operations name
+        of this metric, such as mean, sum or min/max.
     Returns
     ----------
     mean(sdiff_values): float32 Tensor
@@ -377,4 +394,4 @@ def sharp_diff(img1, img2, max_value=1.0):
         # define 99 as the maximum value, as values can get until infinity, as we do it for PSNR
         sdiff_values = tf.minimum(99.0, sdiff_values)
         
-        return tf.reduce_mean(sdiff_values)
+        return tf.reduce_mean(sdiff_values, name=name)
