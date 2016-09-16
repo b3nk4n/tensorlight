@@ -291,6 +291,9 @@ class AbstractRuntime(object):
             with tf.name_scope('optimizer'):
                 opt, lr = self.optimizer.build(self._global_step)
               
+            # install the model and make global variables availalbe
+            self._model.install(self._global_step)
+            
             # build (multi-)device specific computation graph for inference
             grads, summaries, total_loss, loss, eval_dict = self._build_computation_graph(x, y, opt)
             

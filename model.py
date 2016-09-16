@@ -19,6 +19,7 @@ class AbstractModel(object):
             The weight decay regularization factor (lambda).
         """
         self._weight_decay = weight_decay
+        self._global_step = None
         
     def fetch_feeds(self):
         """Can be overridden to fetch the model specific feeding dict.
@@ -29,6 +30,16 @@ class AbstractModel(object):
         Returns a dictionary with values {str-key: tf.placeholder, ...}.
         """
         return {}
+    
+    def install(self, global_step):
+        """Installs global variables from the runtime.
+        Parameters
+        ----------
+        global_step: int-Tensor
+            The global variable representing the global step. This might be useful
+            for the model in case it uses internal decay variables.
+        """
+        self._global_step = global_step
         
     @abstractmethod
     def inference(self, inputs, targets, feeds={}, is_training=True,
@@ -124,3 +135,8 @@ class AbstractModel(object):
     def weight_decay(self):
         """Gets the regularization factor (lambda) for weight decay."""
         return self._weight_decay
+    
+    @property
+    def global_step(self):
+        """Gets the global step variable as a Tensor."""
+        return self._global_step
