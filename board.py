@@ -106,7 +106,7 @@ def gradients_histogram_summary(gradients):
                 yield tf.histogram_summary(var.op.name + '/gradients', grad)
     
             
-def conv_image_summary(tag, conv_out, padding=2):
+def conv_image_summary(tag, conv_out, padding=1):
     """Creates an image summary of the convolutional outputs
        for the first image in the batch .
     Parameters
@@ -129,12 +129,20 @@ def conv_image_summary(tag, conv_out, padding=2):
         grid_length = int(math.ceil(math.sqrt(channels)))
         grid_y = grid_x = grid_length
 
-        # slice off the first image
+        # slice off the first images
         co = tf.slice(conv_out, (0,0,0,0),(1,-1,-1,-1))
         
+        # scale to [0, 1]
+        x_min = tf.reduce_min(co)
+        x_max = tf.reduce_max(co)
+        co = (co - x_min) / (x_max - x_min)
+        
         # add padding to input kernel
+        # since only zero-padding is supported, we scale it to [-1, 0] while padding
+        co -= 1
         co = tf.pad(co,
                     tf.constant([[0,0],[padding,padding],[padding,padding],[0,0]]))
+        co += 1
         
         # remove batch dimension
         co = tf.reshape(co, (iy, ix, channels))
@@ -142,17 +150,12 @@ def conv_image_summary(tag, conv_out, padding=2):
         # add placeholder filters to be able to build a square
         placeholders_to_add = grid_y * grid_x - channels
         if (placeholders_to_add > 0):
-            placeholders = tf.zeros((iy, ix, placeholders_to_add))
+            placeholders = tf.ones((iy, ix, placeholders_to_add))
             co = tf.concat(2, [co, placeholders])
 
         co = tf.reshape(co, (iy, ix, grid_y, grid_x))
         co = tf.transpose(co, (2,0,3,1))
-        co = tf.reshape(co, (1, grid_y * iy, grid_x * ix, 1))
-        
-        # scale to [0, 1]
-        x_min = tf.reduce_min(co)
-        x_max = tf.reduce_max(co)
-        grid = (co - x_min) / (x_max - x_min)
+        grid = tf.reshape(co, (1, grid_y * iy, grid_x * ix, 1))
 
         # write single image to summary
         with tf.device('/cpu:0'):
@@ -224,3 +227,30 @@ def conv_filter_image_summary(tag, kernel, padding=1):
         # write filter image to summary
         with tf.device('/cpu:0'):
             tf.image_summary(tag, grid, max_images=1)
+
+            
+def lstm_state_image_summary(tag_postfix, state_tuples, padding=2):
+    """Visualizes the latest LSTM state-tuple in TensorBoard.
+    Parameters
+    ----------
+    tag_postfix: str
+        The tag-postfix to use. It will generate two images for cell
+        and hidden state using this prefix.
+    state_tuples: LSTMStateTuple or tuple(LSTMStateTuple)
+        The LSTM state tuple (or multiples of them when a
+        multi-layer LSTM is used.
+    padding: int, optional
+        The padding between each patch of the image grid.
+    """
+    if not isinstance(state_tuples, tuple):
+        # convert to tuple (in case of 1-layer LSTM)
+        tuple_of_state_tuples = tuple(state_tuples)
+    else:
+        tuple_of_state_tuples = state_tuples
+            
+    # visualize learned motion in tensor-board
+    for i, state_tuple in enumerate(tuple_of_state_tuples):
+        conv_image_summary("layer{}_c_{}".format(i + 1, tag_postfix),
+                           state_tuple.c, padding=padding)
+        conv_image_summary("layer{}_h_{}".format(i + 1, tag_postfix),
+                           state_tuple.h, padding=padding)
