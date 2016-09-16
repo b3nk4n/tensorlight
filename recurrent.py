@@ -71,7 +71,7 @@ def rnn_conv2d(cell, inputs, initial_state=None, dtype=tf.float32,
     # Create a new scope in which the caching device is either
     # determined by the parent scope, or is set to place the cached
     # Variable using the same placement as for the rest of the RNN.
-    with vs.variable_scope(scope or "RNNConv2D") as varscope:
+    with vs.variable_scope(scope or "RNN") as varscope:
         if varscope.caching_device is None:
             varscope.set_caching_device(lambda op: op.device)
 
@@ -166,7 +166,7 @@ def rnn_conv2d_roundabout(cell, single_input, sequence_length, initial_state=Non
     """
 
     if not isinstance(cell, RNNConv2DCell):
-        raise TypeError("cell must be an instance of RNNConv2DCell")
+        raise TypeError("cell must be an instance of RNNC2DCell")
     if isinstance(single_input, list):
         raise TypeError("single_input must be no list")
     if single_input is None:
@@ -176,7 +176,7 @@ def rnn_conv2d_roundabout(cell, single_input, sequence_length, initial_state=Non
     # Create a new scope in which the caching device is either
     # determined by the parent scope, or is set to place the cached
     # Variable using the same placement as for the rest of the RNN.
-    with vs.variable_scope(scope or "RNNConv2D") as varscope:
+    with vs.variable_scope(scope or "RNN") as varscope:
         if varscope.caching_device is None:
             varscope.set_caching_device(lambda op: op.device)
 
@@ -402,7 +402,7 @@ class BasicLSTMConv2DCell(RNNConv2DCell):
 
     def __call__(self, inputs, state, scope=None):
         """2D convolutional Long short-term memory cell (LSTMConv2D)."""
-        with vs.variable_scope(scope or type(self).__name__):  # "BasicLSTMConv2DCell"
+        with vs.variable_scope(scope or "BasicLSTM2DCell"):
             c, h = state
             with tf.variable_scope("Conv_x"):
                 conv_xi = tt.network.conv2d("xi", inputs, self._n_filters,
@@ -586,7 +586,7 @@ class LSTMConv2DCell(RNNConv2DCell):
 
     def __call__(self, inputs, state, scope=None):
         """2D convolutional Long short-term memory cell (LSTMConv2D)."""
-        with vs.variable_scope(scope or type(self).__name__):  # "LSTMConv2DCell"
+        with vs.variable_scope(scope or "LSTMC2DCell"):
             c, h = state
             with tf.variable_scope("Conv_x") as varscope:
                 conv_xi = tt.network.conv2d("i", inputs, self._n_filters,
@@ -778,7 +778,7 @@ class MultiRNNConv2DCell(RNNConv2DCell):
 
     def __call__(self, inputs, state, scope=None):
         """Run this multi-layer cell on inputs, starting from state."""
-        with vs.variable_scope(scope or type(self).__name__):  # "MultiRNNConv2DCell"
+        with vs.variable_scope(scope or "MultiRNNC2DCell"):
             cur_state_pos = 0
             cur_inp = inputs
             new_states = []
