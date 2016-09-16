@@ -138,7 +138,7 @@ def rnn_conv2d(cell, inputs, initial_state=None, dtype=tf.float32,
     
     
 def rnn_conv2d_roundabout(cell, single_input, sequence_length, initial_state=None,
-                          output_postprocessor=lambda x: x, dtype=tf.float32, scope=None):
+                          dtype=tf.float32, scope=None):
     """Creates a recurrent neural network specified by RNNConv2DCell `cell`, that has only
        a single input, and reuses the last output as its new input.
     Args:
@@ -151,8 +151,6 @@ def rnn_conv2d_roundabout(cell, single_input, sequence_length, initial_state=Non
             a tensor of appropriate type and shape `[batch_size x cell.state_size]`.
             If `cell.state_size` is a tuple, this should be a tuple of
             tensors having shapes `[batch_size, s] for s in cell.state_size`.
-        output_postprocessor: function, optional
-            A postprecessor function for the generated output each step.
         dtype: (optional) The data type for the initial state.  Required if
             initial_state is not provided.
         scope: VariableScope for the created subgraph; defaults to "RNNConv2D".
@@ -211,15 +209,114 @@ def rnn_conv2d_roundabout(cell, single_input, sequence_length, initial_state=Non
             call_cell = lambda: cell(input_, state)
             # pylint: enable=cell-var-from-loop
             (output, state) = call_cell()
-
-            # use optional postprocessor
-            output = output_postprocessor(output)
             
             outputs.append(output)
             input_ = output
 
         return (outputs, state)
 
+    
+def rnn_conv2d_scheduled_sampling(cell, prev_repr_input, gt_repr_inputs, sampling_prob, is_training, initial_state=None,
+                                  dtype=tf.float32, scope=None):
+    """Creates a recurrent neural network specified by RNNConv2DCell `cell`, that has only
+       a single input, and reuses the last output as its new input.
+    Args:
+        cell: An instance of RNNCell.
+        prev_repr_input: Tensor
+            The representation as the first input.
+        gt_repr_inputs: list(Tensor)
+            All GT represetation input tensors of shape [batch_size, ...]. 
+            The scheduled sampling algorithm will descide whether the GT input 
+            or the previously generated output is used as input.
+        sampling_prob: float
+            The probablilty of taking the GT frame as input for the next timestep, evaluated at every
+            timestep.
+        is_training: Boolean (or bool-Tensor)
+            Indicates whether we are in training mode or inference mode. During trainng, scheduled 
+            sampling s performed. In inference mode (False), no scheduled sampling is used and we
+            use "Always sampling" instead.
+        initial_state: (optional) An initial state for the RNN.
+            If `cell.state_size` is an integer, this must be
+            a tensor of appropriate type and shape `[batch_size x cell.state_size]`.
+            If `cell.state_size` is a tuple, this should be a tuple of
+            tensors having shapes `[batch_size, s] for s in cell.state_size`.
+        dtype: (optional) The data type for the initial state.  Required if
+            initial_state is not provided.
+        scope: VariableScope for the created subgraph; defaults to "RNNConv2D".
+    Returns:
+        A pair (outputs, state) where:
+        - outputs is a length T list of outputs (one for each input)
+        - state is the final state
+    Raises:
+        TypeError: If `cell` is not an instance of RNNConv2DCell.
+        ValueError: If `prev_repr_input` is `None` or a list.
+    """ 
+
+    if not isinstance(cell, RNNConv2DCell):
+        raise TypeError("cell must be an instance of RNNC2DCell")
+    if isinstance(prev_repr_input, list):
+        raise TypeError("prev_repr_input must be no list")
+    if prev_repr_input is None:
+        raise ValueError("prev_repr_input must not be empty")
+
+    outputs = []
+    # Create a new scope in which the caching device is either
+    # determined by the parent scope, or is set to place the cached
+    # Variable using the same placement as for the rest of the RNN.
+    with vs.variable_scope(scope or "RNN") as varscope:
+        if varscope.caching_device is None:
+            varscope.set_caching_device(lambda op: op.device)
+
+        # Temporarily avoid EmbeddingWrapper and seq2seq badness
+        if prev_repr_input.get_shape().ndims != 1:
+            (fixed_batch_size, input_height, input_width, input_channels) = prev_repr_input.get_shape().with_rank(4)
+            if input_height.value is None or input_width.value is None or input_channels.value is None:
+                raise ValueError(
+                    "Input size (2nd, 3rd or 4th dimension of prev_repr_input) must be accessible via "
+                    "shape inference, but saw value None.")
+        else:
+            fixed_batch_size = prev_repr_input.get_shape().with_rank_at_least(1)[0]
+
+        if fixed_batch_size.value:
+            batch_size = fixed_batch_size.value
+        else:
+            batch_size = tf.shape(prev_repr_input)[0]
+        if initial_state is not None:
+            state = initial_state
+        else:
+            if not dtype:
+                raise ValueError("If no initial_state is provided, "
+                                 "dtype must be specified")
+            state = cell.zero_state(batch_size, dtype)
+
+        input_ = prev_repr_input
+        for time in xrange(len(gt_repr_inputs)):
+            if time > 0:
+                varscope.reuse_variables()
+            
+            with tf.name_scope("scheduled_sampling"):
+                uniform_random = tf.random_uniform([], 0, 1.0, dtype=tf.float32)
+                coin_success = tf.less(uniform_random, sampling_prob, name="coin_flip")
+                
+                # combine both decisions with logical switch, because nested tf.cond caused an error
+                sample_from_gt = tf.logical_and(is_training, coin_success)
+                
+                cell_input = tf.cond(sample_from_gt,
+                                     lambda: gt_repr_inputs[time],
+                                     lambda: input_,
+                                     name="sample_switch")
+            
+            # pylint: disable=cell-var-from-loop
+            call_cell = lambda: cell(cell_input, state)
+            # pylint: enable=cell-var-from-loop
+            (output, state) = call_cell()
+
+            input_ = output
+            outputs.append(output)
+
+        return (outputs, state)
+
+    
     
 def _sequence_like(instance, args):
     """Checks and returns sequence like structure.
