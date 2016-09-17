@@ -22,16 +22,33 @@ FRAME_CHANNELS = 3
 # the y-pixel where the HUD at the bottom starts
 HUD_Y = 172
 
-# actually it's longer, but 100 is more than enough
-MAX_SEQ_LENGTH = 100
-
 SUBDIR_TRAIN = "Train"
 SUBDIR_TEST = "Test"
 
 # limit the retires in case we use no-change-skipping
 # to ensure we do not end up in an endless-loop
-MAX_SKIP_RETRIES = 2
+MAX_TRIES = 50
 
+MIN_L2_DIFF_PER_FRAME = 25.0 # of image value range [-1, 1]
+
+def enough_l2_movement(frames):
+    """Checks if the frames array has enough movement to filter
+       static image examples.
+    """
+    frames_scaled = frames / 127.5
+    diff = 0
+    n = frames_scaled.shape[0]
+    for i in reversed(xrange(n - 1)):
+        diff += np.sum(np.square(frames_scaled[i] - frames_scaled[i + 1]))
+        if i == n - 2:
+            # diff of last two frames must have any movement to reduce the proability
+            # that all the action has been at the beginning of the sequence
+            if diff == 0:
+                return False
+        
+        if diff >= MIN_L2_DIFF_PER_FRAME * n:
+            return True
+    return False
     
 class MsPacmanBaseDataset(base.AbstractDataset):
     """The MsPacman base dataset of the retro game classic.
@@ -40,7 +57,7 @@ class MsPacmanBaseDataset(base.AbstractDataset):
     """
     __metaclass__ = ABCMeta
     
-    def __init__(self, subdir, index_range, data_dir, input_seq_length=10, target_seq_length=10,
+    def __init__(self, subdir, index_range, data_dir, input_seq_length=8, target_seq_length=8,
                  crop_size=None, repetitions_per_epoche=256, skip_no_change=True,
                  random_flip=True):
         """Creates a MsPacman dataset instance.
@@ -73,8 +90,6 @@ class MsPacmanBaseDataset(base.AbstractDataset):
             In case cropping is active, we do not flip the frame in case the score-board
             at the bottom is visible.
         """
-        assert input_seq_length + target_seq_length <= MAX_SEQ_LENGTH, "Maximum sequence length exceeded."
-        
         # check or notify manual download
         filepath = os.path.join(data_dir, MSPAC_FILENAME)
         if not os.path.isfile(filepath):
@@ -157,21 +172,31 @@ class MsPacmanBaseDataset(base.AbstractDataset):
                     do_flip = True
                     
             # pre-load input-frames fist. Because we do not need to process all
-            # target frames in case we have to to a re-try due to "no-change" of pixels
+            # target frames in case we have to do a re-try due to "no-change" of pixels
             input_frames = []
             for fidx in xrange(start_idx, start_idx + self._input_seq_length):
                 frame_path = os.path.join(current_seq[0], current_seq[2][fidx])
                 input_frames.append(tt.utils.image.read(frame_path))
                 
+                """# pre-load images
+            input_frames = []
+            target_frames = []
+            for i, fidx in enumerate(xrange(start_idx, start_idx + total_seq_len)):
+                frame_path = os.path.join(current_seq[0], current_seq[2][fidx])
+                frame = tt.utils.image.read(frame_path)
+                if i < self.input_seq_length:
+                    input_frames.append(frame)
+                else:
+                    target_frames.append(frame)"""
             
-            for retry in range(MAX_SKIP_RETRIES):
+            for retry in range(MAX_TRIES):
                 offset_y = offset_x = 0
                 if self._crop_size is not None:
                     # do equal random crop
                     offset_x = random.randint(0, FRAME_WIDTH - self._crop_size[1])
                     offset_y = random.randint(0, FRAME_HEIGHT - self._crop_size[0])
                     
-                    if offset_y + self._crop_size[0] < HUD_Y:
+                    if offset_y + self._crop_size[0] > HUD_Y:
                         # undo flip in case the HUD is visible
                         do_flip = False
                 
@@ -187,23 +212,19 @@ class MsPacmanBaseDataset(base.AbstractDataset):
                         
                     # add to batch
                     batch_inputs[batch, i] = frame[:,::-1,:] if do_flip else frame
-                    
+                
                 # do lazy check? (1st, 5th, last?)
-                if self._skip_no_change and retry != MAX_SKIP_RETRIES:
+                if self._skip_no_change and retry != MAX_TRIES - 1:
                     # check for at least 1-pixel changel in the input-frames
-                    change = False
-                    for y in xrange(self._input_seq_length - 1):
-                        if not np.array_equal(batch_inputs[batch, y], batch_inputs[batch, y + 1]):
-                            change = True
-                            break
-                    if not change:
-                        # do a retry because all frames are identical
+                    if not enough_l2_movement(batch_inputs[batch]):
                         continue
-                    
+                        
                 # we reach this, when the input sequence was valid and we can now
                 # start to process the targets as well
                 for i, fidx in enumerate(xrange(start_idx + self._input_seq_length, start_idx + total_seq_len)):
-                    frame_path = os.path.join(current_seq[0], current_seq[2][fidx])
+                    current_path = current_seq[0]
+                    current_filename = current_seq[2][fidx]
+                    frame_path = os.path.join(current_path, current_filename)
                     frame = tt.utils.image.read(frame_path)
                     
                     if self._crop_size is not None:
