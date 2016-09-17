@@ -1,3 +1,7 @@
+import os
+import types
+import jsonpickle
+
 import tensorflow as tf
 import tensortools as tt
 from abc import ABCMeta, abstractmethod
@@ -125,6 +129,59 @@ class AbstractModel(object):
         A dict of {title: scalar-Tensor, ...} to be executed in validation and testing.
         """
         return {}
+    
+    def save(self, filepath):
+        """Saves the model parameters to the specifiec path as JSON.
+        Parameters
+        ----------
+        filepath: str
+            The file path.
+        """
+        # check and create dirs
+        if not os.path.exists(os.path.dirname(filepath)):
+            subdirs = os.path.dirname(filepath)
+            if subdirs is not None and subdirs != '':
+                os.makedirs(subdirs)
+        
+        with open(filepath, 'wb') as f:
+            json = jsonpickle.encode(self)
+            f.write(json)
+            
+    def load(self, filepath):
+        """Load the model parameters from the specifiec path as JSON.
+        Parameters
+        ----------
+        filepath: str
+            The file path.
+        """
+        with open(filepath, 'r') as f:
+            json = f.read()
+            model = jsonpickle.decode(json)
+            self.__dict__.update(model.__dict__)
+    
+    @tt.utils.attr.override
+    def __getstate__(self):
+        """Overridden for jsonpickle to exclude globa step."""
+        state = self.__dict__.copy()
+        del state['_global_step']
+        return state
+    
+    def print_params(self):
+        """Shows the model parameters."""
+        params = self.__getstate__()
+        
+        def trim_prefix(text, prefix):
+            # trim underscore prefix
+            return text[text.startswith(prefix) and len(prefix):]
+        
+        def to_string(value):
+            # <function sigmoid at 0x7f78b31bc410>
+            if isinstance(value, types.FunctionType):
+                return value.__name__.upper()
+            return value
+
+        for name, value in params.iteritems():
+            print("{:32}  ->  {}".format(trim_prefix(name, '_'), to_string(value)))
 
     @property
     def batch_size(self):
