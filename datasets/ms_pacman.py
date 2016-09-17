@@ -115,9 +115,16 @@ class MsPacmanBaseDataset(base.AbstractDataset):
         self._input_seq_length = input_seq_length
         self._target_seq_length = target_seq_length
         
+        if crop_size is None:
+            input_shape = [input_seq_length, FRAME_HEIGHT, FRAME_WIDTH, FRAME_CHANNELS]
+            target_shape = [target_seq_length, FRAME_HEIGHT, FRAME_WIDTH, FRAME_CHANNELS]
+        else:
+            input_shape = [input_seq_length, crop_size[0], crop_size[1], FRAME_CHANNELS]
+            target_shape = [target_seq_length, crop_size[0], crop_size[1], FRAME_CHANNELS]
+        
         super(MsPacmanBaseDataset, self).__init__(data_dir, dataset_size,
-                                                  input_shape=[input_seq_length, FRAME_HEIGHT, FRAME_WIDTH, FRAME_CHANNELS],
-                                                  target_shape=[target_seq_length, FRAME_HEIGHT, FRAME_WIDTH, FRAME_CHANNELS])
+                                                  input_shape=input_shape,target_shape=target_shape)
+        
     @tt.utils.attr.override
     def get_batch(self, batch_size):
         total_seq_len = self._input_seq_length + self._target_seq_length
