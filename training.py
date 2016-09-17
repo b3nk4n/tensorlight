@@ -1,4 +1,7 @@
 import sys
+import os
+import types
+import jsonpickle
 import collections
 
 import tensorflow as tf
@@ -11,6 +14,17 @@ ADADELTA = 'adadelta'
 ADAGRAD = 'adagrad'
 MOMENTUM = 'momentum'
 NESTEROV = 'nesterov'
+
+DecayTuple = collections.namedtuple("D", ("step_interval",
+                                              "rate",
+                                              "staircase"))
+HyperparamsTuple = collections.namedtuple("H", ("rho",
+                                                "eps",
+                                                "init_accu_val",
+                                                "beta1",
+                                                "beta2",
+                                                "decay",
+                                                "momentum"))
 
 
 class Optimizer(object):
@@ -44,29 +58,20 @@ class Optimizer(object):
         self._initial_lr = initial_lr
         
         # set decay
-        self._decay = collections.namedtuple("decay", ("step_interval",
-                                                       "rate",
-                                                       "staircase"))
-        self._decay.step_interval = step_interval
-        self._decay.rate = rate
-        self._decay.staircase = staircase
+        self._decay = DecayTuple(step_interval = step_interval,
+                                 rate = rate,
+                                 staircase = staircase)
         
         # set default hyper-params
-        self._hyper = collections.namedtuple("hyperparams", ("rho",
-                                                             "epsilon",
-                                                             "initial_accumulator_value",
-                                                             "beta1",
-                                                             "beta2",
-                                                             "decay",
-                                                             "momentum"))
+        self._hyper = None
         self.set_hyperparams()
         
-    def set_hyperparams(self, epsilon=1e-8, beta1=0.9, beta2=0.999, momentum=0.0,
-                        decay=0.9, rho=0.95, initial_accumulator_value=0.1):
+    def set_hyperparams(self, eps=1e-8, beta1=0.9, beta2=0.999, momentum=0.0,
+                        decay=0.9, rho=0.95, init_accu_val=0.1):
         """Sets the hyper parameters. Choose the related ones to your defined
            learning algorithm. All others will be ignored. This function resets
            all not-specified values to its defaults.
-        epsilon: float, optional
+        eps: float, optional
             The fuzz factor. Value is typically close to 0.
         beta1: float, optional
             The exponential decay rate for the 1st moment estimates.
@@ -80,24 +85,24 @@ class Optimizer(object):
             Discounting factor for the history/coming gradient.
         rho: float, optional
             The rho-decay rate.
-        initial_accumulator_value: float, optional
+        init_accu_val: float, optional
             Starting value for the accumulators, must be positive
         """
-        assert epsilon >= 0, "Epsilon must be >= 0 (usually very small)."
+        assert eps >= 0, "Epsilon must be >= 0 (usually very small)."
         assert beta1 > 0 and beta1 < 1, "Beta1 must be in range (0, 1)."
         assert beta2 > 0 and beta2 < 1, "Beta2 must be in range (0, 1)."
         assert momentum >= 0, "Momentum must be >= 0."
         assert decay >= 0, "Decay must be >= 0."
         assert rho >= 0, "Rho must be >= 0."
-        assert initial_accumulator_value >= 0, "Accumulator value must be >= 0."
+        assert init_accu_val >= 0, "Accumulator value must be >= 0."
         
-        self._hyper.epsilon = epsilon
-        self._hyper.beta1 = beta1
-        self._hyper.beta2 = beta2
-        self._hyper.momentum = momentum
-        self._hyper.decay = decay
-        self._hyper.rho = rho
-        self._hyper.initial_accumulator_value = initial_accumulator_value
+        self._hyper = HyperparamsTuple(rho = rho,
+                                       eps = eps,
+                                       init_accu_val = init_accu_val,
+                                       beta1 = beta1,
+                                       beta2 = beta2,
+                                       decay = decay,
+                                       momentum = momentum)
         
     def build(self, global_step):
         """Actually builds the optimizer including the learning rate decay
@@ -126,19 +131,19 @@ class Optimizer(object):
             opt = tf.train.AdamOptimizer(lr,
                                          beta1=self._hyper.beta1,
                                          beta2=self._hyper.beta2,
-                                         epsilon=self._hyper.epsilon)
+                                         epsilon=self._hyper.eps)
         elif self.name == RMSPROP:
             opt = tf.train.RMSPropOptimizer(lr,
                                             decay=self._hyper.decay,
                                             momentum=self._hyper.momentum,
-                                            epsilon=self._hyper.epsilon)
+                                            epsilon=self._hyper.eps)
         elif self.name == ADADELTA:
             opt = tf.train.AdadeltaOptimizer(lr,
                                              rho=self._hyper.rho,
-                                             epsilon=self._hyper.epsilon)
+                                             epsilon=self._hyper.eps)
         elif self.name == ADAGRAD:
             opt = tf.train.AdagradOptimizer(lr,
-                                            initial_accumulator_value=self._hyper.initial_accumulator_value)
+                                            init_accu_val=self._hyper.init_accu_val)
         elif self.name == MOMENTUM:
             opt = tf.train.MomentumOptimizer(lr,
                                              momentum=self._hyper.momentum,
@@ -150,6 +155,46 @@ class Optimizer(object):
         else:
             raise ValueError("Unknown optimizer. Contributors welcome...")
         return opt, lr
+    
+    def save(self, filepath):
+        """Saves the optimizer parameters to the specifiec path as JSON.
+        Parameters
+        ----------
+        filepath: str
+            The file path.
+        """
+        # check and create dirs
+        if not os.path.exists(os.path.dirname(filepath)):
+            subdirs = os.path.dirname(filepath)
+            if subdirs is not None and subdirs != '':
+                os.makedirs(subdirs)
+        
+        with open(filepath, 'wb') as f:
+            json = jsonpickle.encode(self)
+            f.write(json)
+            
+    def load(self, filepath):
+        """Load the optimizer parameters from the specifiec path as JSON.
+        Parameters
+        ----------
+        filepath: str
+            The file path.
+        """
+        with open(filepath, 'r') as f:
+            json = f.read()
+            model = jsonpickle.decode(json)
+            self.__dict__.update(model.__dict__)
+    
+    def print_params(self):
+        """Shows the model parameters."""
+        params = self.__dict__.copy()
+        
+        def trim_prefix(text, prefix):
+            # trim underscore prefix
+            return text[text.startswith(prefix) and len(prefix):]
+
+        for name, value in params.iteritems():
+            print("{:16}  ->  {}".format(trim_prefix(name, '_'), value))
         
     @property
     def name(self):
