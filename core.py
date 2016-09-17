@@ -13,6 +13,7 @@ import tensorflow as tf
 from tensorflow.python import control_flow_ops
 import tensortools as tt
 
+CHECKPOINT_NAME = "model.ckpt"
 
 LATEST_CHECKPOINT = 'LATEST'
 LOG_LOSSES = 'log_losses'
@@ -330,28 +331,37 @@ class AbstractRuntime(object):
             self._eval_dict = eval_dict
                 
             # Create a saver to store checkpoints of the model
-            self._saver = tf.train.Saver(max_to_keep=max_checkpoints_to_keep)
-
+            if restore_ema_variables:
+                restore_vars = tf.all_variables()
+            else:
+                restore_vars = variable_averages.variables_to_restore()  
+            
+            self._saver = tf.train.Saver(var_list=restore_vars,
+                                         max_to_keep=max_checkpoints_to_keep)
+            
+            def restore_checkpoint(saver, filepath, restore_ema):
+                """Restores a checkpoint, either the raw variables or the EMA values."""
+                if restore_ema:
+                    # Init all at first to ensure no non-initialized variables.
+                    # This is just a workaround and might be buggy.
+                    # It does not guarantee to restore all EMA vars.
+                    init_op = tf.initialize_all_variables()
+                    self.session.run(init_op)
+                    try:
+                        print("Restoring EMA variables...")
+                        saver.restore(self.session, filepath)
+                    except tf.errors.NotFoundError:
+                        print("Warning: Could not restore model, because no EMA variables have been found.",\
+                              "Use 'restore_ema_variables=False' instead.")
+                else:
+                    print("Restoring variables...")
+                    saver.restore(self.session, filepath)
+                return saver
+                
             if checkpoint_file is None:
                 if recreate:
-                    if restore_ema_variables:
-                        # init all at first to ensure no non-initialized variables
-                        init_op = tf.initialize_all_variables()
-                        self.session.run(init_op)
-                        
-                        # Restore the moving average of the trainable variables for evaluation
-                        variables_to_restore = variable_averages.variables_to_restore()
-                        saver = tf.train.Saver(variables_to_restore)
-                        print("Restoring EMA variables...")
-                        try:
-                            saver.restore(self.session, tmp_name)
-                        except tf.errors.NotFoundError:
-                            print("Warning: Could not restore model, because no EMA variables have been found.",\
-                                  "Use 'restore_ema_variables=False' instead.")
-                    else:
-                        print("Restoring variables...")
-                        saver = tf.train.Saver()
-                        saver.restore(self.session, tmp_name)
+                    saver = tf.train.Saver(var_list=restore_vars)
+                    restore_checkpoint(saver, tmp_name, restore_ema_variables)
                 else:
                     # start session and init all variables
                     print("Initializing variables...")
@@ -363,8 +373,8 @@ class AbstractRuntime(object):
                     assert checkpoint_path is not None, "No latest checkpoint file found."
                 else:
                     checkpoint_path = os.path.join(self.train_dir, checkpoint_file)
-                print("Restoring variables from {}...".format(checkpoint_path))
-                self._saver.restore(self.session, checkpoint_path)
+                print("Selected checkpoint file: {}".format(checkpoint_path))
+                restore_checkpoint(self._saver, checkpoint_path, restore_ema_variables)
 
             # creates coordinatior and queue threads
             self._coord = tf.train.Coordinator()
@@ -557,17 +567,12 @@ class AbstractRuntime(object):
                                 print()
 
                         if do_checkpoints:
-                            if gstep % checkpoint_steps == 0 or this_step == steps:
+                            if gstep % checkpoint_steps == 0 or this_step == steps or \
+                                epochs > 0 and this_step % batches_per_epoch == 0:
                                 # save regular checkpoint
-                                checkpoint_path = os.path.join(self.train_dir, "model.ckpt")
+                                checkpoint_path = os.path.join(self.train_dir, CHECKPOINT_NAME)
                                 self._saver.save(self.session, checkpoint_path,
                                                  global_step=self._global_step)
-
-                            if epochs > 0:
-                                if this_step % batches_per_epoch == 0:
-                                    # save epoch checkpoint
-                                    checkpoint_path = os.path.join(self.train_dir, "ep-{}_model.ckpt".format(epoch))
-                                    self._saver.save(self.session, checkpoint_path, global_step=self._global_step)
 
                 except tf.errors.OutOfRangeError:
                     print("Interrupted: Queue runners are out of range. Epoch limit reached?")
