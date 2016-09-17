@@ -13,7 +13,9 @@ import tensorflow as tf
 from tensorflow.python import control_flow_ops
 import tensortools as tt
 
-CHECKPOINT_NAME = "model.ckpt"
+CHECKPOINT_FILE = "model.ckpt"
+MODEL_PARAMS_FILE = "model.json"
+OPTIMIZER_PARAMS_FILE = "optimizer.json"
 
 LATEST_CHECKPOINT = 'LATEST'
 LOG_LOSSES = 'log_losses'
@@ -139,8 +141,10 @@ class AbstractRuntime(object):
         """
         self._optimizer = optimizer
         
+
     def build(self, is_autoencoder=False, input_shape=None, target_shape=None,
-              checkpoint_file=None, max_checkpoints_to_keep=5, track_ema_variables=True, restore_ema_variables=False,
+              checkpoint_file=None, max_checkpoints_to_keep=5, track_ema_variables=True,
+              restore_ema_variables=False, restore_model_params=False, restore_optimizer_params=False,
               verbose=False):
         """ Builds the model. This must be calles before training, validation, testing or prediction.
             This method can be called a second time to re-create a model. In case the dataset's  the
@@ -176,9 +180,35 @@ class AbstractRuntime(object):
             Indicates whether the original variable values should be restore (default) or its
             created exponential moving averages during training (True).
             It is only used when a model gets restored or recreated.
+        restore_model_params: Boolean, optional
+            Whether to restore the model parameters from the training directory. This will override
+            all parameters of the registered model object.
+        restore_optimizer_params: Boolean, optional
+            Whether to restore the optimizer parameters from the training directory. 
+            This will override all parameters of the registered optimizer object.    
         verbose: Boolean, optional
             Set to True to show additional construction/variable information.
         """
+        assert self._model is not None, "Register a model first."
+        
+        # restore model params
+        if restore_model_params:
+            print("Restoring model parameters...")
+            self._model.load(os.path.join(self.train_dir, MODEL_PARAMS_FILE))
+            if verbose:
+                print()
+                self._model.print_params()
+                print()
+                    
+        # restore optimizer params
+        if restore_optimizer_params:
+            print("Restoring optimizer parameters...")
+            self._optimizer.load(os.path.join(self.train_dir, OPTIMIZER_PARAMS_FILE))
+            if verbose:
+                print()
+                self._optimizer.print_params()
+                print() 
+        
         # take train set as reference for input and target shape
         reference_dataset = self.datasets.train
         if reference_dataset is None:
@@ -199,30 +229,6 @@ class AbstractRuntime(object):
             is_queue_dataset = isinstance(reference_dataset, tt.datasets.base.AbstractQueueDataset)
             input_shape = reference_dataset.input_shape
             target_shape = reference_dataset.target_shape
-        
-        """# create or reuse whole graph
-        if self._graph is None:
-            print("Creating new graph...")
-            self._graph = tf.Graph()
-            reuse_graph = False
-        else:
-            print("Reusing existing graph...")
-            
-            reuse_graph = True
-        
-        with self.graph.as_default():
-            if reuse_graph:
-                # clear previous model-inferences
-                del self._inferences[:]
-                self._inferences = []
-                
-                # use NEW saver to not modify the "max_to_keep order"
-                tmp_saver = tf.train.Saver()
-                tmp_name = "/tmp/tmp-{}.ckpt".format(int(time.time()))
-                tmp_saver.save(self.session, tmp_name)
-                
-                 # close session to ensure all resources are released
-                self.close()"""
                 
         recreate = False
         if self._graph is not None:
@@ -404,7 +410,7 @@ class AbstractRuntime(object):
     def train(self, batch_size, valid_batch_size=None, steps=-1, epochs=-1, train_feeds={}, valid_feeds={},
               on_validate=None, display_steps=25, summary_steps=100, checkpoint_steps=1000,
               validation_steps=1000, extra_validations=[100, 250, 500, 750],
-              do_checkpoints=True, do_summary=True):
+              do_checkpoints=True, do_summary=True, save_model_params=True, save_optimizer_params=True):
         """Train the model.
            Note that either 'steps' or 'epochs' has to be defined as a param.
         Parameters
@@ -450,6 +456,12 @@ class AbstractRuntime(object):
         do_summary: Boolean, optional
             Whether we create summaries or not. Deactivate this for example programs
             where you do not want to fill up your disk.
+        save_model_params: Boolean, optional
+            Whether to save the model params in the training directory or not.
+            This will override an existing file in case of re-training.
+        save_optimizer_params: Boolean, optional
+            Whether to save the optimizer params in the training directory or not.
+            This will override an existing file in case of re-training.
         """
         assert not(steps <= 0 and epochs <= 0), "Either set 'steps' or 'epochs' parameter"
         assert not(steps > 0 and epochs > 0), "Not allowed to set both, 'steps' and 'epochs' parameter"
@@ -462,6 +474,12 @@ class AbstractRuntime(object):
         dataset = self.datasets.train
         if not self._check_dataset_registered(dataset):
             return
+        
+        # save parameters as JSON
+        if save_model_params:
+            self._model.save(os.path.join(self.train_dir, MODEL_PARAMS_FILE))
+        if save_optimizer_params:
+            self._optimizer.save(os.path.join(self.train_dir, OPTIMIZER_PARAMS_FILE))
         
         if valid_batch_size is None:
             # take training batch_size as fallback.
@@ -570,7 +588,7 @@ class AbstractRuntime(object):
                             if gstep % checkpoint_steps == 0 or this_step == steps or \
                                 epochs > 0 and this_step % batches_per_epoch == 0:
                                 # save regular checkpoint
-                                checkpoint_path = os.path.join(self.train_dir, CHECKPOINT_NAME)
+                                checkpoint_path = os.path.join(self.train_dir, CHECKPOINT_FILE)
                                 self._saver.save(self.session, checkpoint_path,
                                                  global_step=self._global_step)
 

@@ -31,7 +31,7 @@ class Optimizer(object):
     """Optimizer class to encapsulate (all) optimizers from its creation.
        This is required to enable delayed-build of the optimizer.
     """
-    def __init__(self, optimizer_name, initial_lr,
+    def __init__(self, optimizer_name=None, initial_lr=0.1,
                  step_interval=sys.maxint, rate=1.0, staircase=True):
         """Creates an optimizer with its default hyperparams.
            Note: Momentum-based optimizers (RMSProp, Momentum, Nesterov) should
@@ -115,6 +115,9 @@ class Optimizer(object):
         ----------
         Tuple (optimizer, learning_rate) of the created optimizer.
         """
+        assert self.name is not None, \
+            "Specify an optimizer name or load() an optimizer from file."
+        
         if self.uses_decay:
             # Decay the learning rate exponentially based on the number of steps
             lr = tf.train.exponential_decay(self.initial_lr,
