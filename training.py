@@ -196,6 +196,7 @@ class Optimizer(object):
             # trim underscore prefix
             return text[text.startswith(prefix) and len(prefix):]
 
+        print(">>> Optimizer:")
         for name, value in params.iteritems():
             print("{:16}  ->  {}".format(trim_prefix(name, '_'), value))
         

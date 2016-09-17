@@ -180,8 +180,9 @@ class AbstractModel(object):
                 return value.__name__.upper()
             return value
 
+        print(">>> Model:")
         for name, value in params.iteritems():
-            print("{:32}  ->  {}".format(trim_prefix(name, '_'), to_string(value)))
+            print("{:16}  ->  {}".format(trim_prefix(name, '_'), to_string(value)))
 
     @property
     def batch_size(self):

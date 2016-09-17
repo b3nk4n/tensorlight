@@ -388,6 +388,7 @@ class AbstractRuntime(object):
                 self._threads = tf.train.start_queue_runners(sess=self.session, coord=self._coord)
                 
             # Model information
+            print()
             tt.core.show_trainable_parameters(verbose)
             
     @abstractmethod
@@ -758,6 +759,16 @@ class AbstractRuntime(object):
         self.session.close()
         self._session = None
         
+    def print_params(self, verbose=False):
+        print()
+        self._model.print_params()
+        print()
+        self._optimizer.print_params()
+        print()
+        with self.graph.as_default():
+            tt.core.show_trainable_parameters(verbose)
+        print()
+        
     @property
     def graph(self):
         """Gets the graph."""
@@ -1051,7 +1062,6 @@ def show_trainable_parameters(verbose=False):
         print("No model-params found.")
         return
     
-    print()
     if verbose:
         print("-" * total_width)
     
@@ -1080,7 +1090,6 @@ def show_trainable_parameters(verbose=False):
     print("=" * total_width)
     print("{:69} | {:8d}".format("TOTAL", total_parameters))
     print("-" * total_width)
-    print()
 
     
 def uninitialized_variables(session, var_list=None):
