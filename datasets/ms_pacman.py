@@ -290,7 +290,7 @@ class MsPacmanValidDataset(MsPacmanBaseDataset):
            https://github.com/dyelax/Adversarial_Video_Generation
     """
     def __init__(self, data_dir, input_seq_length=10, target_seq_length=10,
-                 crop_size=None, repetitions_per_epoche=256, skip_no_change=True,
+                 crop_size=None, repetitions_per_epoche=256, skip_less_movement=True,
                  random_flip=True):
         """Creates a MsPacman dataset instance.
         Parameters
