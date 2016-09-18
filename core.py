@@ -345,7 +345,7 @@ class AbstractRuntime(object):
             self._saver = tf.train.Saver(var_list=restore_vars,
                                          max_to_keep=max_checkpoints_to_keep)
             
-            def restore_checkpoint(saver, filepath, restore_ema):
+            def perform_restore(saver, filepath, restore_ema):
                 """Restores a checkpoint, either the raw variables or the EMA values."""
                 if restore_ema:
                     # Init all at first to ensure no non-initialized variables.
@@ -367,7 +367,7 @@ class AbstractRuntime(object):
             if restore_checkpoint is None:
                 if recreate:
                     saver = tf.train.Saver(var_list=restore_vars)
-                    restore_checkpoint(saver, tmp_name, restore_ema_variables)
+                    perform_restore(saver, tmp_name, restore_ema_variables)
                 else:
                     # start session and init all variables
                     print("Initializing variables...")
@@ -377,13 +377,13 @@ class AbstractRuntime(object):
                 if restore_checkpoint == LATEST_CHECKPOINT:
                     checkpoint_path = tf.train.latest_checkpoint(self.train_dir)
                     assert checkpoint_path is not None, "No latest checkpoint file found."
-                else if isinstance(restore_checkpoint, int):
+                elif isinstance(restore_checkpoint, int):
                     checkpoint_path = os.path.join(self.train_dir,
                                                    "{}-{}".format(CHECKPOINT_FILE, restore_checkpoint))
-                else
+                else:
                     checkpoint_path = os.path.join(self.train_dir, restore_checkpoint)
                 print("Selected checkpoint file: {}".format(checkpoint_path))
-                restore_checkpoint(self._saver, checkpoint_path, restore_ema_variables)
+                perform_restore(self._saver, checkpoint_path, restore_ema_variables)
 
             # creates coordinatior and queue threads
             self._coord = tf.train.Coordinator()
@@ -762,15 +762,24 @@ class AbstractRuntime(object):
         self.session.close()
         self._session = None
         
-    def print_params(self, verbose=False):
+    def list_params(self, verbose=False):
+        """Lists all internal parameters."""
         print()
         self._model.print_params()
         print()
         self._optimizer.print_params()
         print()
-        with self.graph.as_default():
-            tt.core.show_trainable_parameters(verbose)
-        print()
+        if self.graph is not None:
+            with self.graph.as_default():
+                tt.core.show_trainable_parameters(verbose)
+            print()
+         
+    def list_checkpoints(self):
+        """Lists all checkpoint file of the used directory"""
+        checkpointslike = tt.utils.path.get_filenames(self.train_dir, "*.ckpt*")
+        checkpoints = [cp for cp in checkpointslike if not cp.endswith(".meta")]
+        checkpoints.sort()
+        return checkpoints
         
     @property
     def graph(self):
