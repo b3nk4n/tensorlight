@@ -58,7 +58,7 @@ class MsPacmanBaseDataset(base.AbstractDataset):
     __metaclass__ = ABCMeta
     
     def __init__(self, subdir, index_range, data_dir, input_seq_length=8, target_seq_length=8,
-                 crop_size=None, repetitions_per_epoche=256, skip_no_change=True,
+                 crop_size=None, repetitions_per_epoche=256, skip_less_movement=True,
                  random_flip=True):
         """Creates a MsPacman dataset instance.
         Parameters
@@ -82,9 +82,8 @@ class MsPacmanBaseDataset(base.AbstractDataset):
             we only take a small part of the image. That's why it is important to reuse these frame
             sequences multiple times, as we use a random part each time. If we would not, Testing would
             only require about two batches.
-        skip_no_change: Boolean, optional
-            Skip frame sequences where there is no change in the inputs
-            at all.
+        skip_less_movement: Boolean, optional
+            Skip frame sequences where there is too less movement in the inputs at all.
         random_flip: Boolean, optional
             Whether we do random horizontal flip or not, as the game field is symmetric.
             In case cropping is active, we do not flip the frame in case the score-board
@@ -119,7 +118,7 @@ class MsPacmanBaseDataset(base.AbstractDataset):
         
         self._crop_size = crop_size
         self._repetitions_per_epoche = repetitions_per_epoche
-        self._skip_no_change = skip_no_change
+        self._skip_less_movement = skip_less_movement
         self._random_flip = random_flip
             
         # virtually extend the dataset size by using these
@@ -200,8 +199,7 @@ class MsPacmanBaseDataset(base.AbstractDataset):
                         # undo flip in case the HUD is visible
                         do_flip = False
                 
-                # pre-load input-frames fist. Because we do not need to process all
-                # target frames in case we have to to a re-try due to "no-change" of pixels
+                # process inputs
                 for i in xrange(self._input_seq_length):
                     frame = input_frames[i]
                     
@@ -213,8 +211,9 @@ class MsPacmanBaseDataset(base.AbstractDataset):
                     # add to batch
                     batch_inputs[batch, i] = frame[:,::-1,:] if do_flip else frame
                 
-                # do lazy check? (1st, 5th, last?)
-                if self._skip_no_change and retry != MAX_TRIES - 1:
+                # when we use cropping, check if the movement is ok
+                if self._crop_size is not None and \
+                   self._skip_less_movement and retry != MAX_TRIES - 1:
                     # check for at least 1-pixel changel in the input-frames
                     if not enough_l2_movement(batch_inputs[batch]):
                         continue
@@ -255,7 +254,7 @@ class MsPacmanTrainDataset(MsPacmanBaseDataset):
            https://github.com/dyelax/Adversarial_Video_Generation
     """
     def __init__(self, data_dir, input_seq_length=10, target_seq_length=10,
-                 crop_size=None, repetitions_per_epoche=256, skip_no_change=True,
+                 crop_size=None, repetitions_per_epoche=256, skip_less_movement=True,
                  random_flip=True):
         """Creates a MsPacman dataset instance.
         Parameters
@@ -274,16 +273,15 @@ class MsPacmanTrainDataset(MsPacmanBaseDataset):
             we only take a small part of the image. That's why it is important to reuse these frame
             sequences multiple times, as we use a random part each time. If we would not, Testing would
             only require about two batches.
-        skip_no_change: Boolean, optional
-            Skip frame sequences where there is no change in the inputs
-            at all.
+        skip_less_movement: Boolean, optional
+            Skip frame sequences where there is less change in the inputs at all.
         random_flip: Boolean, optional
             Whether we do random horizontal flip or not, as the game field is symmetric.
             In case cropping is active, we do not flip the frame in case the score-board
             at the bottom is visible.
         """
         super(MsPacmanTrainDataset, self).__init__(SUBDIR_TRAIN, (0, 465), data_dir, input_seq_length, target_seq_length,
-                                                   crop_size, repetitions_per_epoche, skip_no_change, random_flip)
+                                                   crop_size, repetitions_per_epoche, skip_less_movement, random_flip)
     
     
 class MsPacmanValidDataset(MsPacmanBaseDataset):
@@ -311,16 +309,15 @@ class MsPacmanValidDataset(MsPacmanBaseDataset):
             we only take a small part of the image. That's why it is important to reuse these frame
             sequences multiple times, as we use a random part each time. If we would not, Testing would
             only require about two batches.
-        skip_no_change: Boolean, optional
-            Skip frame sequences where there is no change in the inputs
-            at all.
+        skip_less_movement: Boolean, optional
+            Skip frame sequences where there is less change in the inputs at all.
         random_flip: Boolean, optional
             Whether we do random horizontal flip or not, as the game field is symmetric.
             In case cropping is active, we do not flip the frame in case the score-board
             at the bottom is visible.
         """
         super(MsPacmanValidDataset, self).__init__(SUBDIR_TRAIN, (466 ,516), data_dir, input_seq_length, target_seq_length,
-                                                   crop_size, repetitions_per_epoche, skip_no_change, random_flip)
+                                                   crop_size, repetitions_per_epoche, skip_less_movement, random_flip)
         
 
 class MsPacmanTestDataset(MsPacmanBaseDataset):
@@ -329,7 +326,7 @@ class MsPacmanTestDataset(MsPacmanBaseDataset):
            https://github.com/dyelax/Adversarial_Video_Generation
     """
     def __init__(self, data_dir, input_seq_length=10, target_seq_length=10,
-                 crop_size=None, repetitions_per_epoche=256, skip_no_change=True,
+                 crop_size=None, repetitions_per_epoche=256, skip_less_movement=True,
                  random_flip=True):
         """Creates a MsPacman dataset instance.
         Parameters
@@ -348,13 +345,12 @@ class MsPacmanTestDataset(MsPacmanBaseDataset):
             we only take a small part of the image. That's why it is important to reuse these frame
             sequences multiple times, as we use a random part each time. If we would not, Testing would
             only require about two batches.
-        skip_no_change: Boolean, optional
-            Skip frame sequences where there is no change in the inputs
-            at all.
+        skip_less_movement: Boolean, optional
+            Skip frame sequences where there is less change in the inputs at all.
         random_flip: Boolean, optional
             Whether we do random horizontal flip or not, as the game field is symmetric.
             In case cropping is active, we do not flip the frame in case the score-board
             at the bottom is visible.
         """
         super(MsPacmanTestDataset, self).__init__(SUBDIR_TEST, None, data_dir, input_seq_length, target_seq_length,
-                                                  crop_size, repetitions_per_epoche, skip_no_change, random_flip)
+                                                  crop_size, repetitions_per_epoche, skip_less_movement, random_flip)
