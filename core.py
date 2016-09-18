@@ -143,7 +143,7 @@ class AbstractRuntime(object):
         
 
     def build(self, is_autoencoder=False, input_shape=None, target_shape=None,
-              checkpoint_file=None, max_checkpoints_to_keep=5, track_ema_variables=True,
+              max_checkpoints_to_keep=5, track_ema_variables=True, restore_checkpoint=None,
               restore_ema_variables=False, restore_model_params=False, restore_optimizer_params=False,
               verbose=False):
         """ Builds the model. This must be calles before training, validation, testing or prediction.
@@ -163,8 +163,8 @@ class AbstractRuntime(object):
             as well as the ground truth (GT) shape.
             Only used when no dataset is registered, because a dataset already defines the shape.
             This can be useful when to want to do predictions on a different shape that the model was trained.
-        checkpoint_file: str, optional
-            The filename of the checkpoint file withing 'train_dir' to restore.
+        restore_checkpoint: str or int, optional
+            The filename of the checkpoint file or step-number within 'train_dir' to restore.
             Use 'LATEST' or 'tt.core.LATEST_CHECKPOINT' to restore the lastest file.
         max_checkpoints_to_keep: int, optional
             The number of last checkpoints to keep. Defaults to 5.
@@ -239,7 +239,7 @@ class AbstractRuntime(object):
                 del self._inferences[:]
                 self._inferences = []
             
-                if checkpoint_file is None:
+                if restore_checkpoint is None:
                     # use new saver to not modify 'max_to_keep' of global saver
                     saver = tf.train.Saver()
                     tmp_name = "/tmp/tmp-{}.ckpt".format(int(time.time()))
@@ -364,7 +364,7 @@ class AbstractRuntime(object):
                     saver.restore(self.session, filepath)
                 return saver
                 
-            if checkpoint_file is None:
+            if restore_checkpoint is None:
                 if recreate:
                     saver = tf.train.Saver(var_list=restore_vars)
                     restore_checkpoint(saver, tmp_name, restore_ema_variables)
@@ -374,11 +374,14 @@ class AbstractRuntime(object):
                     init_op = tf.initialize_all_variables()
                     self.session.run(init_op)
             else:
-                if checkpoint_file == LATEST_CHECKPOINT:
+                if restore_checkpoint == LATEST_CHECKPOINT:
                     checkpoint_path = tf.train.latest_checkpoint(self.train_dir)
                     assert checkpoint_path is not None, "No latest checkpoint file found."
-                else:
-                    checkpoint_path = os.path.join(self.train_dir, checkpoint_file)
+                else if isinstance(restore_checkpoint, int):
+                    checkpoint_path = os.path.join(self.train_dir,
+                                                   "{}-{}".format(CHECKPOINT_FILE, restore_checkpoint))
+                else
+                    checkpoint_path = os.path.join(self.train_dir, restore_checkpoint)
                 print("Selected checkpoint file: {}".format(checkpoint_path))
                 restore_checkpoint(self._saver, checkpoint_path, restore_ema_variables)
 
