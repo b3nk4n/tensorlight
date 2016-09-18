@@ -3,7 +3,7 @@ import tensorflow as tf
 import tensortools as tt
 
 
-def random_distortion(image, contrast_lower=0.2, contrast_upper=1.8, brightness_max_delta=0.2, seed=None):
+def random_distortion(image, contrast_lower=0.8, contrast_upper=1.2, brightness_max_delta=0.2, seed=None):
     """Distorts a single image for data augmentation, by applying random horizontal flipping,
        contrast and brightness.
     Parameters
@@ -34,16 +34,20 @@ def random_distortion(image, contrast_lower=0.2, contrast_upper=1.8, brightness_
         image = tf.image.random_brightness(image,
                                            max_delta=brightness_max_delta,
                                            seed=seed + 2 if seed else None)
-    return image
+        
+        # limit to scale [0, 1]
+        image = tf.minimum(image, 1.0)
+        image = tf.maximum(image, 0.0)
+        return image
 
 
-def equal_random_distortion(images, contrast_lower=0.2, contrast_upper=1.8, brightness_max_delta=0.2, seed=None):
+def equal_random_distortion(images, contrast_lower=0.8, contrast_upper=1.2, brightness_max_delta=0.2, seed=None):
     """Distorts a list of images equally for data augmentation, by applying random horizontal flipping,
        contrast and brightness.
     Parameters
     ----------
     images: Tensor list with shape list([height, width, channels])
-        The images to apply an equal distortion to.
+        The images to apply an equal distortion to in value scale [0, 1].
     contrast_lower: float, optional
         The lower contrast level, relative to the normal contrast of 1.0.
     contrast_upper: float, optional
@@ -80,10 +84,16 @@ def equal_random_distortion(images, contrast_lower=0.2, contrast_upper=1.8, brig
                                   seed=seed + 2 if seed else None)
 
         for i in xrange(len(images)):
-            images[i] = tf.reverse(images[i], mirror)
-            images[i] = tf.image.adjust_contrast(images[i], contrast_factor)
-            images[i] = tf.image.adjust_brightness(images[i], delta)
-    return images
+            adjusted_image = tf.reverse(images[i], mirror)
+            adjusted_image = tf.image.adjust_contrast(adjusted_image, contrast_factor)
+            adjusted_image = tf.image.adjust_brightness(adjusted_image, delta)
+            
+            # limit to scale [0, 1]
+            adjusted_image = tf.minimum(adjusted_image, 1.0)
+            adjusted_image = tf.maximum(adjusted_image, 0.0)
+            
+            images[i] = adjusted_image
+        return images
 
 
 def _fspecial_gauss(size, sigma):
