@@ -27,7 +27,7 @@ SUBDIR_TEST = "Test"
 
 # limit the retires in case we use no-change-skipping
 # to ensure we do not end up in an endless-loop
-MAX_TRIES = 50
+MAX_TRIES = 100
 
 MIN_L2_DIFF_PER_FRAME = 25.0 # of image value range [-1, 1]
 
@@ -35,6 +35,7 @@ def enough_l2_movement(frames):
     """Checks if the frames array has enough movement to filter
        static image examples.
     """
+    #dived by 127.5 to simulate scale [-1, 1] using image with scale [0, 255]
     frames_scaled = frames / 127.5
     diff = 0
     n = frames_scaled.shape[0]
@@ -214,7 +215,6 @@ class MsPacmanBaseDataset(base.AbstractDataset):
                 # when we use cropping, check if the movement is ok
                 if self._crop_size is not None and \
                    self._skip_less_movement and retry != MAX_TRIES - 1:
-                    # check for at least 1-pixel changel in the input-frames
                     if not enough_l2_movement(batch_inputs[batch]):
                         continue
                         

@@ -18,7 +18,7 @@ FRAME_WIDTH = 320
 FRAME_CHANNELS = 3
 
 MAX_TRIES = 100
-MIN_L2_DIFF_PER_FRAME = 12.5 # of image value range [0, 1]
+MIN_L2_DIFF_PER_FRAME = 25.0 # of image value range [-1, 1]
 
 
 class UCF101TrainDataset(base.AbstractQueueDataset):
@@ -30,7 +30,8 @@ class UCF101TrainDataset(base.AbstractQueueDataset):
     def __init__(self, data_dir, input_seq_length=5, target_seq_length=5,
                  image_scale_factor=1.0, gray_scale=False,
                  min_examples_in_queue=1024, queue_capacitiy=2048, num_threads=16,
-                 serialized_sequence_length=30, do_distortion=True, crop_size=None):
+                 serialized_sequence_length=30, do_distortion=True, crop_size=None,
+                 skip_less_movement=True):
         """Creates a training dataset instance that uses a queue.
         Parameters
         ----------
@@ -58,6 +59,8 @@ class UCF101TrainDataset(base.AbstractQueueDataset):
             Can have a very bad influence on performance.
         crop_size: tuple(int) or None, optional
             The size (height, width) to randomly crop the images.
+        skip_less_movement: Boolean, optional
+            Skip frame sequences where there is too less movement in the inputs at all,
         """
         image_size = [int(FRAME_HEIGHT * image_scale_factor),
                       int(FRAME_WIDTH * image_scale_factor),
@@ -71,6 +74,7 @@ class UCF101TrainDataset(base.AbstractQueueDataset):
         self._serialized_sequence_length = serialized_sequence_length
         self._do_distortion = do_distortion
         self._crop_size = crop_size
+        self._skip_less_movement = skip_less_movement
         self._data_img_size = image_size
         
         rar_path = tt.utils.data.download(UCF101_URL, data_dir)
@@ -190,7 +194,8 @@ class UCF101TrainDataset(base.AbstractQueueDataset):
                         # loop over inputs only
                         diff = 0.0
                         for t in xrange(input_seq_length - 1):
-                            sse = tf.square(tf.sub(cropped[t + 1,:,:,:], cropped[t,:,:,:]))
+                            # multiply difference by to to simulate scale [-1, 1] by using [0, 1]
+                            sse = tf.square(tf.sub(cropped[t + 1,:,:,:], cropped[t,:,:,:]) * 2)
                             diff += tf.reduce_sum(sse)
                         limit = tf.convert_to_tensor(MIN_L2_DIFF_PER_FRAME * input_seq_length, tf.float32)
                         not_enough_movement = tf.less(diff, limit, name="min_motion_check")
@@ -202,20 +207,23 @@ class UCF101TrainDataset(base.AbstractQueueDataset):
                                                  self._crop_size[0],
                                                  self._crop_size[1],
                                                  self.input_shape[3]])
-                    print(first_crop.get_shape())
+
                     first_crop.set_shape((total_seq_length,
                                                self._crop_size[0],
                                                self._crop_size[1],
                                                self.input_shape[3]))
 
-                    counter = tf.Variable(MAX_TRIES, dtype=tf.int32, trainable=False, name="loop_counter")
-                    _, _, seq_data_cropped = tf.while_loop(condition, body, [counter, seq_data, first_crop])
-                    seq_data = seq_data_cropped
-                    # make shape fully-defined after loop
-                    seq_data.set_shape((total_seq_length,
-                                               self._crop_size[0],
-                                               self._crop_size[1],
-                                               self.input_shape[3]))
+                    if self._skip_less_movement:
+                        counter = tf.Variable(MAX_TRIES, dtype=tf.int32, trainable=False, name="loop_counter")
+                        _, _, seq_data_cropped = tf.while_loop(condition, body, [counter, seq_data, first_crop])
+                        seq_data = seq_data_cropped
+                        # make shape fully-defined after loop
+                        seq_data.set_shape((total_seq_length,
+                                                   self._crop_size[0],
+                                                   self._crop_size[1],
+                                                   self.input_shape[3]))
+                    else:
+                        seq_data = first_crop
                     
             if self._do_distortion:
                 with tf.name_scope('distortion'):
@@ -243,8 +251,24 @@ class UCF101TrainDataset(base.AbstractQueueDataset):
     def do_distortion(self):
         """Gets whether distorion is activated."""
         return self._do_distortion
+
     
-    
+def enough_l2_movement(frames):
+    """Checks if the frames array has enough movement to filter
+       static image examples.
+    """
+    #dived by 127.5 to simulate scale [-1, 1] using image with scale [0, 255]
+    frames_scaled = frames / 127.5
+    diff = 0
+    n = frames_scaled.shape[0]
+    for i in reversed(xrange(n - 1)):
+        diff += np.sum(np.square(frames_scaled[i] - frames_scaled[i + 1]))
+        
+        if diff >= MIN_L2_DIFF_PER_FRAME * n:
+            return True
+    return False
+
+
 class UCF101BaseEvaluationDataset(base.AbstractDataset):    
     """UCF-101 dataset base class for evaluation, which creates a bunch of
        binary frame sequences.
@@ -259,7 +283,7 @@ class UCF101BaseEvaluationDataset(base.AbstractDataset):
     def __init__(self, data_dir, subdir, input_seq_length=5, target_seq_length=5,
                  image_scale_factor=1.0, gray_scale=False,
                  serialized_sequence_length=30, double_with_flipped=False,
-                 crop_size=None):
+                 crop_size=None, skip_less_movement=True):
         """Creates a dataset instance.
         Parameters
         ----------
@@ -283,6 +307,8 @@ class UCF101BaseEvaluationDataset(base.AbstractDataset):
             images as well.
         crop_size: tuple(int) or None, optional
             The size (height, width) to randomly crop the images.
+        skip_less_movement: Boolean, optional
+            Skip frame sequences where there is too less movement in the inputs at all.
         """
         image_size = [int(FRAME_HEIGHT * image_scale_factor),
                       int(FRAME_WIDTH * image_scale_factor),
@@ -295,6 +321,7 @@ class UCF101BaseEvaluationDataset(base.AbstractDataset):
         self._serialized_sequence_length = serialized_sequence_length
         self._double_with_flipped = double_with_flipped
         self._crop_size = crop_size
+        self._skip_less_movement = skip_less_movement
         self._data_img_size = image_size
         
         rar_path = tt.utils.data.download(UCF101_URL, data_dir)
@@ -374,14 +401,10 @@ class UCF101BaseEvaluationDataset(base.AbstractDataset):
         # get next filenames
         file_names = [self._file_name_list[i] for i in ind_range]
         
-        if self._crop_size is not None:
-            # do equal random crop
-            offset_x = random.randint(0, self._data_img_size[1] - self._crop_size[1])
-            offset_y = random.randint(0, self._data_img_size[0] - self._crop_size[0])
-        
         # load serialized sequences
         seq_input_list = []
         seq_target_list = []
+        
         for i, f in enumerate(file_names):
             virtual_row = self._row + i
                                        
@@ -396,8 +419,23 @@ class UCF101BaseEvaluationDataset(base.AbstractDataset):
             current = current[start_t:(start_t + total_length)]
             
             if self._crop_size is not None:
-                current = current[:, offset_y:(offset_y + self._crop_size[0]),
-                                  offset_x:(offset_x + self._crop_size[1]),:]
+                for retry in xrange(MAX_TRIES):
+                    # do equal random crop
+                    offset_x = random.randint(0, self._data_img_size[1] - self._crop_size[1])
+                    offset_y = random.randint(0, self._data_img_size[0] - self._crop_size[0])
+
+                    crop = current[:, offset_y:(offset_y + self._crop_size[0]),
+                                   offset_x:(offset_x + self._crop_size[1]),:]
+
+                    if self._skip_less_movement:
+                        current_inputs = crop[:inputs_length]
+                        if not enough_l2_movement(current_inputs):
+                            continue
+                    
+                    # break to stop retrying
+                    break
+                
+                current = crop
 
             if self.double_with_flipped:
                 # do flipping: every even frame is 1st part, and every odd frame in 2nd part
@@ -452,7 +490,7 @@ class UCF101ValidDataset(UCF101BaseEvaluationDataset):
     def __init__(self, data_dir, input_seq_length=5, target_seq_length=5,
                  image_scale_factor=1.0, gray_scale=False,
                  serialized_sequence_length=30, double_with_flipped=False,
-                 crop_size=None):
+                 crop_size=None, skip_less_movement=True):
         """Creates a validation dataset instance.
         Parameters
         ----------
@@ -474,11 +512,13 @@ class UCF101ValidDataset(UCF101BaseEvaluationDataset):
             images as well.
         crop_size: tuple(int) or None, optional
             The size (height, width) to randomly crop the images.
+        skip_less_movement: Boolean, optional
+            Skip frame sequences where there is too less movement in the inputs at all.
         """
         super(UCF101ValidDataset, self).__init__(data_dir, tt.utils.data.SUBDIR_VALID,
                                                  input_seq_length, target_seq_length,
                                                  image_scale_factor, gray_scale, serialized_sequence_length,
-                                                 double_with_flipped, crop_size)
+                                                 double_with_flipped, crop_size, skip_less_movement)
         
         
 class UCF101TestDataset(UCF101BaseEvaluationDataset):    
@@ -494,7 +534,7 @@ class UCF101TestDataset(UCF101BaseEvaluationDataset):
     def __init__(self, data_dir, input_seq_length=5, target_seq_length=5,
                  image_scale_factor=1.0, gray_scale=False,
                  serialized_sequence_length=30, double_with_flipped=False,
-                 crop_size=None):
+                 crop_size=None, skip_less_movement=True):
         """Creates a validation dataset instance.
         Parameters
         ----------
@@ -516,8 +556,10 @@ class UCF101TestDataset(UCF101BaseEvaluationDataset):
             images as well.
         crop_size: tuple(int) or None, optional
             The size (height, width) to randomly crop the images.
+        skip_less_movement: Boolean, optional
+            Skip frame sequences where there is too less movement in the inputs at all.
         """
         super(UCF101TestDataset, self).__init__(data_dir, tt.utils.data.SUBDIR_TEST,
                                                 input_seq_length, target_seq_length,
                                                 image_scale_factor, gray_scale, serialized_sequence_length, 
-                                                double_with_flipped, crop_size)
+                                                double_with_flipped, crop_size, skip_less_movement)
