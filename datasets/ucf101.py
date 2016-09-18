@@ -17,6 +17,9 @@ FRAME_HEIGHT = 240
 FRAME_WIDTH = 320
 FRAME_CHANNELS = 3
 
+MAX_TRIES = 100
+MIN_L2_DIFF_PER_FRAME = 12.5 # of image value range [0, 1]
+
 
 class UCF101TrainDataset(base.AbstractQueueDataset):
     """UCF-101 dataset that creates a bunch of binary frame sequences
@@ -155,20 +158,65 @@ class UCF101TrainDataset(base.AbstractQueueDataset):
             seq_record = self._read_record(filename_queue)  
 
             # convert to float of scale [0.0, 1.0]
-            seq_data = tf.cast(seq_record.data, tf.float32) # FIXME redundant! In _read_record() end
-            seq_data = seq_data / 255
+            seq_data = tf.cast(seq_record.data, tf.float32)
+            seq_data = seq_data / 255.0
     
             input_seq_length = self.input_shape[0]
             target_seq_length = self.target_shape[0]
             total_seq_length = input_seq_length + target_seq_length
             
-            if self._crop_size is not None:
+            """if self._crop_size is not None:
                 with tf.name_scope('random_crop'):
                     seq_data = tf.random_crop(seq_data,
                                               [total_seq_length,
                                                self._crop_size[0],
                                                self._crop_size[1],
-                                               self.input_shape[3]])
+                                               self.input_shape[3]])"""
+            
+            if self._crop_size is not None: 
+                with tf.name_scope('random_crop'):
+                    def body(c, sdata, cropped):
+                        cropped =  tf.random_crop(sdata,
+                                                [total_seq_length,
+                                                 self._crop_size[0],
+                                                 self._crop_size[1],
+                                                 self.input_shape[3]])
+                        c = tf.maximum(0, c - 1)
+                        return c, sdata, cropped
+                
+                    def condition(c, sdata, cropped):
+                        zero = tf.constant(0, dtype=tf.int32)
+                        not_max_retries = tf.not_equal(zero, c)
+                        # loop over inputs only
+                        diff = 0.0
+                        for t in xrange(input_seq_length - 1):
+                            sse = tf.square(tf.sub(cropped[t + 1,:,:,:], cropped[t,:,:,:]))
+                            diff += tf.reduce_sum(sse)
+                        limit = tf.convert_to_tensor(MIN_L2_DIFF_PER_FRAME * input_seq_length, tf.float32)
+                        not_enough_movement = tf.less(diff, limit, name="min_motion_check")
+                        return tf.logical_and(not_max_retries, not_enough_movement)
+                    
+                    # crop until we finde some movement
+                    first_crop = tf.random_crop(seq_data,
+                                                [total_seq_length,
+                                                 self._crop_size[0],
+                                                 self._crop_size[1],
+                                                 self.input_shape[3]])
+                    print(first_crop.get_shape())
+                    first_crop.set_shape((total_seq_length,
+                                               self._crop_size[0],
+                                               self._crop_size[1],
+                                               self.input_shape[3]))
+
+                    counter = tf.Variable(MAX_TRIES, dtype=tf.int32, trainable=False, name="loop_counter")
+                    _, _, seq_data_cropped = tf.while_loop(condition, body, [counter, seq_data, first_crop])
+                    seq_data = seq_data_cropped
+                    # make shape fully-defined after loop
+                    seq_data.set_shape((total_seq_length,
+                                               self._crop_size[0],
+                                               self._crop_size[1],
+                                               self.input_shape[3]))
+                    
             if self._do_distortion:
                 with tf.name_scope('distortion'):
                     images_to_distort = tf.unpack(seq_data)
@@ -180,10 +228,11 @@ class UCF101TrainDataset(base.AbstractQueueDataset):
                 sequence_inputs = seq_data[0:input_seq_length,:,:,:]
                 sequence_targets = seq_data[input_seq_length:,:,:,:]
 
-        return tt.inputs.generate_batch(sequence_inputs, sequence_targets,
+        batchx, batchy = tt.inputs.generate_batch(sequence_inputs, sequence_targets,
                                         batch_size,
                                         self._min_examples_in_queue, self._queue_capacitiy,
                                         shuffle=True, num_threads=self._num_threads)
+        return batchx, batchy
 
     @property
     def serialized_sequence_length(self):
