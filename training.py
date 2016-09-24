@@ -15,17 +15,6 @@ ADAGRAD = 'adagrad'
 MOMENTUM = 'momentum'
 NESTEROV = 'nesterov'
 
-DecayTuple = collections.namedtuple("D", ("step_interval",
-                                              "rate",
-                                              "staircase"))
-HyperparamsTuple = collections.namedtuple("H", ("rho",
-                                                "eps",
-                                                "init_accu_val",
-                                                "beta1",
-                                                "beta2",
-                                                "decay",
-                                                "momentum"))
-
 
 class Optimizer(object):
     """Optimizer class to encapsulate (all) optimizers from its creation.
@@ -58,12 +47,12 @@ class Optimizer(object):
         self._initial_lr = initial_lr
         
         # set decay
-        self._decay = DecayTuple(step_interval = step_interval,
-                                 rate = rate,
-                                 staircase = staircase)
+        self._decay = {"step_interval": step_interval,
+                       "rate": rate,
+                       "staircase": staircase}
         
         # set default hyper-params
-        self._hyper = None
+        self._hyper = {}
         self.set_hyperparams()
         
     def set_hyperparams(self, eps=1e-8, beta1=0.9, beta2=0.999, momentum=0.0,
@@ -96,13 +85,13 @@ class Optimizer(object):
         assert rho >= 0, "Rho must be >= 0."
         assert init_accu_val >= 0, "Accumulator value must be >= 0."
         
-        self._hyper = HyperparamsTuple(rho = rho,
-                                       eps = eps,
-                                       init_accu_val = init_accu_val,
-                                       beta1 = beta1,
-                                       beta2 = beta2,
-                                       decay = decay,
-                                       momentum = momentum)
+        self._hyper = {"rho": rho,
+                       "eps": eps,
+                       "init_accu_val": init_accu_val,
+                       "beta1": beta1,
+                       "beta2": beta2,
+                       "decay": decay,
+                       "momentum": momentum}
         
     def build(self, global_step):
         """Actually builds the optimizer including the learning rate decay
@@ -122,9 +111,9 @@ class Optimizer(object):
             # Decay the learning rate exponentially based on the number of steps
             lr = tf.train.exponential_decay(self.initial_lr,
                                             global_step,
-                                            self.decay.step_interval,
-                                            self.decay.rate,
-                                            staircase=self.decay.staircase)
+                                            self.decay["step_interval"],
+                                            self.decay["rate"],
+                                            staircase=self.decay["staircase"])
         else:
             lr = self.initial_lr
         
@@ -132,28 +121,28 @@ class Optimizer(object):
             opt = tf.train.GradientDescentOptimizer(lr)
         elif self.name == ADAM:
             opt = tf.train.AdamOptimizer(lr,
-                                         beta1=self._hyper.beta1,
-                                         beta2=self._hyper.beta2,
-                                         epsilon=self._hyper.eps)
+                                         beta1=self._hyper["beta1"],
+                                         beta2=self._hyper["beta2"],
+                                         epsilon=self._hyper["eps"])
         elif self.name == RMSPROP:
             opt = tf.train.RMSPropOptimizer(lr,
-                                            decay=self._hyper.decay,
-                                            momentum=self._hyper.momentum,
-                                            epsilon=self._hyper.eps)
+                                            decay=self._hyper["decay"],
+                                            momentum=self._hyper["momentum"],
+                                            epsilon=self._hyper["eps"])
         elif self.name == ADADELTA:
             opt = tf.train.AdadeltaOptimizer(lr,
-                                             rho=self._hyper.rho,
-                                             epsilon=self._hyper.eps)
+                                             rho=self._hyper["rho"],
+                                             epsilon=self._hyper["eps"])
         elif self.name == ADAGRAD:
             opt = tf.train.AdagradOptimizer(lr,
-                                            init_accu_val=self._hyper.init_accu_val)
+                                            init_accu_val=self._hyper["init_accu_val"])
         elif self.name == MOMENTUM:
             opt = tf.train.MomentumOptimizer(lr,
-                                             momentum=self._hyper.momentum,
+                                             momentum=self._hyper["momentum"],
                                              use_nesterov=False)
         elif self.name == NESTEROV:
             opt = tf.train.MomentumOptimizer(lr,
-                                             momentum=self._hyper.momentum,
+                                             momentum=self._hyper["momentum"],
                                              use_nesterov=True)
         else:
             raise ValueError("Unknown optimizer. Contributors welcome...")
@@ -218,7 +207,8 @@ class Optimizer(object):
     @property
     def uses_decay(self):
         """Indicates whether (exponential) decay is used or not."""
-        return False if self.decay.step_interval == sys.maxint or self.decay.rate == 1 else True
+        return False if self.decay["step_interval"] == sys.maxint or \
+                        self.decay["rate"] == 1 else True
     
     @property
     def hyperparams(self):
