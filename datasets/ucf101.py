@@ -283,7 +283,7 @@ class UCF101BaseEvaluationDataset(base.AbstractDataset):
     def __init__(self, data_dir, subdir, input_seq_length=5, target_seq_length=5,
                  image_scale_factor=1.0, gray_scale=False,
                  serialized_sequence_length=30, double_with_flipped=False,
-                 crop_size=None, skip_less_movement=True):
+                 crop_size=None, repetitions_per_epoche=4, skip_less_movement=True):
         """Creates a dataset instance.
         Parameters
         ----------
@@ -307,6 +307,11 @@ class UCF101BaseEvaluationDataset(base.AbstractDataset):
             images as well.
         crop_size: tuple(int) or None, optional
             The size (height, width) to randomly crop the images.
+        repetitions_per_epoche: int, optioal
+            Virtually increase the dataset size by a factor. We useually take only a small portion
+            of the frame sequence. And in case of random cropping, we only take a small part of the image. 
+            That's why it is important to reuse these frame sequences multiple times, as we use a random
+            part each time. If we would not, Testing could vary each evaluation a lot.
         skip_less_movement: Boolean, optional
             Skip frame sequences where there is too less movement in the inputs at all.
         """
@@ -343,6 +348,7 @@ class UCF101BaseEvaluationDataset(base.AbstractDataset):
         
         # even if the dataset size is doubled, use the original
         # size for the indices list to reduce its size...
+        self.real_dataset_size = dataset_size
         self._indices = range(dataset_size)
         self._row = 0  # Note: if 'double_with_flipped' is active,
                        #       the row-index overflows the (internal) dataset size
@@ -350,6 +356,7 @@ class UCF101BaseEvaluationDataset(base.AbstractDataset):
         # ...but for the outside, fake to have to doubled size.
         if double_with_flipped:
             dataset_size *= 2
+        dataset_size *= repetitions_per_epoche
         
         if crop_size is None:
             input_shape = [input_seq_length, image_size[0], image_size[1], image_size[2]]
@@ -382,15 +389,16 @@ class UCF101BaseEvaluationDataset(base.AbstractDataset):
     @tt.utils.attr.override
     def get_batch(self, batch_size):
         fake_size = self.size
-        data_size = self.size // 2 if self.double_with_flipped else self.size
+        data_size = self.real_dataset_size
         
         if self._row + batch_size >= fake_size:
             self.reset()
-            
+        
+        # we interate through the list a couple of times, due to double_with_flipped
+        # and repetitions_per_epoche -> use modulo
         start = self._row % data_size
         end = (start + batch_size) % data_size
         if start > end:
-            # Note: this case is only possible when 'double_with_flipped' is active
             ind_range = self._indices[start:] + self._indices[:end]
         else:
             ind_range = self._indices[start:end]
@@ -490,7 +498,7 @@ class UCF101ValidDataset(UCF101BaseEvaluationDataset):
     def __init__(self, data_dir, input_seq_length=5, target_seq_length=5,
                  image_scale_factor=1.0, gray_scale=False,
                  serialized_sequence_length=30, double_with_flipped=False,
-                 crop_size=None, skip_less_movement=True):
+                 crop_size=None, repetitions_per_epoche=4, skip_less_movement=True):
         """Creates a validation dataset instance.
         Parameters
         ----------
@@ -512,13 +520,19 @@ class UCF101ValidDataset(UCF101BaseEvaluationDataset):
             images as well.
         crop_size: tuple(int) or None, optional
             The size (height, width) to randomly crop the images.
+        repetitions_per_epoche: int, optioal
+            Virtually increase the dataset size by a factor. We useually take only a small portion
+            of the frame sequence. And in case of random cropping, we only take a small part of the image. 
+            That's why it is important to reuse these frame sequences multiple times, as we use a random
+            part each time. If we would not, Testing could vary each evaluation a lot.
         skip_less_movement: Boolean, optional
             Skip frame sequences where there is too less movement in the inputs at all.
         """
         super(UCF101ValidDataset, self).__init__(data_dir, tt.utils.data.SUBDIR_VALID,
                                                  input_seq_length, target_seq_length,
                                                  image_scale_factor, gray_scale, serialized_sequence_length,
-                                                 double_with_flipped, crop_size, skip_less_movement)
+                                                 double_with_flipped, crop_size,
+                                                 repetitions_per_epoche, skip_less_movement)
         
         
 class UCF101TestDataset(UCF101BaseEvaluationDataset):    
@@ -534,7 +548,7 @@ class UCF101TestDataset(UCF101BaseEvaluationDataset):
     def __init__(self, data_dir, input_seq_length=5, target_seq_length=5,
                  image_scale_factor=1.0, gray_scale=False,
                  serialized_sequence_length=30, double_with_flipped=False,
-                 crop_size=None, skip_less_movement=True):
+                 crop_size=None, repetitions_per_epoche=8, skip_less_movement=True):
         """Creates a validation dataset instance.
         Parameters
         ----------
@@ -556,10 +570,16 @@ class UCF101TestDataset(UCF101BaseEvaluationDataset):
             images as well.
         crop_size: tuple(int) or None, optional
             The size (height, width) to randomly crop the images.
+        repetitions_per_epoche: int, optioal
+            Virtually increase the dataset size by a factor. We useually take only a small portion
+            of the frame sequence. And in case of random cropping, we only take a small part of the image. 
+            That's why it is important to reuse these frame sequences multiple times, as we use a random
+            part each time. If we would not, Testing could vary each evaluation a lot.
         skip_less_movement: Boolean, optional
             Skip frame sequences where there is too less movement in the inputs at all.
         """
         super(UCF101TestDataset, self).__init__(data_dir, tt.utils.data.SUBDIR_TEST,
                                                 input_seq_length, target_seq_length,
                                                 image_scale_factor, gray_scale, serialized_sequence_length, 
-                                                double_with_flipped, crop_size, skip_less_movement)
+                                                double_with_flipped, crop_size,
+                                                repetitions_per_epoche, skip_less_movement)
