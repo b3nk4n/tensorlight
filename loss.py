@@ -235,7 +235,7 @@ def ce(outputs, targets, name=None):
             tf.reduce_sum(targets * tf.log(outputs), sum_indices), name=name)
     
 
-def ssim(img1, img2, patch_size=11, sigma=1.5, L=255, K1=0.01, K2=0.03, name=None):
+def ssim(img1, img2, patch_size=11, sigma=1.5, L=1.0, K1=0.01, K2=0.03, name=None):
     """Calculates the Structural Similarity loss
        Reference: 
            This function attempts to mimic precisely the functionality of ssim.m a
@@ -272,8 +272,8 @@ def ssim(img1, img2, patch_size=11, sigma=1.5, L=255, K1=0.01, K2=0.03, name=Non
                                  L, K1, K2, name=name)
 
 
-def ms_ssim(img1, img2, patch_size=11, sigma=1.5, L=255, K1=0.01, K2=0.03,
-            level_weights=[0.0448, 0.2856, 0.3001, 0.2363, 0.1333]):
+def ms_ssim(img1, img2, patch_size=11, sigma=1.5, L=1.0, K1=0.01, K2=0.03,
+            level_weights=[0.0448, 0.2856, 0.3001, 0.2363, 0.1333], name=None):
     """Calculates the Multi-Scale Structural Similarity (MS-SSIM) loss.
        References:
             Z. Wang's "Multi-scale structural similarity
@@ -308,6 +308,9 @@ def ms_ssim(img1, img2, patch_size=11, sigma=1.5, L=255, K1=0.01, K2=0.03,
         default values have been obtained from an empirical analysis. A level of 5 is only
         suitable for huge images. E.g an image of 64x64 pixels with level M=3 can result
         in NaN values.
+        It can be considered to allow more levels with smaller patch_size (5,7,9). Some other
+        papers use smaller sizes. Also, when in the non-human-perception optimized setting, all
+        wheits are equal with SUM(level_weights)=1.
     name: str or None, optional
         Optioanl name to be applied in TensorBoard. Defaults to "Mean" and follows to
         '<loss-name>/Mean' in TensorBoard.
@@ -322,7 +325,7 @@ def ms_ssim(img1, img2, patch_size=11, sigma=1.5, L=255, K1=0.01, K2=0.03,
                                     L, K1, K2, level_weights, name=name)
 
 
-def ss_ssim(img1, img2, patch_size=11, sigma=1.5, L=255, K1=0.01, K2=0.03, level=2, name=None):
+def ss_ssim(img1, img2, patch_size=11, sigma=1.5, L=1.0, K1=0.01, K2=0.03, level=2, name=None):
     """Calculates the Single-Scale Structural Similarity (SS-SSIM) loss.
        References:
             Z. Wang's "Multi-scale structural similarity
