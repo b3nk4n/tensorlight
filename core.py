@@ -145,7 +145,7 @@ class AbstractRuntime(object):
     def build(self, is_autoencoder=False, input_shape=None, target_shape=None,
               max_checkpoints_to_keep=5, track_ema_variables=True, restore_checkpoint=None,
               restore_ema_variables=False, restore_model_params=False, restore_optimizer_params=False,
-              verbose=False):
+              eval_mode=False, verbose=False):
         """ Builds the model. This must be calles before training, validation, testing or prediction.
             This method can be called a second time to re-create a model. In case the dataset's  the
             input shape or target shape, or the explicit input/target-shape changes, it required a model
@@ -185,7 +185,11 @@ class AbstractRuntime(object):
             all parameters of the registered model object.
         restore_optimizer_params: Boolean, optional
             Whether to restore the optimizer parameters from the training directory. 
-            This will override all parameters of the registered optimizer object.    
+            This will override all parameters of the registered optimizer object.
+        eval_mode: Boolean, optional
+            Flag that can be activated in evaluation mode in order to not restore EMA variables
+            for all log-losses. These can lead the graph-construction to fail, even when these
+            are not needed when doing predictions or evaluations.
         verbose: Boolean, optional
             Set to True to show additional construction/variable information.
         """
@@ -302,7 +306,7 @@ class AbstractRuntime(object):
             self._model.install(self._global_step)
             
             # build (multi-)device specific computation graph for inference
-            grads, summaries, total_loss, loss, eval_dict = self._build_computation_graph(x, y, opt)
+            grads, summaries, total_loss, loss, eval_dict = self._build_computation_graph(x, y, opt, eval_mode)
             
             # Apply gradients
             apply_gradient_op = opt.apply_gradients(grads, global_step=self._global_step)
@@ -382,6 +386,7 @@ class AbstractRuntime(object):
                                                    "{}-{}".format(CHECKPOINT_FILE, restore_checkpoint))
                 else:
                     checkpoint_path = os.path.join(self.train_dir, restore_checkpoint)
+                    
                 print("Selected checkpoint file: {}".format(checkpoint_path))
                 perform_restore(self._saver, checkpoint_path, restore_ema_variables)
 
@@ -875,7 +880,7 @@ class DefaultRuntime(AbstractRuntime):
                                              gpu_allow_growth, gpu_memory_fraction)
         
     @tt.utils.attr.override
-    def _build_computation_graph(self, x, y, opt):
+    def _build_computation_graph(self, x, y, opt, eval_mode):
         # Build inference Graph.This function constructs 
         # the entire model but shares the variables across all towers.
         with tf.name_scope("inference"):
@@ -902,7 +907,7 @@ class DefaultRuntime(AbstractRuntime):
         # Generate moving averages of all losses and associated summaries
         loss_averages_op = tt.board.loss_summary([total_loss, loss] + \
                                                  tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES) + \
-                                                 tf.get_collection(LOG_LOSSES),
+                                                 tf.get_collection(LOG_LOSSES) if not eval_mode else [],
                                                  decay=0.9)
 
         # Compute gradients
@@ -950,7 +955,7 @@ class MultiGpuRuntime(AbstractRuntime):
                                               gpu_allow_growth, gpu_memory_fraction)
         
     @tt.utils.attr.override
-    def _build_computation_graph(self, x, y, opt):
+    def _build_computation_graph(self, x, y, opt, eval_mode):
         # Calculate the gradients for each model tower.
         tower_grads = []
         tower_losses = []
@@ -995,7 +1000,7 @@ class MultiGpuRuntime(AbstractRuntime):
                     # Calculate the moving averages of the loss for one tower of the model
                     loss_averages_op = tt.board.loss_summary([total_loss, loss] + \
                                                              tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES) + \
-                                                             tf.get_collection(LOG_LOSSES, scope),
+                                                             tf.get_collection(LOG_LOSSES, scope) if not eval_mode else [],
                                                              decay=0.9)
 
                     with tf.control_dependencies([loss_averages_op]):
