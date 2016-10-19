@@ -848,6 +848,295 @@ class LSTMConv2DCell(RNNConv2DCell):
             return new_h, new_state
         
         
+class LSTMConv2DCellHadamPeep(RNNConv2DCell):
+    """2D convolutional LSTM recurrent network cell, where the peepholes are implemented
+       as in the Nowcasting paper, using Hadamard product instead of conv2d.
+    We add forget_bias (default: 1) to the biases of the forget gate in order to
+    reduce the scale of forgetting in the beginning of the training.
+    It allows cell clipping and supports peep-hole connections, as well as
+    batch-normalization.
+    
+    As proposed in the RNN-BatchNorm paper, we do not center the input-hidden connections
+    and rely on the learned forget-bias (center=False).
+    Additionally, we optionally support BN for peephole-connections, which are not used
+    in the paper. Use them with caution!!!
+    
+    References:
+    [Convolutional LSTM Network: A Machine Learning Approach for
+    Precipitation Nowcasting](http://arxiv.org/pdf/1506.04214)
+    [Recurrent Batch Normalization](https://arxiv.org/abs/1603.09025)
+    """
+
+    def __init__(self, height, width, n_filters, ksize_input, ksize_hidden,
+                 use_peepholes=False, cell_clip=None,
+                 bn_input_hidden=False, bn_hidden_hidden=False, bn_peepholes=False,
+                 updates_collections=tf.GraphKeys.UPDATE_OPS, is_training=None,
+                 weight_init=tf.contrib.layers.xavier_initializer(),
+                 hidden_weight_init=tt.init.orthogonal_initializer(),
+                 forget_bias=1.0,
+                 activation=tf.nn.tanh, hidden_activation=tf.nn.sigmoid,
+                 device=None):
+        """Initialize the basic 2D convolutional LSTM cell.
+        Parameters
+        ----------
+        height: int
+            The height of the input image.
+        width: int
+            The width of the input image.
+        n_filters: int
+            The number of filters of the convolutional kernel. This also specifies
+            the depth/channels of the output.
+        ksize_hidden: tuple or list of (int, int) 
+            The number of (rows, columns) of the convolutioanl kernel
+            for input to state transition. Usually ksize_hidden > ksize_input
+        ksize_hidden: tuple or list of (int, int) 
+            The number of (rows, columns) of the convolutioanl kernel
+            for state to state transition. Usually ksize_hidden > ksize_input
+        use_peepholes: Boolean, optioanl
+            Set to True to enable diagonal/peephole connections.
+        cell_clip: float, optional
+            A float (> 0) value, if provided the cell state is clipped
+            by this value prior to the cell output activation.
+            Both sides are clipped (range [-cell_clip, cell_clip]).
+        bn_input_hidden: Boolean, optional
+            Set to true to enable batch-normalization for input-hidden connections,
+            excluding peepholes. Requires to set 'is_training' param.
+        bn_hidden_hidden: Boolean, optional
+            Set to true to enable batch-normalization for hidden-hidden connections,
+            excluding peepholes. Requires to set 'is_training' param.
+        bn_peepholes: Boolean, optional
+            Set to true to enable batch-normalization for peephole connections
+            Requires to set 'is_training' param.
+        updates_collections: str or None
+            Collections to collect the update ops for computation in case of
+            batch normalization is used. If None, a control dependency would be
+            added to make sure the updates are computed. This is only required
+            when any kind of batch_normalization is used, else ignored.
+        is_training: Boolean or None, optional
+            Whether or not the layer is in training mode. This is only required
+            when any kind of batch_normalization is used, else ignored.
+        weight_init : float or function, optional
+            Initialization's of the input weights, either the standard deviation
+            or a initializer-fuction such as xavier init.
+        hidden_weight_init : float or function, optional
+            Initialization's of the hidden weights, either the standard deviation
+            or a initializer-fuction such as xavier or orthogonal init.
+        forget_bias: float
+            The bias added to forget gates (see above).
+        activation: function
+            Activation function of the output and cell states.
+        hidden_activation: function
+            Activation function of the hidden states.
+        device: str or None, optional
+            The device to which memory the variables will get stored on. (e.g. '/cpu:0')
+        """
+        if bn_input_hidden or bn_hidden_hidden or bn_peepholes:
+            assert is_training is not None, "When BatchNorm is used," \
+                                            "training mode has to be specified."
+        
+        if bn_peepholes:
+            assert use_peepholes, "Enabling batch-norm for peepholes requires to enbale them."
+        
+        self._height = height
+        self._width = width
+        self._n_filters = n_filters
+        self._ksize_input = ksize_input
+        self._ksize_hidden = ksize_hidden
+        self._weight_init = weight_init
+        self._hidden_weight_init = hidden_weight_init
+        self._forget_bias = forget_bias
+        self._state_is_tuple = True
+        self._activation = activation
+        self._hidden_activation = hidden_activation
+        self._device = device
+        
+        self._use_peepholes = use_peepholes
+        self._cell_clip = cell_clip
+        self._bn_input_hidden = bn_input_hidden
+        self._bn_hidden_hidden = bn_hidden_hidden
+        self._bn_peepholes = bn_peepholes
+        self._updates_collections = updates_collections
+        self._is_training = is_training
+
+    @property
+    def state_size(self):
+        return tf.nn.rnn_cell.LSTMStateTuple(
+            (self._height, self._width, self._n_filters), 
+            (self._height, self._width, self._n_filters))
+
+    @property
+    def output_size(self):
+        return (self._height, self._width, self._n_filters)
+
+    def __call__(self, inputs, state, scope=None):
+        """2D convolutional Long short-term memory cell (LSTMConv2D)."""
+        with vs.variable_scope(scope or "LSTMC2DCell"):
+            c, h = state
+            cshape = c.get_shape().as_list()[1:]
+            dtype = inputs.dtype
+            with tf.variable_scope("Conv_x") as varscope:
+                conv_xi = tt.network.conv2d("i", inputs, self._n_filters,
+                                            self._ksize_input, (1, 1),
+                                            weight_init=self._weight_init,
+                                            bias_init=0.0,
+                                            device=self._device)
+                
+                if self._bn_input_hidden:
+                    conv_xi = tf.contrib.layers.batch_norm(conv_xi, scale=True,
+                        center=False, updates_collections=self._updates_collections,
+                        is_training=self._is_training, scope="bn_x")
+                
+                conv_xj = tt.network.conv2d("j", inputs,self._n_filters,
+                                            self._ksize_input, (1, 1),
+                                            weight_init=self._weight_init,
+                                            bias_init=0.0,
+                                            device=self._device)
+                
+                if self._bn_input_hidden:
+                    conv_xj = tf.contrib.layers.batch_norm(conv_xj, scale=True,
+                        center=False, updates_collections=self._updates_collections,
+                        is_training=self._is_training, reuse=True, scope="bn_x")
+                
+                conv_xf = tt.network.conv2d("f", inputs, self._n_filters,
+                                            self._ksize_input, (1, 1),
+                                            weight_init=self._weight_init,
+                                            bias_init=self._forget_bias,
+                                            device=self._device)
+                
+                if self._bn_input_hidden:
+                    conv_xf = tf.contrib.layers.batch_norm(conv_xf, scale=True,
+                        center=False, updates_collections=self._updates_collections,
+                        is_training=self._is_training, reuse=True, scope="bn_x")
+                
+                conv_xo = tt.network.conv2d("o", inputs, self._n_filters,
+                                            self._ksize_input, (1, 1),
+                                            weight_init=self._weight_init,
+                                            bias_init=0.0,
+                                            device=self._device)
+                
+                if self._bn_input_hidden:
+                    conv_xo = tf.contrib.layers.batch_norm(conv_xo, scale=True,
+                        center=False, updates_collections=self._updates_collections,
+                        is_training=self._is_training, reuse=True, scope="bn_x")
+
+            with tf.variable_scope("Conv_h") as varscope:
+                conv_hi = tt.network.conv2d("i", h, self._n_filters, 
+                                            self._ksize_hidden, (1, 1),
+                                            weight_init=self._hidden_weight_init,
+                                            bias_init=None,
+                                            device=self._device)
+                
+                if self._bn_input_hidden:
+                    conv_hi = tf.contrib.layers.batch_norm(conv_hi, scale=True,
+                        center=False, updates_collections=self._updates_collections,
+                        is_training=self._is_training, scope="bn_h")
+                
+                conv_hj = tt.network.conv2d("j", h, self._n_filters,
+                                            self._ksize_hidden, (1, 1),
+                                            weight_init=self._hidden_weight_init,
+                                            bias_init=None,
+                                            device=self._device)
+                
+                if self._bn_input_hidden:
+                    conv_hj = tf.contrib.layers.batch_norm(conv_hj, scale=True,
+                        center=False, updates_collections=self._updates_collections,
+                        is_training=self._is_training, reuse=True, scope="bn_h")
+                
+                conv_hf = tt.network.conv2d("f", h, self._n_filters,
+                                            self._ksize_hidden, (1, 1),
+                                            weight_init=self._hidden_weight_init,
+                                            bias_init=None,
+                                            device=self._device)
+                
+                if self._bn_input_hidden:
+                    conv_hf = tf.contrib.layers.batch_norm(conv_hf, scale=True,
+                        center=False, updates_collections=self._updates_collections,
+                        is_training=self._is_training, reuse=True, scope="bn_h")
+                
+                conv_ho = tt.network.conv2d("o", h, self._n_filters,
+                                            self._ksize_hidden, (1, 1),
+                                            weight_init=self._hidden_weight_init,
+                                            bias_init=None,
+                                            device=self._device)
+                
+                if self._bn_input_hidden:
+                    conv_ho = tf.contrib.layers.batch_norm(conv_ho, scale=True,
+                        center=False, updates_collections=self._updates_collections,
+                        is_training=self._is_training, reuse=True, scope="bn_h")
+
+                i = conv_xi + conv_hi  # input gate
+                j = conv_xj + conv_hj  # new input
+                f = conv_xf + conv_hf  # forget gate
+                o = conv_xo + conv_ho  # output gate
+            
+            if self._use_peepholes:
+                # peepholes for input
+                with tf.variable_scope("Conv_peep"):
+                    w_i_diag = tt.network.get_variable(
+                        "i", shape=cshape, dtype=dtype,
+                        device=self._device)
+                    
+                    conv_ci = w_i_diag * c
+                    
+                    if self._bn_peepholes:
+                        conv_ci = tf.contrib.layers.batch_norm(conv_ci, scale=True,
+                        center=False, updates_collections=self._updates_collections,
+                        is_training=self._is_training, scope="bn_peep")
+                    
+                    w_f_diag = tt.network.get_variable(
+                        "f", shape=cshape, dtype=dtype,
+                        device=self._device)
+                    
+                    conv_cf = w_f_diag * c
+                    
+                    if self._bn_peepholes:
+                        conv_cf = tf.contrib.layers.batch_norm(conv_cf, scale=True,
+                            center=False, updates_collections=self._updates_collections,
+                            is_training=self._is_training, reuse=True, scope="bn_peep")
+                    
+                    i += conv_ci
+                    f += conv_cf
+
+            # i_t = sig(i)
+            # f_t = sig(f + b_f)
+            # new_c = f_t * c + i_t * tanh(j)
+            # o_t = sig(o)
+            # new_h = o_t * tanh(new_c)
+            new_c = (c * self._hidden_activation(f) + self._hidden_activation(i) *
+                 self._activation(j))
+            
+            if self._cell_clip is not None:
+                # cell clip before output
+                new_c = clip_ops.clip_by_value(new_c, -self._cell_clip, self._cell_clip)
+            
+            if self._use_peepholes:
+                # peepholes for output
+                with tf.variable_scope("Conv_peep"):
+                    w_o_diag = tt.network.get_variable(
+                        "o", shape=cshape, dtype=dtype,
+                        device=self._device)
+                    
+                    conv_co = w_o_diag * new_c
+                    
+                    if self._bn_peepholes:
+                        conv_co = tf.contrib.layers.batch_norm(conv_co, scale=True,
+                            center=False, updates_collections=self._updates_collections,
+                            is_training=self._is_training, reuse=True, scope="bn_peep")
+                    
+                    o += conv_co
+            
+            if self._bn_hidden_hidden:
+                new_c = tf.contrib.layers.batch_norm(new_c,
+                                                     center=True, scale=True,
+                                                     updates_collections=self._updates_collections,
+                                                     is_training=self._is_training, scope="bn_c")
+            
+            new_h = self._activation(new_c) * self._hidden_activation(o)
+
+            new_state = tf.nn.rnn_cell.LSTMStateTuple(new_c, new_h)
+            return new_h, new_state
+        
+        
 class MultiRNNConv2DCell(RNNConv2DCell):
     """2D convolutional RNN cell composed sequentially of multiple simple cells."""
 
