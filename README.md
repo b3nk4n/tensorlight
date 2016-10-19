@@ -1,3 +1,9 @@
+<div align="center">
+  <img src="https://github.com/bsautermeister/tensorlight/blob/master/assets/tensorlight.png" alt="TensorLight"><br><br>
+</div>
+-----------------
+
+
 # TensorLight
 
 TensorLight is a programming library for [TensorFlow](https://www.tensorflow.org/) based projects to reduce poilerplate code.
