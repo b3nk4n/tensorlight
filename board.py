@@ -177,11 +177,11 @@ def conv_filter_image_summary(tag, kernel, padding=1):
         The padding between each patch of the grid.
     Example
     ----------
-        conv = tt.network.conv2d("Conv1", ...)
+        conv = light.network.conv2d("Conv1", ...)
         # Get kernel by reusing the same variable-scope
         with tf.variable_scope("Conv1", reuse=True):
             kernel = tf.get_variable("W")
-        tt.board.conv_filter_image_summary("conv1_filters", kernel);
+        light.board.conv_filter_image_summary("conv1_filters", kernel);
     """
     with tf.name_scope("filter_summary"):
         # X and Y dimensions, w.r.t. padding

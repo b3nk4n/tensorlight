@@ -6,7 +6,7 @@ import zipfile
 from six.moves import urllib
 
 import numpy as np
-import tensortools as tt
+import tensorlight as tt
 
 
 EXT_RAR = ".rar"

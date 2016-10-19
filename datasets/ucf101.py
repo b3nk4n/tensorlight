@@ -4,7 +4,7 @@ import random
 
 import numpy as np
 import tensorflow as tf
-import tensortools as tt
+import tensorlight as light
 import base
 
 
@@ -77,17 +77,17 @@ class UCF101TrainDataset(base.AbstractQueueDataset):
         self._skip_less_movement = skip_less_movement
         self._data_img_size = image_size
         
-        rar_path = tt.utils.data.download(UCF101_URL, data_dir)
+        rar_path = light.utils.data.download(UCF101_URL, data_dir)
 
-        dataset_path = tt.utils.data.extract(rar_path, data_dir, unpacked_name='UCF-101')
+        dataset_path = light.utils.data.extract(rar_path, data_dir, unpacked_name='UCF-101')
         self._data_dir = dataset_path
             
-        zip_path = tt.utils.data.download(UCF101_SPLITS_URL, data_dir)
-        splits_path = tt.utils.data.extract(zip_path, data_dir, unpacked_name='ucfTrainTestlist')
+        zip_path = light.utils.data.download(UCF101_SPLITS_URL, data_dir)
+        splits_path = light.utils.data.extract(zip_path, data_dir, unpacked_name='ucfTrainTestlist')
             
         # generate frame sequences
         train_files = UCF101TrainDataset._read_train_splits(splits_path)
-        dataset_size, seq_files = tt.utils.data.preprocess_videos(dataset_path, tt.utils.data.SUBDIR_TRAIN,
+        dataset_size, seq_files = light.utils.data.preprocess_videos(dataset_path, light.utils.data.SUBDIR_TRAIN,
                                                                   train_files,
                                                                   [FRAME_HEIGHT, FRAME_WIDTH, FRAME_CHANNELS],
                                                                   serialized_sequence_length,
@@ -153,7 +153,7 @@ class UCF101TrainDataset(base.AbstractQueueDataset):
                                    [total_seq_length, record.height, record.width, record.depth])
             return record
 
-    @tt.utils.attr.override
+    @light.utils.attr.override
     def get_batch(self, batch_size):
         # Generate a batch of sequences and labels by building up a queue of examples.
         with tf.name_scope('preprocessing'):
@@ -229,14 +229,14 @@ class UCF101TrainDataset(base.AbstractQueueDataset):
                 with tf.name_scope('distortion'):
                     images_to_distort = tf.unpack(seq_data)
 
-                    distorted_images = tt.image.equal_random_distortion(images_to_distort)
+                    distorted_images = light.image.equal_random_distortion(images_to_distort)
                     sequence_inputs = tf.pack(distorted_images[0:input_seq_length], axis=0)
                     sequence_targets = tf.pack(distorted_images[input_seq_length:], axis=0)
             else:
                 sequence_inputs = seq_data[0:input_seq_length,:,:,:]
                 sequence_targets = seq_data[input_seq_length:,:,:,:]
 
-        batchx, batchy = tt.inputs.generate_batch(sequence_inputs, sequence_targets,
+        batchx, batchy = light.inputs.generate_batch(sequence_inputs, sequence_targets,
                                         batch_size,
                                         self._min_examples_in_queue, self._queue_capacitiy,
                                         shuffle=True, num_threads=self._num_threads)
@@ -329,18 +329,18 @@ class UCF101BaseEvaluationDataset(base.AbstractDataset):
         self._skip_less_movement = skip_less_movement
         self._data_img_size = image_size
         
-        rar_path = tt.utils.data.download(UCF101_URL, data_dir)
+        rar_path = light.utils.data.download(UCF101_URL, data_dir)
 
-        dataset_path = tt.utils.data.extract(rar_path, data_dir, unpacked_name='UCF-101')
+        dataset_path = light.utils.data.extract(rar_path, data_dir, unpacked_name='UCF-101')
         self._data_dir = dataset_path
             
-        zip_path = tt.utils.data.download(UCF101_SPLITS_URL, data_dir)
-        splits_path = tt.utils.data.extract(zip_path, data_dir, unpacked_name='ucfTrainTestlist')
+        zip_path = light.utils.data.download(UCF101_SPLITS_URL, data_dir)
+        splits_path = light.utils.data.extract(zip_path, data_dir, unpacked_name='ucfTrainTestlist')
 
         # generate frame sequences
         (eval_files) = UCF101BaseEvaluationDataset._read_eval_splits(splits_path)
-        eval_index = 0 if subdir == tt.utils.data.SUBDIR_VALID else 1
-        dataset_size, seq_files = tt.utils.data.preprocess_videos(dataset_path, subdir, eval_files[eval_index],
+        eval_index = 0 if subdir == light.utils.data.SUBDIR_VALID else 1
+        dataset_size, seq_files = light.utils.data.preprocess_videos(dataset_path, subdir, eval_files[eval_index],
                                                                   [FRAME_HEIGHT, FRAME_WIDTH, FRAME_CHANNELS],
                                                                   serialized_sequence_length,
                                                                   gray_scale, image_scale_factor)
@@ -386,7 +386,7 @@ class UCF101BaseEvaluationDataset(base.AbstractDataset):
 
         return valid_files, test_files
         
-    @tt.utils.attr.override
+    @light.utils.attr.override
     def get_batch(self, batch_size):
         fake_size = self.size
         data_size = self.real_dataset_size
@@ -416,7 +416,7 @@ class UCF101BaseEvaluationDataset(base.AbstractDataset):
         for i, f in enumerate(file_names):
             virtual_row = self._row + i
                                        
-            current = tt.utils.image.read_as_binary(f, dtype=np.uint8)
+            current = light.utils.image.read_as_binary(f, dtype=np.uint8)
             current = np.reshape(current, [self.serialized_sequence_length] + list(self._data_img_size))
             
             # select random part of the sequence with length of inputs+targets
@@ -467,7 +467,7 @@ class UCF101BaseEvaluationDataset(base.AbstractDataset):
         
         return inputs, targets
     
-    @tt.utils.attr.override
+    @light.utils.attr.override
     def reset(self):
         self._row = 0
         np.random.shuffle(self._indices)
@@ -528,7 +528,7 @@ class UCF101ValidDataset(UCF101BaseEvaluationDataset):
         skip_less_movement: Boolean, optional
             Skip frame sequences where there is too less movement in the inputs at all.
         """
-        super(UCF101ValidDataset, self).__init__(data_dir, tt.utils.data.SUBDIR_VALID,
+        super(UCF101ValidDataset, self).__init__(data_dir, light.utils.data.SUBDIR_VALID,
                                                  input_seq_length, target_seq_length,
                                                  image_scale_factor, gray_scale, serialized_sequence_length,
                                                  double_with_flipped, crop_size,
@@ -578,7 +578,7 @@ class UCF101TestDataset(UCF101BaseEvaluationDataset):
         skip_less_movement: Boolean, optional
             Skip frame sequences where there is too less movement in the inputs at all.
         """
-        super(UCF101TestDataset, self).__init__(data_dir, tt.utils.data.SUBDIR_TEST,
+        super(UCF101TestDataset, self).__init__(data_dir, light.utils.data.SUBDIR_TEST,
                                                 input_seq_length, target_seq_length,
                                                 image_scale_factor, gray_scale, serialized_sequence_length, 
                                                 double_with_flipped, crop_size,

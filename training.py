@@ -28,7 +28,7 @@ class Optimizer(object):
         Parameters
         ----------
         optimizer_name: str
-            The optimizer to use. Use keys such as 'tt.training.ADAM' or 'adam'.
+            The optimizer to use. Use keys such as 'tf.training.ADAM' or 'adam'.
         initial_lr: float
             The inital learning rate > 0.
         step_interval: int, optional

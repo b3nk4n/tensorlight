@@ -7,7 +7,7 @@ import random
 import numpy as np
 
 import tensorflow as tf
-import tensortools as tt
+import tensorlight as light
 import base
 
 
@@ -95,11 +95,11 @@ class MsPacmanBaseDataset(base.AbstractDataset):
         if not os.path.isfile(filepath):
             raise ValueError("{} not found.".format(filepath))
             
-        dataset_path = tt.utils.data.extract(filepath, data_dir)
+        dataset_path = light.utils.data.extract(filepath, data_dir)
         self._data_dir = dataset_path
         
         train_dir = os.path.join(dataset_path, subdir)
-        numbered_folder_paths = tt.utils.path.get_subdirpaths(train_dir)
+        numbered_folder_paths = light.utils.path.get_subdirpaths(train_dir)
         numbered_folder_paths.sort()
         
         if index_range is not None:
@@ -111,7 +111,7 @@ class MsPacmanBaseDataset(base.AbstractDataset):
         #data = [("path", files_count, [filenames])]
         data = []
         for nfp in numbered_folder_paths:
-            filenames = tt.utils.path.get_filenames(nfp, "*.png", False)
+            filenames = light.utils.path.get_filenames(nfp, "*.png", False)
             filenames.sort()
             data.append((nfp, len(filenames), filenames))
             
@@ -140,7 +140,7 @@ class MsPacmanBaseDataset(base.AbstractDataset):
         super(MsPacmanBaseDataset, self).__init__(data_dir, dataset_size,
                                                   input_shape=input_shape,target_shape=target_shape)
         
-    @tt.utils.attr.override
+    @light.utils.attr.override
     def get_batch(self, batch_size):
         total_seq_len = self._input_seq_length + self._target_seq_length
         
@@ -176,14 +176,14 @@ class MsPacmanBaseDataset(base.AbstractDataset):
             input_frames = []
             for fidx in xrange(start_idx, start_idx + self._input_seq_length):
                 frame_path = os.path.join(current_seq[0], current_seq[2][fidx])
-                input_frames.append(tt.utils.image.read(frame_path))
+                input_frames.append(light.utils.image.read(frame_path))
                 
                 """# pre-load images
             input_frames = []
             target_frames = []
             for i, fidx in enumerate(xrange(start_idx, start_idx + total_seq_len)):
                 frame_path = os.path.join(current_seq[0], current_seq[2][fidx])
-                frame = tt.utils.image.read(frame_path)
+                frame = light.utils.image.read(frame_path)
                 if i < self.input_seq_length:
                     input_frames.append(frame)
                 else:
@@ -224,7 +224,7 @@ class MsPacmanBaseDataset(base.AbstractDataset):
                     current_path = current_seq[0]
                     current_filename = current_seq[2][fidx]
                     frame_path = os.path.join(current_path, current_filename)
-                    frame = tt.utils.image.read(frame_path)
+                    frame = light.utils.image.read(frame_path)
                     
                     if self._crop_size is not None:
                         # crop image
@@ -243,7 +243,7 @@ class MsPacmanBaseDataset(base.AbstractDataset):
         
         return batch_inputs, batch_targets
     
-    @tt.utils.attr.override
+    @light.utils.attr.override
     def reset(self):
         pass
     

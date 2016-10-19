@@ -1,6 +1,6 @@
-# TensorTools
+# TensorLight
 
-TensorTools is a programming library for [TensorFlow](https://www.tensorflow.org/) based projects to reduce poilerplate code.
+TensorLight is a programming library for [TensorFlow](https://www.tensorflow.org/) based projects to reduce poilerplate code.
 
 
 ## Modules

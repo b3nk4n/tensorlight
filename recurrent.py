@@ -6,7 +6,7 @@ import six
 
 import numpy as np
 import tensorflow as tf
-import tensortools as tt
+import tensorlight as light
 
 from tensorflow.python.ops import variable_scope as vs
 
@@ -439,7 +439,7 @@ class BasicLSTMConv2DCell(RNNConv2DCell):
 
     def __init__(self, height, width, n_filters, ksize_input, ksize_hidden,
                  weight_init=tf.contrib.layers.xavier_initializer(),
-                 hidden_weight_init=tt.init.orthogonal_initializer(),
+                 hidden_weight_init=light.init.orthogonal_initializer(),
                  forget_bias=1.0,
                  activation=tf.nn.tanh, hidden_activation=tf.nn.sigmoid,
                  device=None):
@@ -502,43 +502,43 @@ class BasicLSTMConv2DCell(RNNConv2DCell):
         with vs.variable_scope(scope or "BasicLSTM2DCell"):
             c, h = state
             with tf.variable_scope("Conv_x"):
-                conv_xi = tt.network.conv2d("xi", inputs, self._n_filters,
+                conv_xi = light.network.conv2d("xi", inputs, self._n_filters,
                                             self._ksize_input, (1, 1),
                                             weight_init=self._weight_init,
                                             bias_init=0.0,
                                             device=self._device)
-                conv_xj = tt.network.conv2d("xj", inputs,self._n_filters,
+                conv_xj = light.network.conv2d("xj", inputs,self._n_filters,
                                             self._ksize_input, (1, 1),
                                             weight_init=self._weight_init,
                                             bias_init=0.0,
                                             device=self._device)
-                conv_xf = tt.network.conv2d("xf", inputs, self._n_filters,
+                conv_xf = light.network.conv2d("xf", inputs, self._n_filters,
                                             self._ksize_input, (1, 1),
                                             weight_init=self._weight_init,
                                             bias_init=self._forget_bias,
                                             device=self._device)
-                conv_xo = tt.network.conv2d("xo", inputs, self._n_filters,
+                conv_xo = light.network.conv2d("xo", inputs, self._n_filters,
                                             self._ksize_input, (1, 1),
                                             weight_init=self._weight_init,
                                             bias_init=0.0,
                                             device=self._device)
             with tf.variable_scope("Conv_h"):
-                conv_hi = tt.network.conv2d("hi", h, self._n_filters, 
+                conv_hi = light.network.conv2d("hi", h, self._n_filters, 
                                             self._ksize_hidden, (1, 1),
                                             weight_init=self._hidden_weight_init,
                                             bias_init=None,
                                             device=self._device)
-                conv_hj = tt.network.conv2d("hj", h, self._n_filters,
+                conv_hj = light.network.conv2d("hj", h, self._n_filters,
                                             self._ksize_hidden, (1, 1),
                                             weight_init=self._hidden_weight_init,
                                             bias_init=None,
                                             device=self._device)
-                conv_hf = tt.network.conv2d("hf", h, self._n_filters,
+                conv_hf = light.network.conv2d("hf", h, self._n_filters,
                                             self._ksize_hidden, (1, 1),
                                             weight_init=self._hidden_weight_init,
                                             bias_init=None,
                                             device=self._device)
-                conv_ho = tt.network.conv2d("ho", h, self._n_filters,
+                conv_ho = light.network.conv2d("ho", h, self._n_filters,
                                             self._ksize_hidden, (1, 1),
                                             weight_init=self._hidden_weight_init,
                                             bias_init=None,
@@ -585,7 +585,7 @@ class LSTMConv2DCell(RNNConv2DCell):
                  bn_input_hidden=False, bn_hidden_hidden=False, bn_peepholes=False,
                  updates_collections=tf.GraphKeys.UPDATE_OPS, is_training=None,
                  weight_init=tf.contrib.layers.xavier_initializer(),
-                 hidden_weight_init=tt.init.orthogonal_initializer(),
+                 hidden_weight_init=light.init.orthogonal_initializer(),
                  forget_bias=1.0,
                  activation=tf.nn.tanh, hidden_activation=tf.nn.sigmoid,
                  device=None):
@@ -686,7 +686,7 @@ class LSTMConv2DCell(RNNConv2DCell):
         with vs.variable_scope(scope or "LSTMC2DCell"):
             c, h = state
             with tf.variable_scope("Conv_x") as varscope:
-                conv_xi = tt.network.conv2d("i", inputs, self._n_filters,
+                conv_xi = light.network.conv2d("i", inputs, self._n_filters,
                                             self._ksize_input, (1, 1),
                                             weight_init=self._weight_init,
                                             bias_init=0.0,
@@ -697,7 +697,7 @@ class LSTMConv2DCell(RNNConv2DCell):
                         center=False, updates_collections=self._updates_collections,
                         is_training=self._is_training, scope="bn_x")
                 
-                conv_xj = tt.network.conv2d("j", inputs,self._n_filters,
+                conv_xj = light.network.conv2d("j", inputs,self._n_filters,
                                             self._ksize_input, (1, 1),
                                             weight_init=self._weight_init,
                                             bias_init=0.0,
@@ -708,7 +708,7 @@ class LSTMConv2DCell(RNNConv2DCell):
                         center=False, updates_collections=self._updates_collections,
                         is_training=self._is_training, reuse=True, scope="bn_x")
                 
-                conv_xf = tt.network.conv2d("f", inputs, self._n_filters,
+                conv_xf = light.network.conv2d("f", inputs, self._n_filters,
                                             self._ksize_input, (1, 1),
                                             weight_init=self._weight_init,
                                             bias_init=self._forget_bias,
@@ -719,7 +719,7 @@ class LSTMConv2DCell(RNNConv2DCell):
                         center=False, updates_collections=self._updates_collections,
                         is_training=self._is_training, reuse=True, scope="bn_x")
                 
-                conv_xo = tt.network.conv2d("o", inputs, self._n_filters,
+                conv_xo = light.network.conv2d("o", inputs, self._n_filters,
                                             self._ksize_input, (1, 1),
                                             weight_init=self._weight_init,
                                             bias_init=0.0,
@@ -731,7 +731,7 @@ class LSTMConv2DCell(RNNConv2DCell):
                         is_training=self._is_training, reuse=True, scope="bn_x")
 
             with tf.variable_scope("Conv_h") as varscope:
-                conv_hi = tt.network.conv2d("i", h, self._n_filters, 
+                conv_hi = light.network.conv2d("i", h, self._n_filters, 
                                             self._ksize_hidden, (1, 1),
                                             weight_init=self._hidden_weight_init,
                                             bias_init=None,
@@ -742,7 +742,7 @@ class LSTMConv2DCell(RNNConv2DCell):
                         center=False, updates_collections=self._updates_collections,
                         is_training=self._is_training, scope="bn_h")
                 
-                conv_hj = tt.network.conv2d("j", h, self._n_filters,
+                conv_hj = light.network.conv2d("j", h, self._n_filters,
                                             self._ksize_hidden, (1, 1),
                                             weight_init=self._hidden_weight_init,
                                             bias_init=None,
@@ -753,7 +753,7 @@ class LSTMConv2DCell(RNNConv2DCell):
                         center=False, updates_collections=self._updates_collections,
                         is_training=self._is_training, reuse=True, scope="bn_h")
                 
-                conv_hf = tt.network.conv2d("f", h, self._n_filters,
+                conv_hf = light.network.conv2d("f", h, self._n_filters,
                                             self._ksize_hidden, (1, 1),
                                             weight_init=self._hidden_weight_init,
                                             bias_init=None,
@@ -764,7 +764,7 @@ class LSTMConv2DCell(RNNConv2DCell):
                         center=False, updates_collections=self._updates_collections,
                         is_training=self._is_training, reuse=True, scope="bn_h")
                 
-                conv_ho = tt.network.conv2d("o", h, self._n_filters,
+                conv_ho = light.network.conv2d("o", h, self._n_filters,
                                             self._ksize_hidden, (1, 1),
                                             weight_init=self._hidden_weight_init,
                                             bias_init=None,
@@ -783,7 +783,7 @@ class LSTMConv2DCell(RNNConv2DCell):
             if self._use_peepholes:
                 # peepholes for input
                 with tf.variable_scope("Conv_peep"):
-                    conv_ci = tt.network.conv2d("i", c, self._n_filters, 
+                    conv_ci = light.network.conv2d("i", c, self._n_filters, 
                                                 self._ksize_hidden, (1, 1),
                                                 weight_init=self._weight_init,
                                                 bias_init=None,
@@ -794,7 +794,7 @@ class LSTMConv2DCell(RNNConv2DCell):
                         center=False, updates_collections=self._updates_collections,
                         is_training=self._is_training, scope="bn_peep")
                     
-                    conv_cf = tt.network.conv2d("f", c, self._n_filters,
+                    conv_cf = light.network.conv2d("f", c, self._n_filters,
                                                 self._ksize_hidden, (1, 1),
                                                 weight_init=self._weight_init,
                                                 bias_init=None,
@@ -823,7 +823,7 @@ class LSTMConv2DCell(RNNConv2DCell):
             if self._use_peepholes:
                 # peepholes for output
                 with tf.variable_scope("Conv_peep"):
-                    conv_co = tt.network.conv2d("o", new_c, self._n_filters,
+                    conv_co = light.network.conv2d("o", new_c, self._n_filters,
                                                 self._ksize_hidden, (1, 1),
                                                 weight_init=self._weight_init,
                                                 bias_init=None,
@@ -872,7 +872,7 @@ class LSTMConv2DCellHadamPeep(RNNConv2DCell):
                  bn_input_hidden=False, bn_hidden_hidden=False, bn_peepholes=False,
                  updates_collections=tf.GraphKeys.UPDATE_OPS, is_training=None,
                  weight_init=tf.contrib.layers.xavier_initializer(),
-                 hidden_weight_init=tt.init.orthogonal_initializer(),
+                 hidden_weight_init=light.init.orthogonal_initializer(),
                  forget_bias=1.0,
                  activation=tf.nn.tanh, hidden_activation=tf.nn.sigmoid,
                  device=None):
@@ -975,7 +975,7 @@ class LSTMConv2DCellHadamPeep(RNNConv2DCell):
             cshape = c.get_shape().as_list()[1:]
             dtype = inputs.dtype
             with tf.variable_scope("Conv_x") as varscope:
-                conv_xi = tt.network.conv2d("i", inputs, self._n_filters,
+                conv_xi = light.network.conv2d("i", inputs, self._n_filters,
                                             self._ksize_input, (1, 1),
                                             weight_init=self._weight_init,
                                             bias_init=0.0,
@@ -986,7 +986,7 @@ class LSTMConv2DCellHadamPeep(RNNConv2DCell):
                         center=False, updates_collections=self._updates_collections,
                         is_training=self._is_training, scope="bn_x")
                 
-                conv_xj = tt.network.conv2d("j", inputs,self._n_filters,
+                conv_xj = light.network.conv2d("j", inputs,self._n_filters,
                                             self._ksize_input, (1, 1),
                                             weight_init=self._weight_init,
                                             bias_init=0.0,
@@ -997,7 +997,7 @@ class LSTMConv2DCellHadamPeep(RNNConv2DCell):
                         center=False, updates_collections=self._updates_collections,
                         is_training=self._is_training, reuse=True, scope="bn_x")
                 
-                conv_xf = tt.network.conv2d("f", inputs, self._n_filters,
+                conv_xf = light.network.conv2d("f", inputs, self._n_filters,
                                             self._ksize_input, (1, 1),
                                             weight_init=self._weight_init,
                                             bias_init=self._forget_bias,
@@ -1008,7 +1008,7 @@ class LSTMConv2DCellHadamPeep(RNNConv2DCell):
                         center=False, updates_collections=self._updates_collections,
                         is_training=self._is_training, reuse=True, scope="bn_x")
                 
-                conv_xo = tt.network.conv2d("o", inputs, self._n_filters,
+                conv_xo = light.network.conv2d("o", inputs, self._n_filters,
                                             self._ksize_input, (1, 1),
                                             weight_init=self._weight_init,
                                             bias_init=0.0,
@@ -1020,7 +1020,7 @@ class LSTMConv2DCellHadamPeep(RNNConv2DCell):
                         is_training=self._is_training, reuse=True, scope="bn_x")
 
             with tf.variable_scope("Conv_h") as varscope:
-                conv_hi = tt.network.conv2d("i", h, self._n_filters, 
+                conv_hi = light.network.conv2d("i", h, self._n_filters, 
                                             self._ksize_hidden, (1, 1),
                                             weight_init=self._hidden_weight_init,
                                             bias_init=None,
@@ -1031,7 +1031,7 @@ class LSTMConv2DCellHadamPeep(RNNConv2DCell):
                         center=False, updates_collections=self._updates_collections,
                         is_training=self._is_training, scope="bn_h")
                 
-                conv_hj = tt.network.conv2d("j", h, self._n_filters,
+                conv_hj = light.network.conv2d("j", h, self._n_filters,
                                             self._ksize_hidden, (1, 1),
                                             weight_init=self._hidden_weight_init,
                                             bias_init=None,
@@ -1042,7 +1042,7 @@ class LSTMConv2DCellHadamPeep(RNNConv2DCell):
                         center=False, updates_collections=self._updates_collections,
                         is_training=self._is_training, reuse=True, scope="bn_h")
                 
-                conv_hf = tt.network.conv2d("f", h, self._n_filters,
+                conv_hf = light.network.conv2d("f", h, self._n_filters,
                                             self._ksize_hidden, (1, 1),
                                             weight_init=self._hidden_weight_init,
                                             bias_init=None,
@@ -1053,7 +1053,7 @@ class LSTMConv2DCellHadamPeep(RNNConv2DCell):
                         center=False, updates_collections=self._updates_collections,
                         is_training=self._is_training, reuse=True, scope="bn_h")
                 
-                conv_ho = tt.network.conv2d("o", h, self._n_filters,
+                conv_ho = light.network.conv2d("o", h, self._n_filters,
                                             self._ksize_hidden, (1, 1),
                                             weight_init=self._hidden_weight_init,
                                             bias_init=None,
@@ -1072,7 +1072,7 @@ class LSTMConv2DCellHadamPeep(RNNConv2DCell):
             if self._use_peepholes:
                 # peepholes for input
                 with tf.variable_scope("Conv_peep"):
-                    w_i_diag = tt.network.get_variable(
+                    w_i_diag = light.network.get_variable(
                         "i", shape=cshape, dtype=dtype,
                         device=self._device)
                     
@@ -1083,7 +1083,7 @@ class LSTMConv2DCellHadamPeep(RNNConv2DCell):
                         center=False, updates_collections=self._updates_collections,
                         is_training=self._is_training, scope="bn_peep")
                     
-                    w_f_diag = tt.network.get_variable(
+                    w_f_diag = light.network.get_variable(
                         "f", shape=cshape, dtype=dtype,
                         device=self._device)
                     
@@ -1112,7 +1112,7 @@ class LSTMConv2DCellHadamPeep(RNNConv2DCell):
             if self._use_peepholes:
                 # peepholes for output
                 with tf.variable_scope("Conv_peep"):
-                    w_o_diag = tt.network.get_variable(
+                    w_o_diag = light.network.get_variable(
                         "o", shape=cshape, dtype=dtype,
                         device=self._device)
                     
@@ -1206,26 +1206,26 @@ class BatchNormalizedLSTMCell(tf.nn.rnn_cell.RNNCell): # TODO: remove this code!
             c, h = state
 
             x_size = x.get_shape().as_list()[1]
-            W_xh = tt.network.get_variable('W_xh',
+            W_xh = light.network.get_variable('W_xh',
                 [x_size, 4 * self._num_units],
-                initializer=tt.init.orthogonal_initializer(),
+                initializer=light.init.orthogonal_initializer(),
                 device=self._device)
-            W_hh = tt.network.get_variable('W_hh',
+            W_hh = light.network.get_variable('W_hh',
                 [self._num_units, 4 * self._num_units],
-                initializer=tt.init.bn_lstm_identity_initializer(0.95),
+                initializer=light.init.bn_lstm_identity_initializer(0.95),
                 device=self._device)
-            bias = tt.network.get_variable('bias', [4 * self._num_units],
+            bias = light.network.get_variable('bias', [4 * self._num_units],
                                            device=self._device)
 
             xh = tf.matmul(x, W_xh)
             hh = tf.matmul(h, W_hh)
 
             mean_xh, var_xh = tf.nn.moments(xh, [0])
-            xh_scale = tt.network.get_variable('xh_scale', [4 * self._num_units], initializer=tf.constant_initializer(0.1),
+            xh_scale = light.network.get_variable('xh_scale', [4 * self._num_units], initializer=tf.constant_initializer(0.1),
                                                device=self._device)
 
             mean_hh, var_hh = tf.nn.moments(hh, [0])
-            hh_scale = tt.network.get_variable('hh_scale', [4 * self._num_units], initializer=tf.constant_initializer(0.1),
+            hh_scale = light.network.get_variable('hh_scale', [4 * self._num_units], initializer=tf.constant_initializer(0.1),
                                                device=self._device)
 
             static_offset = tf.constant(0, dtype=tf.float32, shape=[4 * self._num_units])
@@ -1241,9 +1241,9 @@ class BatchNormalizedLSTMCell(tf.nn.rnn_cell.RNNCell): # TODO: remove this code!
             new_c = c * tf.sigmoid(f) + tf.sigmoid(i) * tf.tanh(j)
 
             mean_c, var_c = tf.nn.moments(new_c, [0])
-            c_scale = tt.network.get_variable('c_scale', [self._num_units], initializer=tf.constant_initializer(0.1),
+            c_scale = light.network.get_variable('c_scale', [self._num_units], initializer=tf.constant_initializer(0.1),
                                               device=self._device)
-            c_offset = tt.network.get_variable('c_offset', [self._num_units],
+            c_offset = light.network.get_variable('c_offset', [self._num_units],
                                                device=self._device)
 
             bn_new_c = tf.nn.batch_normalization(new_c, mean_c, var_c, c_offset, c_scale, epsilon)
@@ -1357,7 +1357,7 @@ def _linear(args, output_size, bias, bias_start=0.0, scope=None, device=None):
 
     # Now the computation.
     with vs.variable_scope(scope or "Linear"):
-        matrix = tt.network.get_variable(
+        matrix = light.network.get_variable(
             "Matrix", [total_arg_size, output_size], dtype=dtype,
             device=device)
         if len(args) == 1:
@@ -1366,7 +1366,7 @@ def _linear(args, output_size, bias, bias_start=0.0, scope=None, device=None):
             res = tf.matmul(tf.concat(1, args), matrix)
         if not bias:
             return res
-        bias_term = tt.network.get_variable(
+        bias_term = light.network.get_variable(
             "Bias", [output_size],
             dtype=dtype,
             initializer=tf.constant_initializer(

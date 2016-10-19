@@ -1,6 +1,6 @@
 import numpy as np
 import tensorflow as tf
-import tensortools as tt
+import tensorlight as light
 
 
 def sse(outputs, targets, name=None):
@@ -268,7 +268,7 @@ def ssim(img1, img2, patch_size=11, sigma=1.5, L=1.0, K1=0.01, K2=0.03, name=Non
         The structural similarity loss value between both images.
     """
     with tf.name_scope('SSIM_loss'):
-        return 1 - tt.image.ssim(img1, img2, patch_size, sigma,
+        return 1 - light.image.ssim(img1, img2, patch_size, sigma,
                                  L, K1, K2, name=name)
 
 
@@ -321,7 +321,7 @@ def ms_ssim(img1, img2, patch_size=11, sigma=1.5, L=1.0, K1=0.01, K2=0.03,
         where '1' means they are identical and '0' means they are completely different.
     """
     with tf.name_scope('MSSSIM_loss'):
-        return 1 - tt.image.ms_ssim(img1, img2, patch_size, sigma,
+        return 1 - light.image.ms_ssim(img1, img2, patch_size, sigma,
                                     L, K1, K2, level_weights, name=name)
 
 
@@ -362,7 +362,7 @@ def ss_ssim(img1, img2, patch_size=11, sigma=1.5, L=1.0, K1=0.01, K2=0.03, level
         where '1' means they are identical and '0' means they are completely different.
     """
     with tf.name_scope('SSSSIM_loss'):
-        return 1 - tt.image.ss_ssim(img1, img2, patch_size, sigma,
+        return 1 - light.image.ss_ssim(img1, img2, patch_size, sigma,
                                     L, K1, K2, level, name=name)
 
     

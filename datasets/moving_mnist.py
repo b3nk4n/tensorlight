@@ -4,7 +4,7 @@ from abc import ABCMeta
 import h5py
 import numpy as np
 
-import tensortools as tt
+import tensorlight as light
 import base
 
 
@@ -54,7 +54,7 @@ class MovingMNISTBaseGeneratedDataset(base.AbstractDataset):
         self._digit_size = 28
         
         try:
-            filepath = tt.utils.data.download(MNIST_URL, data_dir)
+            filepath = light.utils.data.download(MNIST_URL, data_dir)
             f = h5py.File(filepath)
             data = f[dataset_key].value
         except:
@@ -65,7 +65,7 @@ class MovingMNISTBaseGeneratedDataset(base.AbstractDataset):
         data = data.reshape(-1, self._digit_size, self._digit_size)
         
         if as_binary:
-            self._data = tt.utils.data.as_binary(data)
+            self._data = light.utils.data.as_binary(data)
         else:
             self._data = data
         
@@ -75,7 +75,7 @@ class MovingMNISTBaseGeneratedDataset(base.AbstractDataset):
         
         super(MovingMNISTBaseGeneratedDataset, self).__init__(data_dir, dataset_size, input_shape, target_shape)
     
-    @tt.utils.attr.override
+    @light.utils.attr.override
     def get_batch(self, batch_size):
         input_seq_length = self.input_shape[0]
         target_seq_length = self.target_shape[0]
@@ -123,7 +123,7 @@ class MovingMNISTBaseGeneratedDataset(base.AbstractDataset):
                                                                               digit_image)
         return input_data, target_data
     
-    @tt.utils.attr.override
+    @light.utils.attr.override
     def reset(self):
         self._row = 0
         np.random.shuffle(self._indices)
@@ -251,7 +251,7 @@ class MovingMNISTTestDataset(base.AbstractDataset):
         assert input_seq_length + target_seq_length <= 20, "The maximum total test sequence length is 20."
         
         try:
-            filepath = tt.utils.data.download(MNIST_TEST_URL, data_dir)
+            filepath = light.utils.data.download(MNIST_TEST_URL, data_dir)
             print("Loading MNIST test set from numpy-array. This might take a while...")
             data = np.load(filepath)
             data = np.float32(data)
@@ -266,7 +266,7 @@ class MovingMNISTTestDataset(base.AbstractDataset):
         data = data / 255.0 
         
         if as_binary:
-            self._data = tt.utils.data.as_binary(data)
+            self._data = light.utils.data.as_binary(data)
         else:
             self._data = data
         
@@ -275,7 +275,7 @@ class MovingMNISTTestDataset(base.AbstractDataset):
         
         super(MovingMNISTTestDataset, self).__init__(data_dir, dataset_size, input_shape=[input_seq_length, 64, 64, 1],
                                                      target_shape=[target_seq_length, 64, 64, 1])
-    @tt.utils.attr.override
+    @light.utils.attr.override
     def get_batch(self, batch_size):
         if self._row + batch_size >= self.size:
             self.reset()
@@ -287,6 +287,6 @@ class MovingMNISTTestDataset(base.AbstractDataset):
         self._row = self._row + batch_size
         return batch_inputs, batch_targets
     
-    @tt.utils.attr.override
+    @light.utils.attr.override
     def reset(self):
         self._row = 0

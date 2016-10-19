@@ -5,7 +5,7 @@ import random
 import numpy as np
 import tensorflow as tf
 
-import tensortools as tt
+import tensorlight as light
 import base
 
 
@@ -70,13 +70,13 @@ class UCF11TrainDataset(base.AbstractQueueDataset):
         self._data_img_size = image_size
         
         # download and extract data
-        rar_path = tt.utils.data.download(UCF11_URL, data_dir)
-        dataset_path = tt.utils.data.extract(rar_path, data_dir)
+        rar_path = light.utils.data.download(UCF11_URL, data_dir)
+        dataset_path = light.utils.data.extract(rar_path, data_dir)
         self._data_dir = dataset_path
         
         # generate frame sequences.
-        video_filenames = tt.utils.path.get_filenames(dataset_path, '*.mpg')
-        dataset_size, seq_files = tt.utils.data.preprocess_videos(dataset_path, SUBDIR_SHARED,
+        video_filenames = light.utils.path.get_filenames(dataset_path, '*.mpg')
+        dataset_size, seq_files = light.utils.data.preprocess_videos(dataset_path, SUBDIR_SHARED,
                                                           video_filenames,
                                                           [FRAME_HEIGHT, FRAME_WIDTH, FRAME_CHANNELS],
                                                           serialized_sequence_length,
@@ -131,7 +131,7 @@ class UCF11TrainDataset(base.AbstractQueueDataset):
                                    [total_seq_length, record.height, record.width, record.depth])
             return record
 
-    @tt.utils.attr.override
+    @light.utils.attr.override
     def get_batch(self, batch_size):
         # Generate a batch of sequences and labels by building up a queue of examples.
         with tf.name_scope('preprocessing'):
@@ -161,7 +161,7 @@ class UCF11TrainDataset(base.AbstractQueueDataset):
                     for i in xrange(total_seq_length):
                         images_to_distort.append(seq_data[i,:,:,:])
 
-                    distorted_images = tt.image.equal_random_distortion(images_to_distort)
+                    distorted_images = light.image.equal_random_distortion(images_to_distort)
                     sequence_inputs = tf.pack(distorted_images[0:input_seq_length], axis=0)
                     sequence_targets = tf.pack(distorted_images[input_seq_length:], axis=0)
             else:
@@ -169,7 +169,7 @@ class UCF11TrainDataset(base.AbstractQueueDataset):
                 sequence_targets = seq_data[input_seq_length:,:,:,:]
 
         #return sequence_inputs, sequence_targets     
-        return tt.inputs.generate_batch(sequence_inputs, sequence_targets,
+        return light.inputs.generate_batch(sequence_inputs, sequence_targets,
                                         batch_size,
                                         self._min_examples_in_queue, self._queue_capacitiy,
                                         shuffle=True, num_threads=self._num_threads)
@@ -233,13 +233,13 @@ class UCF11ValidDataset(base.AbstractDataset):
         self._data_img_size = image_size
         
         # download and extract data
-        rar_path = tt.utils.data.download(UCF11_URL, data_dir)
-        dataset_path = tt.utils.data.extract(rar_path, data_dir)
+        rar_path = light.utils.data.download(UCF11_URL, data_dir)
+        dataset_path = light.utils.data.extract(rar_path, data_dir)
         self._data_dir = dataset_path
         
         # generate frame sequences.
-        video_filenames = tt.utils.path.get_filenames(dataset_path, '*.mpg')
-        dataset_size, seq_files = tt.utils.data.preprocess_videos(dataset_path, SUBDIR_SHARED,
+        video_filenames = light.utils.path.get_filenames(dataset_path, '*.mpg')
+        dataset_size, seq_files = light.utils.data.preprocess_videos(dataset_path, SUBDIR_SHARED,
                                                                   video_filenames,
                                                                   [FRAME_HEIGHT, FRAME_WIDTH, FRAME_CHANNELS],
                                                                   serialized_sequence_length,
@@ -258,7 +258,7 @@ class UCF11ValidDataset(base.AbstractDataset):
         
         super(UCF11ValidDataset, self).__init__(data_dir, dataset_size, input_shape, target_shape)
 
-    @tt.utils.attr.override
+    @light.utils.attr.override
     def get_batch(self, batch_size):
         if self._row + batch_size >= self.size:
             self.reset()
@@ -285,7 +285,7 @@ class UCF11ValidDataset(base.AbstractDataset):
         seq_input_list = []
         seq_target_list = []
         for f in file_names:
-            current = tt.utils.image.read_as_binary(f, dtype=np.uint8)
+            current = light.utils.image.read_as_binary(f, dtype=np.uint8)
             current = np.reshape(current, [self.serialized_sequence_length] + list(self._data_img_size))
             
             # select random part of the sequence with length of inputs+targets
@@ -315,7 +315,7 @@ class UCF11ValidDataset(base.AbstractDataset):
         
         return inputs, targets
     
-    @tt.utils.attr.override
+    @light.utils.attr.override
     def reset(self):
         self._row = 0
         np.random.shuffle(self._indices)

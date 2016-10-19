@@ -1,5 +1,5 @@
 import numpy as np
-import tensortools as tt
+import tensorlight as light
 
 from abc import ABCMeta, abstractmethod
 
@@ -111,7 +111,7 @@ class AbstractQueueDataset(AbstractDataset):
         self._num_threads = num_threads
         super(AbstractQueueDataset, self).__init__(data_dir, dataset_size, input_shape, target_shape)
             
-    @tt.utils.attr.override
+    @light.utils.attr.override
     def reset(self):
         # Usually No-Op, because re-shuffling is performed by the queue itself.
         return

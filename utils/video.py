@@ -3,7 +3,7 @@ import math
 
 import cv2
 import numpy as np
-import tensortools as tt
+import tensorlight as tt
 
 from moviepy.video.io.ImageSequenceClip import ImageSequenceClip
 

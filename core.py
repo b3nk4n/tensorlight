@@ -11,7 +11,7 @@ from abc import ABCMeta, abstractmethod
 import numpy as np
 import tensorflow as tf
 from tensorflow.python import control_flow_ops
-import tensortools as tt
+import tensorlight as light
 
 CHECKPOINT_FILE = "model.ckpt"
 MODEL_PARAMS_FILE = "model.json"
@@ -54,7 +54,7 @@ class AbstractRuntime(object):
         self._inferences = []
         
         # set Adam optimizer as default
-        self._optimizer = tt.training.Optimizer(tt.training.ADAM, 0.001)
+        self._optimizer = light.training.Optimizer(light.training.ADAM, 0.001)
 
         self._coord = None
         self._threads = None
@@ -94,7 +94,7 @@ class AbstractRuntime(object):
         self._gpu.memory_fraction = gpu_memory_fraction
         # mask the used devices to enuse not to use memory of other devices
         self._gpu.devices = gpu_devices
-        tt.hardware.set_cuda_devices(gpu_devices)
+        light.hardware.set_cuda_devices(gpu_devices)
            
     def register_datasets(self, train_ds=None, valid_ds=None, test_ds=None):
         """Registers the datasets.
@@ -136,7 +136,7 @@ class AbstractRuntime(object):
            In case no optimizer was defined, Adam optimizer will be used.
         Parameters
         ----------
-        optimizer: tt.training.Optimizer
+        optimizer: light.training.Optimizer
             The optimizer to use while graph construction.
         """
         self._optimizer = optimizer
@@ -165,7 +165,7 @@ class AbstractRuntime(object):
             This can be useful when to want to do predictions on a different shape that the model was trained.
         restore_checkpoint: str or int, optional
             The filename of the checkpoint file or step-number within 'train_dir' to restore.
-            Use 'LATEST' or 'tt.core.LATEST_CHECKPOINT' to restore the lastest file.
+            Use 'LATEST' or 'light.core.LATEST_CHECKPOINT' to restore the lastest file.
         max_checkpoints_to_keep: int, optional
             The number of last checkpoints to keep. Defaults to 5.
             Use 0 or None to keep all checkpoints.
@@ -230,7 +230,7 @@ class AbstractRuntime(object):
                 raise ValueError("No dataset are registered, input and target shapes have to be defined explicitely.")
         else:
             # use the input/target shape defined by the dataset
-            is_queue_dataset = isinstance(reference_dataset, tt.datasets.base.AbstractQueueDataset)
+            is_queue_dataset = isinstance(reference_dataset, light.datasets.base.AbstractQueueDataset)
             input_shape = reference_dataset.input_shape
             target_shape = reference_dataset.target_shape
                 
@@ -313,8 +313,8 @@ class AbstractRuntime(object):
 
             # Add summaries
             summaries.append(tf.scalar_summary('learning_rate', lr))
-            summaries.extend(tt.board.gradients_histogram_summary(grads))
-            summaries.extend(tt.board.variables_histogram_summary())
+            summaries.extend(light.board.gradients_histogram_summary(grads))
+            summaries.extend(light.board.variables_histogram_summary())
 
             # Track the moving averages of all trainable variables
             variable_averages = tf.train.ExponentialMovingAverage(0.9999, self._global_step)
@@ -397,7 +397,7 @@ class AbstractRuntime(object):
                 
             # Model information
             print()
-            tt.core.show_trainable_parameters(verbose)
+            light.core.show_trainable_parameters(verbose)
             
     @abstractmethod
     def _build_computation_graph(self, x, y, opt):
@@ -531,18 +531,18 @@ class AbstractRuntime(object):
                         start_time = time.time()
 
                         # prepare feeding
-                        if isinstance(dataset, tt.datasets.base.AbstractQueueDataset):
+                        if isinstance(dataset, light.datasets.base.AbstractQueueDataset):
                             batch_x = x_dummy
                             batch_y = y_dummy
                         else:
                             batch_x, batch_y = dataset.get_batch(batch_size)
                         feed = self._feed_func(batch_x, batch_y, batch_size, True)
                         feed.update({self._ph.input_from_queue: True \
-                                     if isinstance(dataset, tt.datasets.base.AbstractQueueDataset) else False})
+                                     if isinstance(dataset, light.datasets.base.AbstractQueueDataset) else False})
                         for key, value in train_feeds.iteritems():
                             feed.update({self._model_feeds[key]: value})
 
-                        if this_step == 1 and isinstance(dataset, tt.datasets.base.AbstractQueueDataset):
+                        if this_step == 1 and isinstance(dataset, light.datasets.base.AbstractQueueDataset):
                             print("Filling queue with {} examples...".format(dataset.min_examples_in_queue))
 
                         # step counter is increment when train_op is executed
@@ -701,17 +701,17 @@ class AbstractRuntime(object):
         eval_sums = np.zeros(len(eval_ops))
         x_dummy = np.zeros([batch_size] + dataset.input_shape, np.float32)
         y_dummy = np.zeros([batch_size] + dataset.target_shape, np.float32)
-        progress = tt.utils.ui.ProgressBar(num_batches * batch_size)
+        progress = light.utils.ui.ProgressBar(num_batches * batch_size)
         for b in xrange(num_batches):
             # prepare feeding
-            if isinstance(dataset, tt.datasets.base.AbstractQueueDataset):
+            if isinstance(dataset, light.datasets.base.AbstractQueueDataset):
                 batch_x = x_dummy
                 batch_y = y_dummy
             else:
                 batch_x, batch_y = dataset.get_batch(batch_size)
             feed = self._feed_func(batch_x, batch_y, batch_size, False)
             feed.update({self._ph.input_from_queue: True \
-                         if isinstance(dataset, tt.datasets.base.AbstractQueueDataset) else False})
+                         if isinstance(dataset, light.datasets.base.AbstractQueueDataset) else False})
             for key, value in feeds.iteritems():
                 feed.update({self._model_feeds[key]: value})
 
@@ -776,12 +776,12 @@ class AbstractRuntime(object):
         print()
         if self.graph is not None:
             with self.graph.as_default():
-                tt.core.show_trainable_parameters(verbose)
+                light.core.show_trainable_parameters(verbose)
             print()
          
     def list_checkpoints(self):
         """Lists all checkpoint file of the used directory"""
-        checkpointslike = tt.utils.path.get_filenames(self.train_dir, "*.ckpt*")
+        checkpointslike = light.utils.path.get_filenames(self.train_dir, "*.ckpt*")
         checkpoints = [cp for cp in checkpointslike if not cp.endswith(".meta")]
         checkpoints.sort()
         return checkpoints
@@ -879,7 +879,7 @@ class DefaultRuntime(AbstractRuntime):
         super(DefaultRuntime, self).__init__(train_dir, gpu_devices,
                                              gpu_allow_growth, gpu_memory_fraction)
         
-    @tt.utils.attr.override
+    @light.utils.attr.override
     def _build_computation_graph(self, x, y, opt, eval_mode):
         # Build inference Graph.This function constructs 
         # the entire model but shares the variables across all towers.
@@ -905,7 +905,7 @@ class DefaultRuntime(AbstractRuntime):
             eval_dict = self._model.evaluation(inference, y, device_scope=None)
 
         # Generate moving averages of all losses and associated summaries
-        loss_averages_op = tt.board.loss_summary([total_loss, loss] + \
+        loss_averages_op = light.board.loss_summary([total_loss, loss] + \
                                                  tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES) + \
                                                  tf.get_collection(LOG_LOSSES) if not eval_mode else [],
                                                  decay=0.9)
@@ -954,7 +954,7 @@ class MultiGpuRuntime(AbstractRuntime):
         super(MultiGpuRuntime, self).__init__(train_dir, gpu_devices,
                                               gpu_allow_growth, gpu_memory_fraction)
         
-    @tt.utils.attr.override
+    @light.utils.attr.override
     def _build_computation_graph(self, x, y, opt, eval_mode):
         # Calculate the gradients for each model tower.
         tower_grads = []
@@ -998,7 +998,7 @@ class MultiGpuRuntime(AbstractRuntime):
                         eval_dict = self._model.evaluation(inference, this_targets, device_scope=scope)
 
                     # Calculate the moving averages of the loss for one tower of the model
-                    loss_averages_op = tt.board.loss_summary([total_loss, loss] + \
+                    loss_averages_op = light.board.loss_summary([total_loss, loss] + \
                                                              tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES) + \
                                                              tf.get_collection(LOG_LOSSES, scope) if not eval_mode else [],
                                                              decay=0.9)
@@ -1026,7 +1026,7 @@ class MultiGpuRuntime(AbstractRuntime):
 
         # We must calculate the mean of each gradient.
         # This is also the synchronization point across all towers.
-        grads = tt.training.average_gradients(tower_grads)
+        grads = light.training.average_gradients(tower_grads)
         
         # average the losses for evaluation over all towers
         avg_loss = tf.reduce_mean(tf.pack(tower_losses))
@@ -1041,7 +1041,7 @@ class MultiGpuRuntime(AbstractRuntime):
             
         return grads, summaries, avg_total_loss, avg_loss, avg_eval_dict
         
-    @tt.utils.attr.override
+    @light.utils.attr.override
     def predict(self, inputs, feeds={}):
         """Performs a prediction using the trained model.
         Parameters

@@ -5,7 +5,7 @@ import numpy as np
 import tensorflow as tf
 from tensorflow.examples.tutorials.mnist import input_data
 
-import tensortools as tt
+import tensorlight as light
 import base
 
 
@@ -32,7 +32,7 @@ class MNISTBaseDataset(base.AbstractDataset):
         """
         data = dataset.images.reshape((-1, 28, 28, 1))
         if as_binary:
-            self._data = tt.utils.data.as_binary(data)
+            self._data = light.utils.data.as_binary(data)
         else:
             self._data = data
         
@@ -44,7 +44,7 @@ class MNISTBaseDataset(base.AbstractDataset):
         
         super(MNISTBaseDataset, self).__init__(data_dir, dataset_size, [28,28,1], [10])
 
-    @tt.utils.attr.override
+    @light.utils.attr.override
     def get_batch(self, batch_size):
         if self._row + batch_size >= self.size:
             self.reset()
@@ -56,7 +56,7 @@ class MNISTBaseDataset(base.AbstractDataset):
         labels = self._targets[ind_range]
         return images, labels
     
-    @tt.utils.attr.override
+    @light.utils.attr.override
     def reset(self):
         self._row = 0
         np.random.shuffle(self._indices)

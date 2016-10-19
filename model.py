@@ -3,7 +3,7 @@ import types
 import jsonpickle
 
 import tensorflow as tf
-import tensortools as tt
+import tensorlight as light
 from abc import ABCMeta, abstractmethod
 
 
@@ -159,7 +159,7 @@ class AbstractModel(object):
             model = jsonpickle.decode(json)
             self.__dict__.update(model.__dict__)
     
-    @tt.utils.attr.override
+    @light.utils.attr.override
     def __getstate__(self):
         """Overridden for jsonpickle to exclude globa step."""
         state = self.__dict__.copy()
