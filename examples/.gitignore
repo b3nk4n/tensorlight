@@ -1,0 +1,7 @@
+MNIST_data/
+MovingMNIST_data/
+tmp/
+train*/
+out/
+_test/
+.ipynb_checkpoints/
