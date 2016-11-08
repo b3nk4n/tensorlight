@@ -45,4 +45,4 @@ The user program can either exploit the high-level library and the provided util
 
 ### Examples
 
-You want to learn more? Check out the [tutorial and code examples](examples/README.md).
+You want to learn more? Check out the [tutorial and code examples](examples).
