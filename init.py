@@ -19,7 +19,7 @@ def identity_initializer(scale=1.0):
     _initializer: function
         Returns the init function.
     """
-    def _initializer(shape, dtype=tf.float32):
+    def _initializer(shape, dtype=tf.float32, partition_info=None):
         if len(shape) == 1:
             return tf.constant(0., dtype=dtype, shape=shape)
         elif len(shape) == 2 and shape[0] == shape[1]:
@@ -60,9 +60,9 @@ def orthogonal_initializer(scale=1.0):
     _initializer: function
         Returns the init function.
     """
-    def _initializer(shape, dtype=tf.float32):
+    def _initializer(shape, dtype=tf.float32, partition_info=None):
         q = _orthogonal(shape)
-        return tf.constant(scale * q[:shape[0], :shape[1]], dtype=tf.float32)
+        return tf.constant(scale * q[:shape[0], :shape[1]], dtype=dtype)
     return _initializer
 
 
@@ -79,7 +79,7 @@ def bn_lstm_identity_initializer(scale=1.0):
     _initializer: function
         Returns the init function.
     """
-    def _initializer(shape, dtype=tf.float32):
+    def _initializer(shape, dtype=tf.float32, partition_info=None):
         '''Ugly cause LSTM params calculated in one matrix multiply'''
         size = shape[0]
         # gate (j) is identity
@@ -103,7 +103,7 @@ def bilinear_initializer():
     _initializer: function
         Returns the init function.
     """
-    def _initializer(shape, dtype=tf.float32):
+    def _initializer(shape, dtype=tf.float32, partition_info=None):
         width = shape[0]
         heigh = shape[0]
         f = math.ceil(width/2.0)

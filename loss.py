@@ -209,7 +209,7 @@ def bce(output_probs, targets, from_logits=False, name=None):
             EPSILON = 10e-8
             output_probs_flat = tf.clip_by_value(output_probs_flat, EPSILON, 1 - EPSILON)
             output_probs_flat = tf.log(output_probs_flat / (1 - output_probs_flat))
-        bce_values = tf.nn.sigmoid_cross_entropy_with_logits(output_probs_flat, targets_flat)
+        bce_values = tf.nn.sigmoid_cross_entropy_with_logits(labels=targets_flat, logits=output_probs_flat)
         return tf.reduce_mean(bce_values, name=name)
 
     
@@ -377,8 +377,8 @@ def _gradient_differences(img1, img2):
     # create filters [-1, 1] and [[1],[-1]] for diffing to the left and down respectively.
     pos = tf.constant(np.identity(shape[3]), dtype=tf.float32)
     neg = -1 * pos
-    filter_x = tf.expand_dims(tf.pack([neg, pos]), 0)  # [-1, 1]
-    filter_y = tf.pack([tf.expand_dims(pos, 0), tf.expand_dims(neg, 0)])  # [[1],[-1]]
+    filter_x = tf.expand_dims(tf.stack([neg, pos]), 0)  # [-1, 1]
+    filter_y = tf.stack([tf.expand_dims(pos, 0), tf.expand_dims(neg, 0)])  # [[1],[-1]]
 
     img1_dx = tf.abs(tf.nn.conv2d(img1, filter_x, [1, 1, 1, 1], padding='SAME'))
     img1_dy = tf.abs(tf.nn.conv2d(img1, filter_y, [1, 1, 1, 1], padding='SAME'))

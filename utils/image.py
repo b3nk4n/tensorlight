@@ -23,6 +23,9 @@ def read(filepath, color_flags=cv2.IMREAD_COLOR):
         Returns image data as an array of shape [height, width, channels].
     """
     image = cv2.imread(filepath, flags=color_flags)
+
+    if image is None:
+        raise IOError("Image file not found")
     
     # introduce a 1-channel dimension to handle the indexing
     # of color and gray images the same way

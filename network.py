@@ -250,7 +250,7 @@ def conv2d_transpose(name_or_scope,
             out_h = (dyn_input_shape[1] - 1) * stride[0] + ksize[0]
             out_w = (dyn_input_shape[2] - 1) * stride[1] + ksize[1]
 
-        out_shape = tf.pack([batch_size, out_h, out_w, n_filters])
+        out_shape = tf.stack([batch_size, out_h, out_w, n_filters])
         
         convt = tf.nn.conv2d_transpose(
             x, w, output_shape=out_shape,

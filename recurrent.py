@@ -1183,11 +1183,11 @@ class MultiRNNConv2DCell(RNNConv2DCell):
     
 
     
-class BatchNormalizedLSTMCell(tf.nn.rnn_cell.RNNCell): # TODO: remove this code!!!
-    """Batch normalized LSTM cell.
+"""class BatchNormalizedLSTMCell(tf.nn.rnn_cell.RNNCell): # TODO: remove this code!!!
+    Batch normalized LSTM cell.
     References:
         Code:  http://olavnymoen.com/2016/07/07/rnn-batch-normalization
-        Paper: arxiv.org/abs/1603.09025"""
+        Paper: arxiv.org/abs/1603.09025
     def __init__(self, num_units, state_is_tuple=True,
                  device=None):
         self._num_units = num_units
@@ -1250,7 +1250,7 @@ class BatchNormalizedLSTMCell(tf.nn.rnn_cell.RNNCell): # TODO: remove this code!
 
             new_h = tf.tanh(bn_new_c) * tf.sigmoid(o)
 
-            return new_h, (new_c, new_h)
+            return new_h, (new_c, new_h)"""
 
         
 class BasicLSTMCell(tf.nn.rnn_cell.RNNCell):

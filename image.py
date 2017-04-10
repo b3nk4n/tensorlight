@@ -76,7 +76,7 @@ def equal_random_distortion(images, contrast_lower=0.8, contrast_upper=1.2, brig
     
     with tf.name_scope('eq_random_distort'):
         uniform_random = tf.random_uniform([], 0, 1.0, dtype=tf.float32, seed=seed)
-        mirror = tf.less(tf.pack([1.0, uniform_random, 1.0]), 0.5)
+        mirror = tf.less(tf.stack([1.0, uniform_random, 1.0]), 0.5)
 
         contrast_factor = tf.random_uniform([], contrast_lower, contrast_upper,
                                             seed=seed + 1 if seed else None)
@@ -259,7 +259,7 @@ def ms_ssim(img1, img2, patch_size=11, sigma=1.5, L=1.0, K1=0.01, K2=0.03,
             img2 = tf.nn.avg_pool(img2, [1,2,2,1], [1,2,2,1], padding='SAME')
 
         # list to tensor of dim D+1
-        mcs = tf.pack(mcs, axis=0)
+        mcs = tf.stack(mcs, axis=0)
 
         # Note: In TensorFlow 0.10: reduce_prod() causes Error while back-prop.
         #       Wrap the Optimizer with tf.device('/cpu:0')!
@@ -386,8 +386,8 @@ def sharp_diff(img1, img2, max_value=1.0, name=None):
         # create filters [-1, 1] and [[1],[-1]] for diffing to the left and down respectively.
         pos = tf.constant(np.identity(shape[3]), dtype=tf.float32)
         neg = -1 * pos
-        filter_x = tf.expand_dims(tf.pack([neg, pos]), 0)  # [-1, 1]
-        filter_y = tf.pack([tf.expand_dims(pos, 0), tf.expand_dims(neg, 0)])  # [[1],[-1]]
+        filter_x = tf.expand_dims(tf.stack([neg, pos]), 0)  # [-1, 1]
+        filter_y = tf.stack([tf.expand_dims(pos, 0), tf.expand_dims(neg, 0)])  # [[1],[-1]]
         
         img1_dx = tf.abs(tf.nn.conv2d(img1, filter_x, [1, 1, 1, 1], padding='SAME'))
         img1_dy = tf.abs(tf.nn.conv2d(img1, filter_y, [1, 1, 1, 1], padding='SAME'))

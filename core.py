@@ -1,16 +1,14 @@
 from __future__ import print_function
 
 import os
-import sys
 import time
 import collections
 import copy
-from datetime import datetime
 from abc import ABCMeta, abstractmethod
 
 import numpy as np
 import tensorflow as tf
-from tensorflow.python import control_flow_ops
+from tensorflow.python.ops import control_flow_ops
 import tensorlight as light
 
 CHECKPOINT_FILE = "model.ckpt"
@@ -257,8 +255,7 @@ class AbstractRuntime(object):
 
         with self.graph.as_default():
             # runtime placeholders and variables
-            self._global_step = tf.get_variable('global_step', shape=[], dtype=tf.int32, trainable=False,
-                                                initializer=tf.zeros_initializer)
+            self._global_step = tf.get_variable('global_step', shape=[], dtype=tf.int32, trainable=False, initializer=tf.zeros_initializer())
             self._ph.is_training = tf.placeholder(tf.bool, name='is_training')
             self._ph.batch_size = tf.placeholder(tf.int32, name='batch_size')
             self._ph.input_from_queue = tf.placeholder(tf.bool, name='input_from_queue')
@@ -312,7 +309,7 @@ class AbstractRuntime(object):
             apply_gradient_op = opt.apply_gradients(grads, global_step=self._global_step)
 
             # Add summaries
-            summaries.append(tf.scalar_summary('learning_rate', lr))
+            summaries.append(tf.summary.scalar('learning_rate', lr))
             summaries.extend(light.board.gradients_histogram_summary(grads))
             summaries.extend(light.board.variables_histogram_summary())
 
@@ -342,7 +339,7 @@ class AbstractRuntime(object):
                 
             # Create a saver to store checkpoints of the model
             if restore_ema_variables:
-                restore_vars = tf.all_variables()
+                restore_vars = tf.global_variables()
             else:
                 restore_vars = variable_averages.variables_to_restore()  
             
@@ -355,7 +352,7 @@ class AbstractRuntime(object):
                     # Init all at first to ensure no non-initialized variables.
                     # This is just a workaround and might be buggy.
                     # It does not guarantee to restore all EMA vars.
-                    init_op = tf.initialize_all_variables()
+                    init_op = tf.global_variables_initializer()
                     self.session.run(init_op)
                     try:
                         print("Restoring EMA variables...")
@@ -367,7 +364,7 @@ class AbstractRuntime(object):
                     print("Restoring variables...")
                     saver.restore(self.session, filepath)
                 return saver
-                
+
             if restore_checkpoint is None:
                 if recreate:
                     saver = tf.train.Saver(var_list=restore_vars)
@@ -375,7 +372,7 @@ class AbstractRuntime(object):
                 else:
                     # start session and init all variables
                     print("Initializing variables...")
-                    init_op = tf.initialize_all_variables()
+                    init_op = tf.global_variables_initializer()
                     self.session.run(init_op)
             else:
                 if restore_checkpoint == LATEST_CHECKPOINT:
@@ -516,8 +513,8 @@ class AbstractRuntime(object):
 
                     # add batch-size to summary. Copy is required to allow rerun training
                     summaries_copy = copy.copy(self._summaries)
-                    summaries_copy.append(tf.scalar_summary('batch_size', batch_size))
-                    summary_op = tf.merge_summary(summaries_copy)
+                    summaries_copy.append(tf.summary.scalar('batch_size', batch_size))
+                    summary_op = tf.summary.merge(summaries_copy)
 
                     while not self._coord.should_stop():
                         this_step += 1
@@ -733,7 +730,7 @@ class AbstractRuntime(object):
             # execute all summaries in a single run
             eval_summaries = []
             for i, name in enumerate(eval_names):
-                eval_summaries.append(tf.scalar_summary("{}_{}".format(title, name), avg_evals[i]))
+                eval_summaries.append(tf.summary.scalar("{}_{}".format(title, name), avg_evals[i]))
             summary_strings = self.session.run(eval_summaries)
             
             # add to summary writer
@@ -837,7 +834,7 @@ class AbstractRuntime(object):
     def summary_writer(self):
         """Gets or creates the summary writer."""
         if self._summary_writer is None:
-            self._summary_writer = tf.train.SummaryWriter(self.train_dir, self.session.graph)
+            self._summary_writer = tf.summary.FileWriter(self.train_dir, self.session.graph)
         return self._summary_writer
     
     @property
