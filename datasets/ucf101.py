@@ -145,7 +145,7 @@ class UCF101TrainDataset(base.AbstractQueueDataset):
             # calculcate tensors [start, 0, 0, 0]
             rnd_start_index = tf.to_int32(tf.random_uniform([1], 0, self._serialized_sequence_length - (total_seq_length), 
                                                             tf.int32))
-            seq_start_offset = tf.SparseTensor(indices=[[0]], values=rnd_start_index, shape=[4])
+            seq_start_offset = tf.SparseTensor(indices=[[0]], values=rnd_start_index, dense_shape=[4])
             sequence_start = tf.sparse_tensor_to_dense(seq_start_offset)
 
             # take a random slice of frames as input
