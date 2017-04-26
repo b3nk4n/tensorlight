@@ -139,6 +139,12 @@ class AbstractRuntime(object):
         """
         self._optimizer = optimizer
         
+    def init_all_variables(self):
+        """Initialized all global and local variables."""
+        global_init_op = tf.global_variables_initializer()
+        local_init_op = tf.local_variables_initializer()
+        self.session.run([global_init_op, local_init_op])
+        
 
     def build(self, is_autoencoder=False, input_shape=None, target_shape=None,
               max_checkpoints_to_keep=5, track_ema_variables=True, restore_checkpoint=None,
@@ -339,7 +345,7 @@ class AbstractRuntime(object):
                 
             # Create a saver to store checkpoints of the model
             if restore_ema_variables:
-                restore_vars = tf.global_variables()
+                restore_vars = tf.global_variables()  # TODO: what about local variables?
             else:
                 restore_vars = variable_averages.variables_to_restore()  
             
@@ -352,8 +358,7 @@ class AbstractRuntime(object):
                     # Init all at first to ensure no non-initialized variables.
                     # This is just a workaround and might be buggy.
                     # It does not guarantee to restore all EMA vars.
-                    init_op = tf.global_variables_initializer()
-                    self.session.run(init_op)
+                    self.init_all_variables()
                     try:
                         print("Restoring EMA variables...")
                         saver.restore(self.session, filepath)
@@ -372,8 +377,7 @@ class AbstractRuntime(object):
                 else:
                     # start session and init all variables
                     print("Initializing variables...")
-                    init_op = tf.global_variables_initializer()
-                    self.session.run(init_op)
+                    self.init_all_variables()
             else:
                 if restore_checkpoint == LATEST_CHECKPOINT:
                     checkpoint_path = tf.train.latest_checkpoint(self.train_dir)
