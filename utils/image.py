@@ -171,22 +171,22 @@ def to_rgb(image):
     return image
 
 
-def cast(image):
-    """Converts an image to an OpenCV compatible type.
+def cast(array):
+    """Converts an image(s) data array to an OpenCV compatible image type.
     Parameters
     ----------
-    image: ndarray of shape [h, w, c]
-        The image to ensure the correct type.
+    array: ndarray
+        The image(s) data to ensure the correct type.
     Returns
     ---------
-    The converted image or the same if the type was already correct.
+    The converted image(s) or the same if the type was already correct.
     """
-    if is_valid_type(image):
-        return image
-    elif is_uint_image(image):
-        return np.uint8(image)
+    if is_valid_type(array):
+        return array
+    elif is_uint_image(array):
+        return np.uint8(array)
     else:
-        return np.float32(image)
+        return np.float32(array)
 
     
 def is_valid_type(array):

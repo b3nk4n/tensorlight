@@ -58,7 +58,6 @@ class VideoReader():
         frame = self._video[self._frame_idx]
         self._frame_idx += 1
         
-        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         frame = tt.utils.image.resize(frame, scale)
         return frame
         
@@ -111,12 +110,12 @@ class VideoWriter():
     FF_MIN_BUFFER_SIZE = 16384  # from OpenCV C++ code
     
     """Video writer class using OpenCV."""
-    def __init__(self, filepath,
+    def __init__(self, filename,
                  fps=24.0, frame_size=(240, 320), is_color=True):
         """Creates a VideoWriter instance.
         Parameters
         ----------
-        filepath: str
+        filename: str
             The file path to store the video to write. Currently only
             the file extension ".avi" is supported.
         fps: float, optional
@@ -126,14 +125,7 @@ class VideoWriter():
         is_color: Boolean, optional
             Indicates whether the video has colors or is just gray scaled.
         """
-        # Define the codec
-        fourcc = video.VideoWriter_fourcc(*'XVID')
-        self.vidwriter = cv2.VideoWriter(
-            filepath,
-            fourcc, fps, 
-            (max(VideoWriter.MIN_WIDTH, frame_size[1]),
-             max(VideoWriter.MIN_HEIGHT, frame_size[0])),
-            is_color)
+        self._filename = filename
         
     def __enter__(self):
         """Enters the context manager."""
@@ -142,49 +134,20 @@ class VideoWriter():
     def __exit__(self, type, value, traceback):
         """Exits the context manager and releases the video."""
         self.release()
-           
-    def _ensure_min_frame_size(self, frame):
-        """Esures the minimum video frame size required by OpenCV.
-        Parameters
-        ----------
-        filename: str
-            The file path to store the video.
-        Returns
-        ----------
-        frame: ndarray(uint8)
-            Returns the padded video frame.
-        """
-        h, w, c = np.shape(frame)
-        size = h * w * c
-        if (size < VideoWriter.FF_MIN_BUFFER_SIZE):
-            pad_top = (VideoWriter.MIN_HEIGHT - h) // 2
-            pad_bottom = VideoWriter.MIN_HEIGHT - h - pad_top
-            pad_left = (VideoWriter.MIN_WIDTH - w) // 2
-            pad_right = VideoWriter.MIN_WIDTH - w - pad_left
-            frame = np.pad(frame,
-                           ((pad_top, pad_bottom),
-                            (pad_left, pad_right),
-                            (0, 0)),
-                           mode='constant')
-        return frame
         
-    def write_frame(self, frame):
+    def write(self, frames):
         """Writes a video frame to the file.
         Parameters
         ----------
         frame: ndarray(uint8)
             The video frame to write.
         """
-        if frame.shape[2] == 3:
-            frame = tt.utils.image.as_opencv_type(frame)
-            frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
-        
-        padded_frame = self._ensure_min_frame_size(frame)
-        self.vidwriter.write(padded_frame)
+        frames = tt.utils.image.cast(frames)
+        skvideo.io.vwrite(self._filename, frames)
   
     def release(self):
         """Releases the video file resources."""
-        self.vidwriter.release()
+        pass
 
 
 
