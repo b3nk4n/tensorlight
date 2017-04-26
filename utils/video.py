@@ -171,8 +171,9 @@ def write_gif(filepath, images, fps=24):
         return
         
     # ensure directory exists
-    if not os.path.exists(filepath):
-        os.makedirs(filepath)
+    dirpath = os.path.dirname(filepath)
+    if not os.path.exists(dirpath):
+        os.makedirs(dirpath)
         
     # scale factor for float
     factor = 1
