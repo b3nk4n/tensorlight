@@ -170,7 +170,6 @@ def preprocess_videos(dataset_path, subdir, file_list, image_size, serialized_se
             clip_id = 0
             while True:
                 frames = []
-                print("frames_left", vr.frames_left)
                 if vr.frames_left >= serialized_sequence_length:
                     for f in xrange(serialized_sequence_length):
                         frame = vr.next_frame(scale_factor)
