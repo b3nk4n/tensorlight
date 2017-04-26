@@ -5,6 +5,7 @@ import cv2
 import numpy as np
 import tensorlight as tt
 
+import skvideo.io
 from moviepy.video.io.ImageSequenceClip import ImageSequenceClip
 
 
@@ -22,8 +23,15 @@ class VideoReader():
         if not os.path.isfile(filename):
             print("Video file {} not found.".format(filename))
         
-        self._vidcap = cv2.VideoCapture(filename)
-        self.goto_frame(start_frame)
+        self._filename = filename
+        
+        # load the video data
+        self._video = None
+        if self._video is None:
+            self.read_video()
+
+        # select the start frame
+        self._frame_idx = start_frame
         
     def __enter__(self):
         """Enters the context manager."""
@@ -44,14 +52,24 @@ class VideoReader():
         image: ndarray(uint8)
             Returns an ndarray of the image or None in case of an error.
         """
-        self._current_frame_id += 1
-        success, image = self._vidcap.read()
-        if success:
-            image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-            image = tt.utils.image.resize(image, scale)
-            return image
-        else:
+        if self._video is None or self._video.shape[0] <= self._frame_idx:
             return None
+        
+        frame = self._video[self._frame_idx]
+        self._frame_idx += 1
+        
+        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        frame = tt.utils.image.resize(frame, scale)
+        return frame
+        
+    def read_video(self):
+        if self._video is None:
+            video = skvideo.io.vread(self._filename)
+            if video is None:
+                raise IOError("Could not load video file.")
+            else:
+                self._video = video
+        return self._video
         
     def skip_frames(self, count=1):
         """Skips the next frames from the video.
@@ -60,31 +78,31 @@ class VideoReader():
         count: int, optional
             The number of frames to skip.
         """
-        self.goto_frame(self.current_frame_id + count)
+        self.goto_frame(self._frame_idx + count)
                 
-    def goto_frame(self, frame_id):
+    def goto_frame(self, frame_idx):
         """Go to a specific frame."""
-        self._current_frame_id = frame_id
-        self._vidcap.set(cv2.cv.CV_CAP_PROP_POS_FRAMES, frame_id)
+        self._frame_idx = frame_idx
         
     def release(self):
         """Releases the video file resources."""
-        self._vidcap.release()
+        if self._video is not None:
+            del self._video
     
     @property
     def frames_length(self):
         """Returns the total frames length of the video."""
-        return int(self._vidcap.get(cv2.cv.CV_CAP_PROP_FRAME_COUNT))
+        return self._video.shape[0]
     
     @property
-    def current_frame_id(self):
-        """Returns the total frames length of the video."""
-        return self._vidcap.get(cv2.cv.CV_CAP_PROP_POS_FRAMES)
+    def frame_idx(self):
+        """Returns the current frame index of the video."""
+        return self._frame_idx
     
     @property
     def frames_left(self):
         """Returns the number of frames that are left."""
-        return self.frames_length - self.current_frame_id
+        return self.frames_length - self.frame_idx
 
 
 class VideoWriter():
@@ -109,7 +127,7 @@ class VideoWriter():
             Indicates whether the video has colors or is just gray scaled.
         """
         # Define the codec
-        fourcc = cv2.cv.CV_FOURCC(*'XVID')
+        fourcc = video.VideoWriter_fourcc(*'XVID')
         self.vidwriter = cv2.VideoWriter(
             filepath,
             fourcc, fps, 

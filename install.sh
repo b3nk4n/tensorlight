@@ -1,6 +1,7 @@
 #!/usr/bin/bash
 
-sudo apt-get install ffmpeg
+sudo apt-get install libav-tools
+sudo apt-get install unrar
 
 sudo pip install rarfile
 sudo pip install opencv-python
@@ -9,6 +10,7 @@ sudo pip install h5py
 sudo pip install jsonpickle
 sudo pip install scipy
 sudo pip install scikit-image
+sudo pip install sk-video
 
 # TODO add mising video files in video-utils (any freeware videos)
 # TODO test the video-utils script once more :)

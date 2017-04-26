@@ -122,6 +122,8 @@ def preprocess_videos(dataset_path, subdir, file_list, image_size, serialized_se
     subdir: str
         The subdir, basically to seperate training, validation and test data.
         It is recommended to use the constants, e.g tt.utils.data.SUBDIR_TRAIN.
+    file_list: list(str)
+        The list of all files, using the relative file path.
     image_size: int list or tuple of shape [h, w, c]
         The image shape of the video data. All videos will be cropped or padded relative
         to this value.
@@ -163,12 +165,12 @@ def preprocess_videos(dataset_path, subdir, file_list, image_size, serialized_se
     short_counter = 0
     progress = tt.utils.ui.ProgressBar(len(file_list))
     for i, filename in enumerate(file_list):
-        video_filename = os.path.join(dataset_path, filename)
-        with tt.utils.video.VideoReader(video_filename) as vr:
+        with tt.utils.video.VideoReader(filename) as vr:
             # until we reach the end of the video
             clip_id = 0
             while True:
                 frames = []
+                print("frames_left", vr.frames_left)
                 if vr.frames_left >= serialized_sequence_length:
                     for f in xrange(serialized_sequence_length):
                         frame = vr.next_frame(scale_factor)
@@ -187,7 +189,7 @@ def preprocess_videos(dataset_path, subdir, file_list, image_size, serialized_se
                         frames.append(frame)
 
                 if len(frames) == serialized_sequence_length:
-                    filename = os.path.basename(video_filename)
+                    filename = os.path.basename(filename)
                     filename_seq = "{}-{}.seq".format(os.path.splitext(filename)[0], clip_id)
                     filepath_seq = os.path.join(full_path, filename_seq)
                     tt.utils.image.write_as_binary(filepath_seq, np.asarray(frames))

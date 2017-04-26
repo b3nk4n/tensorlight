@@ -1,6 +1,7 @@
 MNIST_data/
 MovingMNIST_data/
 tmp/
+data/
 train*/
 out/
 _test/
