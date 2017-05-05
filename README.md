@@ -1,10 +1,23 @@
 <div align="center">
   <img src="https://github.com/bsautermeister/tensorlight/blob/master/assets/tensorlight.png" alt="TensorLight"><br>
 </div>
------------------
 
 TensorLight is a high-level framework for [TensorFlow](https://www.tensorflow.org/)-based machine intelligence applications. It reduces boilerplate code and enables advanced features that are not yet provided out-of-the-box.
 
+### Setup
+
+After cloning the repository, we can install the package locally (for use on our system), with:
+
+```
+$ cd /path/to/tensorlight
+$ sudo pip install .
+```
+
+We can also install the package with a symlink, so that changes to the source files will be immediately available to other users of the package on our system:
+
+```
+$ sudo pip install -e .
+```
 
 ### Guiding Principles
 
